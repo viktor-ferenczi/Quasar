@@ -33,6 +33,12 @@ public sealed class WebServiceOptions
 
     public string LoggingMinimumLevel { get; init; } = "Info";
 
+    public bool OwnManifest { get; init; } = true;
+
+    public bool PreserveManagedInstancesOnShutdown { get; init; }
+
+    public string LauncherToken { get; init; } = string.Empty;
+
     public bool IsServiceMode => string.Equals(Mode, "service", StringComparison.OrdinalIgnoreCase);
 
     public static WebServiceOptions Create(IConfiguration configuration)
@@ -94,6 +100,21 @@ public sealed class WebServiceOptions
             _ => host,
         };
 
+        var baseUrl = Environment.GetEnvironmentVariable("QUASAR_PUBLIC_BASE_URL")
+                      ?? Environment.GetEnvironmentVariable("MAGNETAR_WEB_BASE_URL");
+        if (string.IsNullOrWhiteSpace(baseUrl))
+            baseUrl = $"http://{advertisedHost}:{port}";
+
+        var ownManifestValue = Environment.GetEnvironmentVariable("QUASAR_OWN_MANIFEST") ?? "true";
+        if (!bool.TryParse(ownManifestValue, out var ownManifest))
+            ownManifest = true;
+
+        var preserveInstancesValue = Environment.GetEnvironmentVariable("QUASAR_PRESERVE_INSTANCES_ON_SHUTDOWN") ?? "false";
+        if (!bool.TryParse(preserveInstancesValue, out var preserveManagedInstancesOnShutdown))
+            preserveManagedInstancesOnShutdown = false;
+
+        var launcherToken = Environment.GetEnvironmentVariable("QUASAR_LAUNCHER_TOKEN") ?? string.Empty;
+
         return new WebServiceOptions
         {
             Host = host,
@@ -105,8 +126,11 @@ public sealed class WebServiceOptions
             LoggingDirectory = loggingDirectory,
             LoggingFormat = loggingFormat,
             LoggingMinimumLevel = loggingMinimumLevel,
-            BaseUrl = $"http://{advertisedHost}:{port}",
+            BaseUrl = baseUrl,
             ListenUrl = $"http://{host}:{port}",
+            OwnManifest = ownManifest,
+            PreserveManagedInstancesOnShutdown = preserveManagedInstancesOnShutdown,
+            LauncherToken = launcherToken,
         };
     }
 }

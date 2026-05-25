@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using Magnetar.Protocol.Runtime;
 using Magnetar.Protocol.Transport;
 using Quasar.Models;
@@ -7,6 +8,11 @@ namespace Quasar.Services;
 
 public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
 {
+    private static readonly JsonSerializerOptions PersistedStateJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        WriteIndented = true,
+    };
+
     private static readonly TimeSpan RestartCounterResetWindow = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan ReconcileInterval = TimeSpan.FromSeconds(2);
     private readonly object _sync = new();
@@ -17,7 +23,9 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
     private readonly ILogger<DedicatedServerSupervisor> _logger;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Dictionary<string, ManagedInstanceState> _states = new(StringComparer.OrdinalIgnoreCase);
+    private CancellationTokenSource? _persistDebounce;
     private bool _isStopping;
+    private bool _preserveManagedInstancesOnShutdown;
 
     public DedicatedServerSupervisor(
         DedicatedServerInstanceCatalog catalog,
@@ -38,8 +46,10 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
     public Task StartAsync(CancellationToken cancellationToken)
     {
         SyncDefinitions();
+        RestorePersistedRuntimeState();
         _catalog.Changed += HandleCatalogChanged;
         _ = Task.Run(() => ReconcileLoopAsync(_shutdown.Token), _shutdown.Token);
+        SchedulePersistState();
         return Task.CompletedTask;
     }
 
@@ -48,6 +58,12 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
         _isStopping = true;
         _shutdown.Cancel();
         _catalog.Changed -= HandleCatalogChanged;
+
+        if (_options.PreserveManagedInstancesOnShutdown || _preserveManagedInstancesOnShutdown)
+        {
+            await PersistStateSnapshotAsync(CancellationToken.None);
+            return;
+        }
 
         var runningInstanceIds = GetSnapshots()
             .Where(snapshot => snapshot.State is DedicatedServerInstanceProcessState.Starting
@@ -68,6 +84,8 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
                 _logger.LogWarning(exception, "Failed stopping instance {InstanceId} during Quasar shutdown.", instanceId);
             }
         }
+
+        await PersistStateSnapshotAsync(CancellationToken.None);
     }
 
     public IReadOnlyList<DedicatedServerInstanceRuntimeSnapshot> GetSnapshots()
@@ -186,7 +204,15 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
 
     public void Dispose()
     {
+        _persistDebounce?.Cancel();
+        _persistDebounce?.Dispose();
         _shutdown.Dispose();
+    }
+
+    public void BeginLauncherDrain()
+    {
+        _preserveManagedInstancesOnShutdown = true;
+        PersistStateSnapshotAsync(CancellationToken.None).GetAwaiter().GetResult();
     }
 
     private async Task ReconcileLoopAsync(CancellationToken cancellationToken)
@@ -503,6 +529,63 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
         _ = Task.Run(() => ReconcileAsync(_shutdown.Token), _shutdown.Token);
     }
 
+    private void RestorePersistedRuntimeState()
+    {
+        var persisted = LoadPersistedRuntimeState();
+        if (persisted?.Instances is null || persisted.Instances.Count == 0)
+            return;
+
+        lock (_sync)
+        {
+            foreach (var persistedState in persisted.Instances)
+            {
+                if (!_states.TryGetValue(persistedState.InstanceId, out var state))
+                    continue;
+
+                state.RestartAttempts = Math.Max(0, persistedState.RestartAttempts);
+                state.LastExitCode = persistedState.LastExitCode;
+                state.StartedAtUtc = persistedState.StartedAtUtc;
+                state.StoppedAtUtc = persistedState.StoppedAtUtc;
+                state.StandardOutputLogPath = persistedState.StandardOutputLogPath ?? string.Empty;
+                state.StandardErrorLogPath = persistedState.StandardErrorLogPath ?? string.Empty;
+                state.LastHealthRecoveryActionUtc = persistedState.LastHealthRecoveryActionUtc;
+                state.StopRequested = false;
+                state.IsRestartPending = false;
+
+                if (persistedState.ProcessId is > 0 && TryAdoptProcess(persistedState.ProcessId.Value, out var process))
+                {
+                    process.EnableRaisingEvents = true;
+                    process.Exited += async (_, _) => await HandleProcessExitedAsync(state.InstanceId);
+
+                    state.Process = process;
+                    state.ProcessId = process.Id;
+                    state.State = persistedState.State is DedicatedServerInstanceProcessState.Starting
+                        or DedicatedServerInstanceProcessState.Running
+                        or DedicatedServerInstanceProcessState.Restarting
+                        or DedicatedServerInstanceProcessState.Stopping
+                        ? persistedState.State
+                        : DedicatedServerInstanceProcessState.Running;
+                    state.LastMessage = "Process adopted after Quasar worker turnover.";
+                    state.StoppedAtUtc = null;
+                }
+                else
+                {
+                    state.Process = null;
+                    state.ProcessId = null;
+
+                    if (state.State is DedicatedServerInstanceProcessState.Starting
+                        or DedicatedServerInstanceProcessState.Running
+                        or DedicatedServerInstanceProcessState.Restarting
+                        or DedicatedServerInstanceProcessState.Stopping)
+                    {
+                        state.State = DedicatedServerInstanceProcessState.Stopped;
+                        state.LastMessage = "Previously running process not found during supervisor restore.";
+                    }
+                }
+            }
+        }
+    }
+
     private void SyncDefinitions()
     {
         var definitions = _catalog.GetInstances();
@@ -539,6 +622,23 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
             {
                 _states.Remove(stale);
             }
+        }
+    }
+
+    private PersistedSupervisorState? LoadPersistedRuntimeState()
+    {
+        try
+        {
+            var path = MagnetarPaths.GetQuasarSupervisorStatePath();
+            if (!File.Exists(path))
+                return null;
+
+            return JsonSerializer.Deserialize<PersistedSupervisorState>(File.ReadAllText(path), PersistedStateJsonOptions);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(exception, "Failed loading persisted Quasar supervisor runtime state.");
+            return null;
         }
     }
 
@@ -683,7 +783,63 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
 
     private void NotifyChanged()
     {
+        SchedulePersistState();
         Changed?.Invoke();
+    }
+
+    private void SchedulePersistState()
+    {
+        CancellationTokenSource debounce;
+        lock (_sync)
+        {
+            _persistDebounce?.Cancel();
+            _persistDebounce?.Dispose();
+            _persistDebounce = new CancellationTokenSource();
+            debounce = _persistDebounce;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(150), debounce.Token);
+                await PersistStateSnapshotAsync(debounce.Token);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }, CancellationToken.None);
+    }
+
+    private async Task PersistStateSnapshotAsync(CancellationToken cancellationToken)
+    {
+        PersistedSupervisorState persisted;
+        lock (_sync)
+        {
+            persisted = new PersistedSupervisorState
+            {
+                UpdatedAtUtc = DateTimeOffset.UtcNow,
+                Instances = _states.Values
+                    .Select(state => new PersistedManagedInstanceState
+                    {
+                        InstanceId = state.InstanceId,
+                        State = state.State,
+                        RestartAttempts = state.RestartAttempts,
+                        ProcessId = state.ProcessId,
+                        LastExitCode = state.LastExitCode,
+                        StartedAtUtc = state.StartedAtUtc,
+                        StoppedAtUtc = state.StoppedAtUtc,
+                        StandardOutputLogPath = state.StandardOutputLogPath,
+                        StandardErrorLogPath = state.StandardErrorLogPath,
+                        LastHealthRecoveryActionUtc = state.LastHealthRecoveryActionUtc,
+                    })
+                    .OrderBy(state => state.InstanceId, StringComparer.OrdinalIgnoreCase)
+                    .ToList(),
+            };
+        }
+
+        var json = JsonSerializer.Serialize(persisted, PersistedStateJsonOptions);
+        await AtomicFileWriter.WriteTextAsync(MagnetarPaths.GetQuasarSupervisorStatePath(), json, cancellationToken);
     }
 
     private static int SafeGetExitCode(Process process)
@@ -724,6 +880,27 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
             MaxRestartAttempts = definition.MaxRestartAttempts,
             UpdatedAtUtc = definition.UpdatedAtUtc,
         };
+    }
+
+    private static bool TryAdoptProcess(int processId, out Process process)
+    {
+        try
+        {
+            process = Process.GetProcessById(processId);
+            if (process.HasExited)
+            {
+                process.Dispose();
+                process = default!;
+                return false;
+            }
+
+            return true;
+        }
+        catch
+        {
+            process = default!;
+            return false;
+        }
     }
 
     private static DedicatedServerInstanceRuntimeSnapshot CloneSnapshot(
@@ -796,4 +973,34 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
     private readonly record struct InstanceHealthAssessment(
         DedicatedServerInstanceHealthState State,
         string Summary);
+
+    private sealed class PersistedSupervisorState
+    {
+        public DateTimeOffset UpdatedAtUtc { get; set; }
+
+        public List<PersistedManagedInstanceState> Instances { get; set; } = [];
+    }
+
+    private sealed class PersistedManagedInstanceState
+    {
+        public string InstanceId { get; set; } = string.Empty;
+
+        public DedicatedServerInstanceProcessState State { get; set; } = DedicatedServerInstanceProcessState.Stopped;
+
+        public int RestartAttempts { get; set; }
+
+        public int? ProcessId { get; set; }
+
+        public int? LastExitCode { get; set; }
+
+        public DateTimeOffset? StartedAtUtc { get; set; }
+
+        public DateTimeOffset? StoppedAtUtc { get; set; }
+
+        public string? StandardOutputLogPath { get; set; }
+
+        public string? StandardErrorLogPath { get; set; }
+
+        public DateTimeOffset? LastHealthRecoveryActionUtc { get; set; }
+    }
 }

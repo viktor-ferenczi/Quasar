@@ -21,13 +21,15 @@ Complete:
 - first health-monitoring and auto-recovery pass in the supervisor
 - initial runtime launch preparation with isolated app-data roots, runtime config sync, `LastSession.sbl`, and enforced headless launch shaping
 - neutral MudBlazor light/dark theming with local-storage persistence
-
-Pending:
-
 - file watching/reload for manual config edits
 - config editing migration from Python `webui/`
 - Quasar self-update staging and seamless cutover
 - cleanup of stale legacy docs and obsolete `webui/`
+
+No pending items remain in this short tracker. Active design/future notes live in:
+
+- [QuasarArchitecture.md](./QuasarArchitecture.md)
+- [QuasarUpdatePlan.md](./QuasarUpdatePlan.md)
 
 ## Final naming
 

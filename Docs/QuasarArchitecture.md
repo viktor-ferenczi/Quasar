@@ -776,11 +776,13 @@ As of this document:
 - first health-monitoring and auto-recovery pass exists for agent attach grace, heartbeat freshness, and uptime-based warning/recycle policy
 - initial runtime launch preparation now exists for isolated app-data roots, runtime config sync, `LastSession.sbl`, and enforced headless launch shaping
 - neutral light/dark theming exists with local-storage persistence
-- active-release pointer groundwork exists for staged relaunch
+- config editing is now migrated out of Python into Quasar-managed JSON profiles and rendered runtime artifacts
+- file watching/reload now exists for manual edits to Quasar-managed instance/profile JSON
+- `Quasar.Bootstrap` now owns the stable public endpoint and proxies active worker cutover
+- staged relaunch now persists supervisor runtime state so managed DS processes survive worker turnover
+- obsolete `webui/` is removed from the repository
 - per-instance isolated app-data path handling groundwork exists
 - Windows Service hosting is intentionally out of scope
-- config editing has not yet been migrated from Python
-- self-update staging and cutover are not yet implemented beyond active-release pointer groundwork
 - future shared-memory local bulk-state transport is planned but not implemented
 
 This document supersedes older assumptions that the DS plugin might directly own the long-running web host lifecycle.

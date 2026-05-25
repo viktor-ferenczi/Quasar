@@ -56,6 +56,9 @@ public static class MagnetarPaths
     public static string GetQuasarActiveReleasePath() =>
         Path.Combine(GetQuasarUpdatesDirectory(), "active-release.json");
 
+    public static string GetQuasarSupervisorStatePath() =>
+        Path.Combine(GetQuasarDirectory(), "supervisor-state.json");
+
     private static string SanitizePathSegment(string value)
     {
         if (string.IsNullOrWhiteSpace(value))

@@ -5,7 +5,12 @@ using System.Reflection;
 using System.Text.Json;
 using Magnetar.Protocol.Discovery;
 using Magnetar.Protocol.Runtime;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Yarp.ReverseProxy.Forwarder;
 
 namespace Quasar.Bootstrap;
@@ -24,22 +29,35 @@ internal static class Program
     public static async Task<int> Main(string[] args)
     {
         var quiet = args.Any(static arg => string.Equals(arg, "--quiet", StringComparison.OrdinalIgnoreCase));
+        var openBrowser = args.Any(static arg => string.Equals(arg, "--open-browser", StringComparison.OrdinalIgnoreCase));
+        var force = args.Any(static arg => string.Equals(arg, "--force", StringComparison.OrdinalIgnoreCase));
         var command = args.FirstOrDefault(arg => !arg.StartsWith("-", StringComparison.Ordinal)) ?? EnsureRunningCommand;
 
         return command.ToLowerInvariant() switch
         {
-            EnsureRunningCommand => await EnsureRunningAsync(quiet),
-            ServeCommand => await ServeAsync(),
+            EnsureRunningCommand => await EnsureRunningAsync(quiet, openBrowser, force),
+            ServeCommand => await ServeAsync(quiet),
             ActivateReleaseCommand => await ActivateReleaseAsync(args, quiet),
             _ => InvalidUsage(quiet),
         };
     }
 
-    private static async Task<int> EnsureRunningAsync(bool quiet)
+    private static async Task<int> EnsureRunningAsync(bool quiet, bool openBrowser = false, bool force = false)
     {
         var existing = await TryGetHealthyServiceUriAsync().ConfigureAwait(false);
         if (existing is not null)
-            return Complete(existing, quiet);
+        {
+            if (!force)
+                return Complete(existing, quiet, openBrowser);
+
+            if (!quiet)
+            {
+                Console.Error.WriteLine("Warning: a Quasar instance is already running.");
+                Console.Error.WriteLine("Terminating existing instance before relaunch (--force).");
+            }
+
+            await KillExistingInstanceAsync().ConfigureAwait(false);
+        }
 
         using var spawnMutex = new Mutex(false, SpawnMutexName);
         try
@@ -52,7 +70,26 @@ internal static class Program
 
         existing = await TryGetHealthyServiceUriAsync().ConfigureAwait(false);
         if (existing is not null)
-            return Complete(existing, quiet);
+        {
+            if (!force)
+                return Complete(existing, quiet, openBrowser);
+
+            // Another instance surfaced during the mutex wait; kill it too.
+            await KillExistingInstanceAsync().ConfigureAwait(false);
+        }
+
+        // If the port is already bound but no healthy Quasar responded, something else owns it.
+        // Fail fast rather than spawning a process that will silently exit due to EADDRINUSE.
+        if (!force)
+        {
+            var bootstrapOptions = BootstrapOptions.Create();
+            if (IsPortInUse(bootstrapOptions.Port, bootstrapOptions.AdvertisedHost))
+            {
+                if (!quiet)
+                    Console.Error.WriteLine($"Error: port {bootstrapOptions.Port} is already bound by another process and no healthy Quasar instance was detected. Use --force to terminate the existing process and restart.");
+                return 5;
+            }
+        }
 
         if (!TryBuildBootstrapLaunchSpec(out var fileName, out var arguments, out var workingDirectory))
         {
@@ -69,7 +106,7 @@ internal static class Program
             await Task.Delay(TimeSpan.FromSeconds(1)).ConfigureAwait(false);
             existing = await TryGetHealthyServiceUriAsync().ConfigureAwait(false);
             if (existing is not null)
-                return Complete(existing, quiet);
+                return Complete(existing, quiet, openBrowser);
         }
 
         if (!quiet)
@@ -78,9 +115,53 @@ internal static class Program
         return 4;
     }
 
-    private static async Task<int> ServeAsync()
+    private static async Task KillExistingInstanceAsync()
     {
+        var manifest = ReadManifest();
+        if (manifest is not null && manifest.ProcessId > 0)
+        {
+            try
+            {
+                var process = Process.GetProcessById(manifest.ProcessId);
+                process.Kill(entireProcessTree: true);
+            }
+            catch
+            {
+                // Process already gone or access denied — that is fine.
+            }
+        }
+
+        // Wait up to 15 s for the health endpoint to stop responding.
+        for (var attempt = 0; attempt < 15; attempt++)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(1)).ConfigureAwait(false);
+            if (await TryGetHealthyServiceUriAsync().ConfigureAwait(false) is null)
+                return;
+        }
+    }
+
+    private static async Task<int> ServeAsync(bool quiet = false)
+    {
+        // Guard against races: if another instance already bound the port and is healthy, exit gracefully.
+        var existing = await TryGetHealthyServiceUriAsync().ConfigureAwait(false);
+        if (existing is not null)
+            return 0;
+
         var options = BootstrapOptions.Create();
+
+        // Pre-bind check: detect port conflicts before attempting to start Kestrel so that
+        // callers get a fast, clear error instead of a silent exit-0 after EADDRINUSE.
+        if (IsPortInUse(options.Port, options.AdvertisedHost))
+        {
+            // Re-check health — another serve may have won the race during startup.
+            existing = await TryGetHealthyServiceUriAsync().ConfigureAwait(false);
+            if (existing is not null)
+                return 0;
+
+            if (!quiet)
+                Console.Error.WriteLine($"Error: port {options.Port} is already bound by another process and is not a healthy Quasar instance.");
+            return 1;
+        }
 
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseUrls(options.ListenUrl);
@@ -90,6 +171,16 @@ internal static class Program
         builder.Services.AddHttpForwarder();
 
         var app = builder.Build();
+
+        if (!quiet)
+        {
+            app.Lifetime.ApplicationStarted.Register(() =>
+            {
+                foreach (var address in app.Urls)
+                    Console.WriteLine($"{BootstrapOptions.SupervisorName} bootstrap listening on {address}");
+            });
+        }
+
         app.UseWebSockets(new WebSocketOptions
         {
             KeepAliveInterval = TimeSpan.FromSeconds(30),
@@ -110,8 +201,50 @@ internal static class Program
             await coordinator.ProxyAsync(context, forwarder);
         });
 
-        await app.RunAsync();
+        try
+        {
+            await app.RunAsync();
+        }
+        catch (IOException ex) when (IsAddressAlreadyInUse(ex))
+        {
+            // Another serve instance raced to bind the port — that is acceptable.
+            return 0;
+        }
+
         return 0;
+    }
+
+    private static bool IsPortInUse(int port, string host)
+    {
+        if (!IPAddress.TryParse(host, out var address) ||
+            address.Equals(IPAddress.Any) ||
+            address.Equals(IPAddress.IPv6Any))
+        {
+            address = IPAddress.Loopback;
+        }
+
+        try
+        {
+            using var tcp = new TcpClient();
+            tcp.Connect(address, port);
+            return true;
+        }
+        catch (SocketException)
+        {
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool IsAddressAlreadyInUse(IOException ex)
+    {
+        return ex.InnerException is SocketException { SocketErrorCode: SocketError.AddressAlreadyInUse }
+               || ex.Message.Contains("address already in use", StringComparison.OrdinalIgnoreCase)
+               // Windows: WSAEADDRINUSE message text
+               || ex.Message.Contains("Only one usage of each socket address", StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<int> ActivateReleaseAsync(string[] args, bool quiet)
@@ -158,7 +291,7 @@ internal static class Program
         return 0;
     }
 
-    private static int Complete(Uri uri, bool quiet)
+    private static int Complete(Uri uri, bool quiet, bool openBrowser = false)
     {
         if (!quiet)
         {
@@ -166,7 +299,32 @@ internal static class Program
             Console.WriteLine(uri.AbsoluteUri.TrimEnd('/'));
         }
 
+        if (openBrowser && !IsHeadless())
+            TryOpenBrowser(uri);
+
         return 0;
+    }
+
+    private static bool IsHeadless()
+    {
+        if (OperatingSystem.IsWindows())
+            return false;
+
+        // On Linux/macOS, require a display server to be present.
+        return string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY"))
+               && string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WAYLAND_DISPLAY"));
+    }
+
+    private static void TryOpenBrowser(Uri uri)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
+        }
+        catch
+        {
+            // Best-effort: failure to open browser is not fatal.
+        }
     }
 
     private static int InvalidUsage(bool quiet)
@@ -215,7 +373,13 @@ internal static class Program
 
     private static bool TryBuildBootstrapLaunchSpec(out string fileName, out string arguments, out string workingDirectory)
     {
-        var entryAssemblyPath = Assembly.GetEntryAssembly()?.Location;
+        var entryAssemblyName = Assembly.GetEntryAssembly()?.GetName().Name;
+        var entryAssemblyPath = string.IsNullOrWhiteSpace(entryAssemblyName)
+            ? string.Empty
+            : Path.Combine(AppContext.BaseDirectory, $"{entryAssemblyName}.dll");
+        if (!File.Exists(entryAssemblyPath))
+            entryAssemblyPath = string.Empty;
+
         var processPath = Environment.ProcessPath;
 
         if (!string.IsNullOrWhiteSpace(entryAssemblyPath) &&
@@ -291,9 +455,25 @@ internal static class Program
             WorkingDirectory = workingDirectory,
             UseShellExecute = false,
             CreateNoWindow = true,
+            // Redirect so the detached process's output does not bleed into the parent terminal.
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
         };
 
-        Process.Start(startInfo);
+        try
+        {
+            var process = Process.Start(startInfo);
+            if (process is null)
+                return;
+
+            // Drain output asynchronously so the child never blocks on a full pipe buffer.
+            _ = process.StandardOutput.ReadToEndAsync();
+            _ = process.StandardError.ReadToEndAsync();
+        }
+        catch
+        {
+            // Spawn failure is handled by the health-check polling loop in EnsureRunningAsync timing out.
+        }
     }
 
     private static bool IsDotNetHost(string processPath)

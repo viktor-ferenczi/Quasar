@@ -158,7 +158,9 @@ Recommended initial targets:
 - `win-x64`
 - `linux-x64`
 
-For the first pass, self-contained publish is the most operationally predictable option, because it removes dependency on a preinstalled .NET runtime on the target host. If artifact size becomes a problem later, framework-dependent publish can be reconsidered.
+For the first pass, self-contained publish is the most operationally predictable option for the main `Quasar` worker, because it removes dependency on a preinstalled .NET runtime on the target host.
+
+`Quasar.Bootstrap` is a good candidate for framework-dependent single-file publish instead: one launcher file per RID, smaller payload, host runtime still required.
 
 `Quasar.Agent` should be packaged as a managed plugin payload inside the release bundle, separate from worker RID differences.
 

@@ -22,6 +22,8 @@ public sealed class DedicatedServerInstanceDefinition
 
     public string ConfigProfileId { get; set; } = string.Empty;
 
+    public string WorldProfileId { get; set; } = string.Empty;
+
     public string LaunchArguments { get; set; } = string.Empty;
 
     public bool AutoStart { get; set; }

@@ -4,6 +4,7 @@
 @inject DedicatedServerSupervisor Supervisor
 @inject AgentRegistry Registry
 @inject QuasarConfigProfileCatalog ConfigProfiles
+@inject QuasarWorldProfileCatalog WorldProfiles
 @inject WebServiceOptions Options
 @inject ISnackbar Snackbar
 
@@ -27,17 +28,44 @@
                     @bind-Value="_editor.ExecutablePath"
                     Label="Launcher executable path"
                     Variant="Variant.Outlined"
-                    HelperText="Blank = Quasar-managed Magnetar install. If set to SpaceEngineersDedicated, Quasar still launches Magnetar and uses that folder for -ds64." />
-                <MudTextField @bind-Value="_editor.WorkingDirectory" Label="Working directory" Variant="Variant.Outlined" />
-                <MudTextField @bind-Value="_editor.DedicatedServerAppDataPath" Label="DS app-data path" Variant="Variant.Outlined" />
-                <MudTextField @bind-Value="_editor.MagnetarAppDataPath" Label="Magnetar app-data path" Variant="Variant.Outlined" />
-                <MudTextField @bind-Value="_editor.WorldPath" Label="World path" Variant="Variant.Outlined" />
-                <MudTextField @bind-Value="_editor.ConfigFilePath" Label="Rendered DS config path" Variant="Variant.Outlined" />
+                    HelperText="Leave blank — Quasar will auto-download and manage the Magnetar install. Only set this if you want to use your own copy." />
+                <MudTextField
+                    @bind-Value="_editor.WorkingDirectory"
+                    Label="Working directory"
+                    Variant="Variant.Outlined"
+                    HelperText="Leave blank to use the Magnetar install directory automatically." />
+                <MudTextField
+                    @bind-Value="_editor.DedicatedServerAppDataPath"
+                    Label="DS app-data path"
+                    Variant="Variant.Outlined"
+                    HelperText="@($"Space Engineers Dedicated Server data (-path). Default: {MagnetarPaths.GetQuasarInstanceDedicatedServerAppDataDirectory(_editor.InstanceId)}")" />
+                <MudTextField
+                    @bind-Value="_editor.MagnetarAppDataPath"
+                    Label="Magnetar app-data path"
+                    Variant="Variant.Outlined"
+                    HelperText="@($"Magnetar profiles and sources (-config). Default: {MagnetarPaths.GetQuasarInstanceMagnetarAppDataDirectory(_editor.InstanceId)}")" />
+                <MudTextField
+                    @bind-Value="_editor.WorldPath"
+                    Label="World path"
+                    Variant="Variant.Outlined"
+                    HelperText="@($"Must be an existing SE save folder containing Sandbox.sbc. Default (auto-created on first DS boot): {GetDefaultWorldPath()}")" />
+                <MudTextField
+                    @bind-Value="_editor.ConfigFilePath"
+                    Label="Rendered DS config path"
+                    Variant="Variant.Outlined"
+                    HelperText="@($"Quasar writes the rendered SpaceEngineers-Dedicated.cfg here. Default: {GetDefaultConfigFilePath()}")" />
                 <MudSelect T="string" @bind-Value="_editor.ConfigProfileId" Label="Config profile" Variant="Variant.Outlined" HelperText="Reusable world, plugin, and mod preset from Configs page.">
                     <MudSelectItem T="string" Value="@string.Empty">(No config profile)</MudSelectItem>
                     @foreach (var profile in ConfigProfiles.GetProfiles())
                     {
                         <MudSelectItem T="string" Value="@profile.ConfigProfileId">@profile.Name</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudSelect T="string" @bind-Value="_editor.WorldProfileId" Label="World profile" Variant="Variant.Outlined" HelperText="Blueprint world copied into the instance world path on first launch (only if the world directory does not already exist). Manage profiles on the World Profiles page.">
+                    <MudSelectItem T="string" Value="@string.Empty">(No world profile)</MudSelectItem>
+                    @foreach (var wp in WorldProfiles.GetProfiles())
+                    {
+                        <MudSelectItem T="string" Value="@wp.WorldProfileId">@wp.Name</MudSelectItem>
                     }
                 </MudSelect>
                 <MudTextField
@@ -153,6 +181,7 @@
         Supervisor.Changed += HandleChanged;
         Registry.Changed += HandleChanged;
         ConfigProfiles.Changed += HandleChanged;
+        WorldProfiles.Changed += HandleChanged;
     }
 
     public void Dispose()
@@ -161,6 +190,7 @@
         Supervisor.Changed -= HandleChanged;
         Registry.Changed -= HandleChanged;
         ConfigProfiles.Changed -= HandleChanged;
+        WorldProfiles.Changed -= HandleChanged;
     }
 
     private async Task SaveAsync()
@@ -244,6 +274,7 @@
             WorldPath = definition.WorldPath,
             ConfigFilePath = definition.ConfigFilePath,
             ConfigProfileId = definition.ConfigProfileId,
+            WorldProfileId = definition.WorldProfileId,
             LaunchArguments = definition.LaunchArguments,
             AutoStart = definition.AutoStart,
             EnableHealthMonitoring = definition.EnableHealthMonitoring,
@@ -382,10 +413,19 @@
 
     private DedicatedServerInstanceDefinition CreateBlank()
     {
+        var id = Guid.NewGuid().ToString("N");
         var healthMonitoringEnabled = !Options.DisableInstanceHealthMonitoring;
+        var dsAppDataPath = MagnetarPaths.GetQuasarInstanceDedicatedServerAppDataDirectory(id);
+        var magnetarAppDataPath = MagnetarPaths.GetQuasarInstanceMagnetarAppDataDirectory(id);
         return new DedicatedServerInstanceDefinition
         {
+            InstanceId = id,
             GoalState = DedicatedServerInstanceGoalState.Off,
+            // Pre-fill the Quasar-managed paths so users can see exactly where data will live.
+            // WorldPath is intentionally left blank — Normalize() derives it from DsAppDataPath + Name.
+            DedicatedServerAppDataPath = dsAppDataPath,
+            MagnetarAppDataPath = magnetarAppDataPath,
+            ConfigFilePath = Path.Combine(dsAppDataPath, "SpaceEngineers-Dedicated.cfg"),
             EnableHealthMonitoring = healthMonitoringEnabled,
             AutoRestartOnUnhealthy = healthMonitoringEnabled,
             AgentStartupGraceSeconds = 180,
@@ -396,5 +436,35 @@
             RestartDelaySeconds = 5,
             RestartOnCrash = true,
         };
+    }
+
+    /// <summary>
+    /// Returns the world path that Normalize() would auto-derive for the current editor state,
+    /// so it can be shown as helper text before the user saves.
+    /// </summary>
+    private string GetDefaultWorldPath()
+    {
+        var dsPath = string.IsNullOrWhiteSpace(_editor.DedicatedServerAppDataPath)
+            ? MagnetarPaths.GetQuasarInstanceDedicatedServerAppDataDirectory(_editor.InstanceId)
+            : _editor.DedicatedServerAppDataPath;
+
+        var worldName = string.IsNullOrWhiteSpace(_editor.Name)
+            ? _editor.InstanceId
+            : _editor.Name.Trim();
+
+        // Sanitise the same way the catalog does.
+        foreach (var ch in Path.GetInvalidFileNameChars())
+            worldName = worldName.Replace(ch, '-');
+
+        return Path.Combine(dsPath, "Saves", worldName);
+    }
+
+    private string GetDefaultConfigFilePath()
+    {
+        var dsPath = string.IsNullOrWhiteSpace(_editor.DedicatedServerAppDataPath)
+            ? MagnetarPaths.GetQuasarInstanceDedicatedServerAppDataDirectory(_editor.InstanceId)
+            : _editor.DedicatedServerAppDataPath;
+
+        return Path.Combine(dsPath, "SpaceEngineers-Dedicated.cfg");
     }
 }

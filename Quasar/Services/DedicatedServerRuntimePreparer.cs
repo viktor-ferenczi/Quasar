@@ -22,15 +22,18 @@ public sealed class DedicatedServerRuntimePreparer
     private readonly ILogger<DedicatedServerRuntimePreparer> _logger;
     private readonly WebServiceOptions _options;
     private readonly QuasarConfigProfileCatalog _configProfiles;
+    private readonly QuasarWorldProfileCatalog _worldProfiles;
 
     public DedicatedServerRuntimePreparer(
         ILogger<DedicatedServerRuntimePreparer> logger,
         WebServiceOptions options,
-        QuasarConfigProfileCatalog configProfiles)
+        QuasarConfigProfileCatalog configProfiles,
+        QuasarWorldProfileCatalog worldProfiles)
     {
         _logger = logger;
         _options = options;
         _configProfiles = configProfiles;
+        _worldProfiles = worldProfiles;
     }
 
     public async Task<PreparedDedicatedServerLaunch> PrepareAsync(
@@ -42,7 +45,7 @@ public sealed class DedicatedServerRuntimePreparer
 
         var dedicatedServerAppDataPath = RequirePath(definition.DedicatedServerAppDataPath, "DedicatedServerAppDataPath");
         var magnetarAppDataPath = RequirePath(definition.MagnetarAppDataPath, "MagnetarAppDataPath");
-        var worldPath = ResolveWorldPath(definition.WorldPath);
+        var worldPath = await ResolveOrSeedWorldPathAsync(definition, cancellationToken);
         var runtimeConfigPath = Path.Combine(dedicatedServerAppDataPath, "SpaceEngineers-Dedicated.cfg");
         var lastSessionPath = Path.Combine(dedicatedServerAppDataPath, "Saves", "LastSession.sbl");
         var configProfile = ResolveConfigProfile(definition);
@@ -341,6 +344,57 @@ public sealed class DedicatedServerRuntimePreparer
         sanitized = NoSplashPattern.Replace(sanitized, string.Empty);
         sanitized = Regex.Replace(sanitized, @"\s{2,}", " ");
         return sanitized.Trim();
+    }
+
+    private async Task<string> ResolveOrSeedWorldPathAsync(
+        DedicatedServerInstanceDefinition definition,
+        CancellationToken cancellationToken)
+    {
+        var worldPath = RequirePath(definition.WorldPath, "WorldPath");
+
+        // World already exists — validate and use it.
+        if (Directory.Exists(worldPath) && File.Exists(Path.Combine(worldPath, "Sandbox.sbc")))
+            return ResolveWorldPath(worldPath);
+
+        // World doesn't exist yet — seed from profile if one is set.
+        if (!string.IsNullOrWhiteSpace(definition.WorldProfileId))
+        {
+            var profile = _worldProfiles.GetProfile(definition.WorldProfileId)
+                ?? throw new InvalidOperationException($"Unknown world profile '{definition.WorldProfileId}' for instance '{definition.InstanceId}'.");
+
+            await SeedWorldFromProfileAsync(definition.WorldProfileId, worldPath, cancellationToken);
+            _logger.LogInformation(
+                "Seeded world for instance {InstanceId} from profile '{ProfileName}' at {WorldPath}.",
+                definition.InstanceId, profile.Name, worldPath);
+            return worldPath;
+        }
+
+        // No profile — fall through to standard validation (throws if missing).
+        return ResolveWorldPath(worldPath);
+    }
+
+    private async Task SeedWorldFromProfileAsync(
+        string worldProfileId,
+        string destWorldPath,
+        CancellationToken cancellationToken)
+    {
+        var sourceDir = _worldProfiles.GetWorldDirectory(worldProfileId);
+
+        if (!Directory.Exists(sourceDir))
+            throw new InvalidOperationException($"World profile '{worldProfileId}' has no stored world files at '{sourceDir}'.");
+
+        if (!File.Exists(Path.Combine(sourceDir, "Sandbox.sbc")))
+            throw new InvalidOperationException($"World profile '{worldProfileId}' is missing Sandbox.sbc.");
+
+        Directory.CreateDirectory(destWorldPath);
+        foreach (var sourceFile in Directory.EnumerateFiles(sourceDir, "*", SearchOption.AllDirectories))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var relative = Path.GetRelativePath(sourceDir, sourceFile);
+            var destFile = Path.Combine(destWorldPath, relative);
+            Directory.CreateDirectory(Path.GetDirectoryName(destFile)!);
+            File.Copy(sourceFile, destFile, overwrite: false);
+        }
     }
 
     private static string ResolveWorldPath(string worldPath)

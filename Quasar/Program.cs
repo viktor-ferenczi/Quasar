@@ -38,6 +38,7 @@ public class Program
             builder.Services.AddSingleton<KnownPlayerCatalog>();
             builder.Services.AddSingleton<AgentRegistry>();
             builder.Services.AddSingleton<QuasarConfigProfileCatalog>();
+            builder.Services.AddSingleton<QuasarWorldProfileCatalog>();
             builder.Services.AddSingleton<QuasarPluginCatalogService>();
             builder.Services.AddSingleton<QuasarWorkshopModResolver>();
             builder.Services.AddSingleton<ManagedDedicatedServerRuntimeResolver>();
@@ -49,6 +50,7 @@ public class Program
             builder.Services.AddHostedService(serviceProvider => serviceProvider.GetRequiredService<DedicatedServerSupervisor>());
             builder.Services.AddHostedService<WebServiceManifestHostedService>();
             builder.Services.AddScoped<ThemePreferenceService>();
+            builder.Services.AddSingleton<QuasarShutdownService>();
 
             var app = builder.Build();
 

@@ -23,7 +23,11 @@
                     <MudSelectItem Value="DedicatedServerInstanceGoalState.Off">Off</MudSelectItem>
                     <MudSelectItem Value="DedicatedServerInstanceGoalState.On">On</MudSelectItem>
                 </MudSelect>
-                <MudTextField @bind-Value="_editor.ExecutablePath" Label="Dedicated server executable path" Variant="Variant.Outlined" />
+                <MudTextField
+                    @bind-Value="_editor.ExecutablePath"
+                    Label="Launcher executable path"
+                    Variant="Variant.Outlined"
+                    HelperText="Blank = Quasar-managed Magnetar install. If set to SpaceEngineersDedicated, Quasar still launches Magnetar and uses that folder for -ds64." />
                 <MudTextField @bind-Value="_editor.WorkingDirectory" Label="Working directory" Variant="Variant.Outlined" />
                 <MudTextField @bind-Value="_editor.DedicatedServerAppDataPath" Label="DS app-data path" Variant="Variant.Outlined" />
                 <MudTextField @bind-Value="_editor.MagnetarAppDataPath" Label="Magnetar app-data path" Variant="Variant.Outlined" />
@@ -40,7 +44,7 @@
                     @bind-Value="_editor.LaunchArguments"
                     Label="Launch arguments"
                     Variant="Variant.Outlined"
-                    HelperText="Tokens: {instanceId} {configPath} {quasarBaseUrl} {nodeId} {dsAppDataPath} {magnetarAppDataPath} {worldPath}. Quasar also enforces headless flags and -path for managed instances." />
+                    HelperText="Tokens: {instanceId} {configPath} {quasarBaseUrl} {nodeId} {dsAppDataPath} {magnetarAppDataPath} {ds64Path} {worldPath}. Quasar enforces -noconsole, -path, -config, and -ds64 for managed instances." />
                 <MudNumericField T="int" @bind-Value="_editor.RestartDelaySeconds" Label="Restart delay (seconds)" Variant="Variant.Outlined" Min="0" />
                 <MudNumericField T="int" @bind-Value="_editor.MaxRestartAttempts" Label="Max restart attempts (0 = unlimited)" Variant="Variant.Outlined" Min="0" />
                 <MudCheckBox @bind-Value="_editor.RestartOnCrash" Label="Restart when process crashes" />
@@ -164,12 +168,6 @@
         if (string.IsNullOrWhiteSpace(_editor.Name))
         {
             Snackbar.Add("Instance name required.", Severity.Warning);
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(_editor.ExecutablePath))
-        {
-            Snackbar.Add("Executable path required.", Severity.Warning);
             return;
         }
 

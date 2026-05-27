@@ -12,7 +12,9 @@ public sealed class DedicatedServerRuntimePreparer
     private static readonly Regex IgnoreLastSessionPattern = new(@"(?<!\S)-ignorelastsession(?!\S)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
     private static readonly Regex ConsolePattern = new(@"(?<!\S)-console(?!\S)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
     private static readonly Regex NoConsolePattern = new(@"(?<!\S)-noconsole(?!\S)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
-    private static readonly Regex PathPattern = new(@"(?<!\S)-path(?!\S)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+    private static readonly Regex PathOptionPattern = new(@"(?<!\S)-path(?!\S)(?:\s+(?:""(?:""""|\\.|[^""])*""|\S+))?", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+    private static readonly Regex ConfigOptionPattern = new(@"(?<!\S)-config(?!\S)(?:\s+(?:""(?:""""|\\.|[^""])*""|\S+))?", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+    private static readonly Regex Ds64OptionPattern = new(@"(?<!\S)-ds64(?!\S)(?:\s+(?:""(?:""""|\\.|[^""])*""|\S+))?", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
     private static readonly Regex NoSplashPattern = new(@"(?<!\S)-nosplash(?!\S)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
     private static readonly XNamespace XsiNamespace = "http://www.w3.org/2001/XMLSchema-instance";
     private static readonly XNamespace XsdNamespace = "http://www.w3.org/2001/XMLSchema";
@@ -33,6 +35,7 @@ public sealed class DedicatedServerRuntimePreparer
 
     public async Task<PreparedDedicatedServerLaunch> PrepareAsync(
         DedicatedServerInstanceDefinition definition,
+        string dedicatedServer64Path,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(definition);
@@ -56,6 +59,7 @@ public sealed class DedicatedServerRuntimePreparer
             definition,
             dedicatedServerAppDataPath,
             magnetarAppDataPath,
+            dedicatedServer64Path,
             worldPath,
             runtimeConfigPath,
             _options);
@@ -63,6 +67,7 @@ public sealed class DedicatedServerRuntimePreparer
         return new PreparedDedicatedServerLaunch(
             dedicatedServerAppDataPath,
             magnetarAppDataPath,
+            dedicatedServer64Path,
             worldPath,
             runtimeConfigPath,
             lastSessionPath,
@@ -148,8 +153,10 @@ public sealed class DedicatedServerRuntimePreparer
     {
         var sourcesDirectory = Path.Combine(magnetarAppDataPath, "Sources");
         var profilesDirectory = Path.Combine(magnetarAppDataPath, "Profiles");
+        var localDirectory = Path.Combine(magnetarAppDataPath, "Local");
         Directory.CreateDirectory(sourcesDirectory);
         Directory.CreateDirectory(profilesDirectory);
+        Directory.CreateDirectory(localDirectory);
 
         var currentProfileName = string.IsNullOrWhiteSpace(configProfile?.Name)
             ? "Quasar Current"
@@ -268,6 +275,7 @@ public sealed class DedicatedServerRuntimePreparer
         DedicatedServerInstanceDefinition definition,
         string dedicatedServerAppDataPath,
         string magnetarAppDataPath,
+        string dedicatedServer64Path,
         string worldPath,
         string runtimeConfigPath,
         WebServiceOptions options)
@@ -276,35 +284,33 @@ public sealed class DedicatedServerRuntimePreparer
             definition,
             dedicatedServerAppDataPath,
             magnetarAppDataPath,
+            dedicatedServer64Path,
             worldPath,
             runtimeConfigPath,
             options);
         if (IgnoreLastSessionPattern.IsMatch(baseArguments))
             throw new InvalidOperationException("Launch arguments cannot include -ignorelastsession for Quasar-managed instances.");
 
-        var additions = new List<string>();
-        if (!ConsolePattern.IsMatch(baseArguments) && !NoConsolePattern.IsMatch(baseArguments))
-            additions.Add("-noconsole");
+        var sanitizedArguments = StripManagedArguments(baseArguments);
+        var additions = new[]
+        {
+            "-noconsole",
+            $"-path {QuoteArgument(dedicatedServerAppDataPath)}",
+            $"-config {QuoteArgument(magnetarAppDataPath)}",
+            $"-ds64 {QuoteArgument(dedicatedServer64Path)}",
+        };
 
-        if (!PathPattern.IsMatch(baseArguments))
-            additions.Add($"-path {QuoteArgument(dedicatedServerAppDataPath)}");
-
-        if (!NoSplashPattern.IsMatch(baseArguments))
-            additions.Add("-nosplash");
-
-        if (additions.Count == 0)
-            return baseArguments;
-
-        if (string.IsNullOrWhiteSpace(baseArguments))
+        if (string.IsNullOrWhiteSpace(sanitizedArguments))
             return string.Join(" ", additions);
 
-        return $"{baseArguments} {string.Join(" ", additions)}";
+        return $"{sanitizedArguments} {string.Join(" ", additions)}";
     }
 
     private static string ExpandLaunchArguments(
         DedicatedServerInstanceDefinition definition,
         string dedicatedServerAppDataPath,
         string magnetarAppDataPath,
+        string dedicatedServer64Path,
         string worldPath,
         string runtimeConfigPath,
         WebServiceOptions options)
@@ -317,7 +323,24 @@ public sealed class DedicatedServerRuntimePreparer
             .Replace("{nodeId}", options.NodeId, StringComparison.OrdinalIgnoreCase)
             .Replace("{dsAppDataPath}", QuoteArgument(dedicatedServerAppDataPath), StringComparison.OrdinalIgnoreCase)
             .Replace("{magnetarAppDataPath}", QuoteArgument(magnetarAppDataPath), StringComparison.OrdinalIgnoreCase)
+            .Replace("{ds64Path}", QuoteArgument(dedicatedServer64Path), StringComparison.OrdinalIgnoreCase)
             .Replace("{worldPath}", QuoteArgument(worldPath), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string StripManagedArguments(string arguments)
+    {
+        if (string.IsNullOrWhiteSpace(arguments))
+            return string.Empty;
+
+        var sanitized = arguments;
+        sanitized = ConsolePattern.Replace(sanitized, string.Empty);
+        sanitized = NoConsolePattern.Replace(sanitized, string.Empty);
+        sanitized = PathOptionPattern.Replace(sanitized, string.Empty);
+        sanitized = ConfigOptionPattern.Replace(sanitized, string.Empty);
+        sanitized = Ds64OptionPattern.Replace(sanitized, string.Empty);
+        sanitized = NoSplashPattern.Replace(sanitized, string.Empty);
+        sanitized = Regex.Replace(sanitized, @"\s{2,}", " ");
+        return sanitized.Trim();
     }
 
     private static string ResolveWorldPath(string worldPath)
@@ -430,6 +453,7 @@ public sealed class DedicatedServerRuntimePreparer
 public sealed record PreparedDedicatedServerLaunch(
     string DedicatedServerAppDataPath,
     string MagnetarAppDataPath,
+    string DedicatedServer64Path,
     string WorldPath,
     string RuntimeConfigPath,
     string LastSessionPath,

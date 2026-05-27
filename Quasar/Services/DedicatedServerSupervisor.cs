@@ -19,6 +19,7 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
     private readonly DedicatedServerInstanceCatalog _catalog;
     private readonly AgentRegistry _registry;
     private readonly DedicatedServerRuntimePreparer _runtimePreparer;
+    private readonly ManagedDedicatedServerRuntimeResolver _runtimeResolver;
     private readonly WebServiceOptions _options;
     private readonly ILogger<DedicatedServerSupervisor> _logger;
     private readonly CancellationTokenSource _shutdown = new();
@@ -31,12 +32,14 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
         DedicatedServerInstanceCatalog catalog,
         AgentRegistry registry,
         DedicatedServerRuntimePreparer runtimePreparer,
+        ManagedDedicatedServerRuntimeResolver runtimeResolver,
         WebServiceOptions options,
         ILogger<DedicatedServerSupervisor> logger)
     {
         _catalog = catalog;
         _registry = registry;
         _runtimePreparer = runtimePreparer;
+        _runtimeResolver = runtimeResolver;
         _options = options;
         _logger = logger;
     }
@@ -333,14 +336,26 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
     private async Task StartProcessAsync(ManagedInstanceState state, CancellationToken cancellationToken)
     {
         var definition = state.Definition;
-        var executablePath = definition.ExecutablePath?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(executablePath) || !File.Exists(executablePath))
+        ResolvedDedicatedServerRuntime runtime;
+        try
+        {
+            runtime = await _runtimeResolver.ResolveAsync(definition, cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            SetFaulted(state.InstanceId, exception.Message);
+            _logger.LogWarning(exception, "Failed resolving managed runtime for instance {InstanceId}.", state.InstanceId);
+            return;
+        }
+
+        var executablePath = runtime.ExecutablePath;
+        var workingDirectory = runtime.WorkingDirectory;
+        if (!File.Exists(executablePath))
         {
             SetFaulted(state.InstanceId, $"Executable not found: {executablePath}");
             return;
         }
 
-        var workingDirectory = ResolveWorkingDirectory(definition, executablePath);
         if (!Directory.Exists(workingDirectory))
         {
             SetFaulted(state.InstanceId, $"Working directory not found: {workingDirectory}");
@@ -350,7 +365,7 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
         PreparedDedicatedServerLaunch launch;
         try
         {
-            launch = await _runtimePreparer.PrepareAsync(definition, cancellationToken);
+            launch = await _runtimePreparer.PrepareAsync(definition, runtime.DedicatedServer64Path, cancellationToken);
         }
         catch (Exception exception)
         {
@@ -385,6 +400,7 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
         process.StartInfo.Environment["MAGNETAR_NODE_ID"] = _options.NodeId;
         process.StartInfo.Environment["QUASAR_DS_APPDATA_PATH"] = launch.DedicatedServerAppDataPath;
         process.StartInfo.Environment["QUASAR_MAGNETAR_APPDATA_PATH"] = launch.MagnetarAppDataPath;
+        process.StartInfo.Environment["QUASAR_DS64_PATH"] = launch.DedicatedServer64Path;
         process.StartInfo.Environment["QUASAR_WORLD_PATH"] = launch.WorldPath;
         process.StartInfo.Environment["QUASAR_DS_CONFIG_PATH"] = launch.RuntimeConfigPath;
         process.StartInfo.Environment["QUASAR_LAST_SESSION_PATH"] = launch.LastSessionPath;
@@ -686,14 +702,6 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
 
         _logger.LogWarning("Instance {InstanceId} faulted: {Message}", instanceId, message);
         NotifyChanged();
-    }
-
-    private static string ResolveWorkingDirectory(DedicatedServerInstanceDefinition definition, string executablePath)
-    {
-        if (!string.IsNullOrWhiteSpace(definition.WorkingDirectory))
-            return definition.WorkingDirectory.Trim();
-
-        return Path.GetDirectoryName(executablePath) ?? AppContext.BaseDirectory;
     }
 
     private static async Task PumpOutputAsync(StreamReader reader, string path, CancellationToken cancellationToken)

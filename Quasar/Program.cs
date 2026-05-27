@@ -18,6 +18,7 @@ public class Program
                 builder.WebHost.UseStaticWebAssets();
 
             var webServiceOptions = WebServiceOptions.Create(builder.Configuration);
+            var managedRuntimeOptions = ManagedRuntimeOptions.Create(builder.Configuration);
 
             QuasarLoggingConfigurator.Configure(builder, webServiceOptions);
 
@@ -33,11 +34,13 @@ public class Program
                 configuration.SnackbarConfiguration.PositionClass = Defaults.Classes.Position.BottomRight;
             });
             builder.Services.AddSingleton(webServiceOptions);
+            builder.Services.AddSingleton(managedRuntimeOptions);
             builder.Services.AddSingleton<KnownPlayerCatalog>();
             builder.Services.AddSingleton<AgentRegistry>();
             builder.Services.AddSingleton<QuasarConfigProfileCatalog>();
             builder.Services.AddSingleton<QuasarPluginCatalogService>();
             builder.Services.AddSingleton<QuasarWorkshopModResolver>();
+            builder.Services.AddSingleton<ManagedDedicatedServerRuntimeResolver>();
             builder.Services.AddSingleton<DedicatedServerInstanceCatalog>();
             builder.Services.AddSingleton<DedicatedServerSupervisor>();
             builder.Services.AddSingleton<DedicatedServerRuntimePreparer>();

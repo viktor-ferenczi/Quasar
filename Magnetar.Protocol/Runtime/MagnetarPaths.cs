@@ -50,6 +50,21 @@ public static class MagnetarPaths
     public static string GetQuasarUpdatesDirectory() =>
         Path.Combine(GetQuasarDirectory(), "Updates");
 
+    public static string GetQuasarManagedRuntimeDirectory() =>
+        Path.Combine(GetQuasarDirectory(), "ManagedRuntime");
+
+    public static string GetQuasarManagedRuntimeCacheDirectory() =>
+        Path.Combine(GetQuasarManagedRuntimeDirectory(), "Cache");
+
+    public static string GetQuasarManagedRuntimeToolsDirectory() =>
+        Path.Combine(GetQuasarManagedRuntimeDirectory(), "Tools");
+
+    public static string GetQuasarManagedMagnetarInstallDirectory() =>
+        Path.Combine(GetQuasarManagedRuntimeToolsDirectory(), "Magnetar");
+
+    public static string GetQuasarManagedDedicatedServerInstallDirectory() =>
+        Path.Combine(GetQuasarManagedRuntimeToolsDirectory(), "SpaceEngineersDedicatedServer");
+
     public static string GetQuasarStagingDirectory() =>
         Path.Combine(GetQuasarUpdatesDirectory(), "Staged");
 

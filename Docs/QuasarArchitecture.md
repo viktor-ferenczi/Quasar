@@ -361,9 +361,10 @@ Launch arguments remain configurable per instance, but Quasar should treat `Last
 
 Quasar should minimize background-start clutter:
 
-- on Linux, headless launches should not show a Magnetar splash
-- on Windows, background or multi-instance startup should use `-nosplash`
-- manual foreground/debug launches may still keep the Magnetar loading splash available for diagnosis
+- Quasar should launch Magnetar headless with `-noconsole`
+- Quasar should pass instance-specific `-path` and `-config` roots
+- Quasar should pass explicit `-ds64` so Magnetar targets the intended DS install
+- `-nosplash` is no longer required for current Magnetar builds
 
 ## Logging
 

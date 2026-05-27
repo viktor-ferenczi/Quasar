@@ -380,6 +380,17 @@ internal static class Program
         if (!File.Exists(entryAssemblyPath))
             entryAssemblyPath = string.Empty;
 
+        // Reject DLL paths that lack a sibling runtimeconfig.json — this happens when the
+        // bootstrap is invoked from the obj/ intermediate directory after a RID-targeted build
+        // moved runtimeconfig.json into the bin/<rid>/ output.  Using such a path causes the
+        // dotnet host to attempt self-contained execution and fail with libhostpolicy errors.
+        if (!string.IsNullOrWhiteSpace(entryAssemblyPath))
+        {
+            var runtimeConfigPath = Path.ChangeExtension(entryAssemblyPath, ".runtimeconfig.json");
+            if (!File.Exists(runtimeConfigPath))
+                entryAssemblyPath = string.Empty;
+        }
+
         var processPath = Environment.ProcessPath;
 
         if (!string.IsNullOrWhiteSpace(entryAssemblyPath) &&
@@ -392,7 +403,10 @@ internal static class Program
             return true;
         }
 
-        if (!string.IsNullOrWhiteSpace(processPath))
+        // Only use processPath as a direct binary if it is NOT the dotnet host.
+        // When processPath is the dotnet host and entryAssemblyPath is unavailable (e.g. no
+        // runtimeconfig.json in the DLL's directory), spawning "dotnet serve --quiet" is wrong.
+        if (!string.IsNullOrWhiteSpace(processPath) && !IsDotNetHost(processPath))
         {
             fileName = processPath;
             arguments = $"{ServeCommand} --quiet";

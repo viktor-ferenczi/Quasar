@@ -211,8 +211,16 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
 
     public void Dispose()
     {
-        _persistDebounce?.Cancel();
-        _persistDebounce?.Dispose();
+        // Take ownership under the same lock used by SchedulePersistState so we cannot
+        // race with a concurrent cancel/dispose/recreate of _persistDebounce.
+        CancellationTokenSource? debounce;
+        lock (_sync)
+        {
+            debounce = _persistDebounce;
+            _persistDebounce = null;
+        }
+        debounce?.Cancel();
+        debounce?.Dispose();
         _shutdown.Dispose();
     }
 

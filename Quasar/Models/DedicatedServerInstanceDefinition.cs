@@ -51,4 +51,36 @@ public sealed class DedicatedServerInstanceDefinition
     public int MaxRestartAttempts { get; set; }
 
     public DateTimeOffset UpdatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+
+    public DedicatedServerInstanceDefinition Clone()
+    {
+        return new DedicatedServerInstanceDefinition
+        {
+            InstanceId = InstanceId,
+            Name = Name,
+            GoalState = GoalState,
+            ExecutablePath = ExecutablePath,
+            WorkingDirectory = WorkingDirectory,
+            DedicatedServerAppDataPath = DedicatedServerAppDataPath,
+            MagnetarAppDataPath = MagnetarAppDataPath,
+            WorldPath = WorldPath,
+            ConfigFilePath = ConfigFilePath,
+            ConfigProfileId = ConfigProfileId,
+            WorldProfileId = WorldProfileId,
+            LaunchArguments = LaunchArguments,
+            AutoStart = AutoStart,
+            EnableHealthMonitoring = EnableHealthMonitoring,
+            AutoRestartOnUnhealthy = AutoRestartOnUnhealthy,
+            AgentStartupGraceSeconds = AgentStartupGraceSeconds,
+            AgentHeartbeatTimeoutSeconds = AgentHeartbeatTimeoutSeconds,
+            SimulationProgressWindowSeconds = SimulationProgressWindowSeconds,
+            MinimumSimulationProgressScore = MinimumSimulationProgressScore,
+            WarnAfterUptimeHours = WarnAfterUptimeHours,
+            RecycleAfterUptimeHours = RecycleAfterUptimeHours,
+            RestartOnCrash = RestartOnCrash,
+            RestartDelaySeconds = RestartDelaySeconds,
+            MaxRestartAttempts = MaxRestartAttempts,
+            UpdatedAtUtc = UpdatedAtUtc,
+        };
+    }
 }

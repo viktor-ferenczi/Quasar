@@ -1,0 +1,5 @@
+.instance-editor-dialog-content {
+    max-height: min(75vh, 56rem);
+    overflow-y: auto;
+    padding-right: 0.25rem;
+}

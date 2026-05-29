@@ -133,20 +133,81 @@
 </MudGrid>
 
 <MudPaper Class="pa-4 mt-4">
+    @{
+        var deathTemplateCategories = GetDeathMessageCategories();
+        var deathTemplateCount = deathTemplateCategories.Sum(category => CountDeathMessageLines(category.EditorText));
+    }
     <MudStack Spacing="2">
         <MudText Typo="Typo.h6">Death Message Templates</MudText>
         <MudText Typo="Typo.body2">
             Edit <span class="mono">@MagnetarPaths.GetQuasarDeathMessagesPath()</span> for custom per-death-type templates using <code>{victim}</code>, <code>{killer}</code>, and <code>{weapon}</code>.
         </MudText>
-        <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="ResetDeathTemplatesAsync">
-            Reset to Defaults
-        </MudButton>
+        <MudText Typo="Typo.caption">
+            Current Quasar categories and full template lines shown below.
+        </MudText>
+        <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveDeathTemplatesAsync">
+                Save Death Templates
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="ResetDeathTemplatesAsync">
+                Reset to Defaults
+            </MudButton>
+        </MudStack>
+
+        <MudExpansionPanels MultiExpansion="true" Elevation="0" Outlined="true" Dense="true">
+            <MudExpansionPanel>
+                <TitleContent>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="w-100">
+                        <MudStack Spacing="0">
+                            <MudText Typo="Typo.subtitle1">Quasar Defaults</MudText>
+                            <MudText Typo="Typo.caption">
+                                One line per template. Press Enter for another line.
+                            </MudText>
+                        </MudStack>
+                        <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
+                            <MudChip T="string" Variant="Variant.Outlined" Size="Size.Small">@deathTemplateCategories.Count categories</MudChip>
+                            <MudChip T="string" Variant="Variant.Outlined" Size="Size.Small">@deathTemplateCount lines</MudChip>
+                        </MudStack>
+                    </MudStack>
+                </TitleContent>
+                <ChildContent>
+                    <MudGrid Class="mt-2">
+                        @foreach (var category in deathTemplateCategories)
+                        {
+                            <MudItem xs="12" md="6">
+                                <MudPaper Class="pa-3" Outlined="true" @key="category.Key">
+                                    <MudStack Spacing="2">
+                                        <MudStack Row="true" AlignItems="AlignItems.Start" Justify="Justify.SpaceBetween">
+                                            <MudStack Spacing="0">
+                                                <MudText Typo="Typo.subtitle1">@category.Title</MudText>
+                                                <MudText Typo="Typo.caption">@category.Description</MudText>
+                                            </MudStack>
+                                            <MudChip T="string" Variant="Variant.Outlined" Size="Size.Small">@CountDeathMessageLines(category.EditorText)</MudChip>
+                                        </MudStack>
+
+                                        <MudTextField T="string"
+                                                      Value="@category.EditorText"
+                                                      ValueChanged="@(value => SetDeathMessageEditorText(category.Key, value ?? string.Empty))"
+                                                      Label="@($"{category.Title} templates")"
+                                                      Variant="Variant.Outlined"
+                                                      Lines="6"
+                                                      Immediate="true"
+                                                      HelperText="One non-empty line per message template." />
+                                    </MudStack>
+                                </MudPaper>
+                            </MudItem>
+                        }
+                    </MudGrid>
+                </ChildContent>
+            </MudExpansionPanel>
+        </MudExpansionPanels>
     </MudStack>
 </MudPaper>
 
 @code
 {
     private DiscordOptions _options = new();
+    private DeathMessagesConfig _deathMessageConfig = DeathMessagesConfig.CreateDefault();
 
     private IReadOnlyList<DedicatedServerInstanceDefinition> InstanceDefinitions => InstanceCatalog.GetInstances();
 
@@ -155,18 +216,19 @@
     protected override void OnInitialized()
     {
         ReloadOptions();
-        DiscordOptionsCatalog.Changed += HandleChanged;
-        DeathMessagesCatalog.Changed += HandleChanged;
-        InstanceCatalog.Changed += HandleChanged;
-        DiscordBotService.Changed += HandleChanged;
+        ReloadDeathMessageEditors();
+        DiscordOptionsCatalog.Changed += HandleOptionsChanged;
+        DeathMessagesCatalog.Changed += HandleDeathMessagesChanged;
+        InstanceCatalog.Changed += HandleInstanceCatalogChanged;
+        DiscordBotService.Changed += HandleBotStatusChanged;
     }
 
     public void Dispose()
     {
-        DiscordOptionsCatalog.Changed -= HandleChanged;
-        DeathMessagesCatalog.Changed -= HandleChanged;
-        InstanceCatalog.Changed -= HandleChanged;
-        DiscordBotService.Changed -= HandleChanged;
+        DiscordOptionsCatalog.Changed -= HandleOptionsChanged;
+        DeathMessagesCatalog.Changed -= HandleDeathMessagesChanged;
+        InstanceCatalog.Changed -= HandleInstanceCatalogChanged;
+        DiscordBotService.Changed -= HandleBotStatusChanged;
     }
 
     private async Task SaveBotSettingsAsync()
@@ -202,7 +264,22 @@
         try
         {
             await DeathMessagesCatalog.ResetAsync();
+            ReloadDeathMessageEditors();
             Snackbar.Add("Death message templates reset.", Severity.Success);
+        }
+        catch (Exception exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Error);
+        }
+    }
+
+    private async Task SaveDeathTemplatesAsync()
+    {
+        try
+        {
+            await DeathMessagesCatalog.SaveAsync(_deathMessageConfig.Clone());
+            ReloadDeathMessageEditors();
+            Snackbar.Add("Death message templates saved.", Severity.Success);
         }
         catch (Exception exception)
         {
@@ -232,6 +309,77 @@
     {
         _options = DiscordOptionsCatalog.GetOptions();
         SyncInstanceOptions();
+    }
+
+    private void ReloadDeathMessageEditors()
+    {
+        _deathMessageConfig = DeathMessagesCatalog.GetConfig();
+    }
+
+    private IReadOnlyList<DeathMessageCategoryView> GetDeathMessageCategories()
+    {
+        return
+        [
+            new("Suicide", "Suicide", "Self-inflicted and respawn deaths.", JoinDeathMessageLines(_deathMessageConfig.SuicideMessages)),
+            new("PvP", "PvP", "Player-vs-player kills with named killer and weapon.", JoinDeathMessageLines(_deathMessageConfig.PvPMessages)),
+            new("Turret", "Turret", "Turret or automated weapon kills.", JoinDeathMessageLines(_deathMessageConfig.TurretMessages)),
+            new("Grid", "Grid", "Ship, grid, or landing gear impact deaths.", JoinDeathMessageLines(_deathMessageConfig.GridMessages)),
+            new("Oxygen", "Oxygen", "No-air and suffocation deaths.", JoinDeathMessageLines(_deathMessageConfig.OxygenMessages)),
+            new("Pressure", "Pressure", "Environmental pressure and decompression deaths.", JoinDeathMessageLines(_deathMessageConfig.PressureMessages)),
+            new("Collision", "Collision", "Falls, crashes, and high-speed impacts.", JoinDeathMessageLines(_deathMessageConfig.CollisionMessages)),
+            new("Accident", "Accident", "Fallback accidental deaths.", JoinDeathMessageLines(_deathMessageConfig.AccidentMessages)),
+        ];
+    }
+
+    private void SetDeathMessageEditorText(string key, string value)
+    {
+        var lines = ParseDeathMessageLines(value);
+
+        switch (key)
+        {
+            case "Suicide":
+                _deathMessageConfig.SuicideMessages = lines;
+                break;
+            case "PvP":
+                _deathMessageConfig.PvPMessages = lines;
+                break;
+            case "Turret":
+                _deathMessageConfig.TurretMessages = lines;
+                break;
+            case "Grid":
+                _deathMessageConfig.GridMessages = lines;
+                break;
+            case "Oxygen":
+                _deathMessageConfig.OxygenMessages = lines;
+                break;
+            case "Pressure":
+                _deathMessageConfig.PressureMessages = lines;
+                break;
+            case "Collision":
+                _deathMessageConfig.CollisionMessages = lines;
+                break;
+            case "Accident":
+                _deathMessageConfig.AccidentMessages = lines;
+                break;
+        }
+    }
+
+    private static string JoinDeathMessageLines(IEnumerable<string> values)
+    {
+        return string.Join(Environment.NewLine, values);
+    }
+
+    private static List<string> ParseDeathMessageLines(string value)
+    {
+        return value
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .ToList();
+    }
+
+    private static int CountDeathMessageLines(string value)
+    {
+        return ParseDeathMessageLines(value).Count;
     }
 
     private void SyncInstanceOptions()
@@ -275,9 +423,28 @@
         return BotStatus.StateText;
     }
 
-    private void HandleChanged()
+    private void HandleOptionsChanged()
     {
         ReloadOptions();
         _ = InvokeAsync(StateHasChanged);
     }
+
+    private void HandleDeathMessagesChanged()
+    {
+        ReloadDeathMessageEditors();
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleInstanceCatalogChanged()
+    {
+        ReloadOptions();
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleBotStatusChanged()
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private sealed record DeathMessageCategoryView(string Key, string Title, string Description, string EditorText);
 }

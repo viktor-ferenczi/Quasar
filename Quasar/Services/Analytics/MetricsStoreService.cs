@@ -31,6 +31,7 @@ public sealed class MetricsStoreService : IHostedService, IDisposable
     private DateTimeOffset _lastPersistUtc = DateTimeOffset.UtcNow;
     private int _itemsSincePersistCheck;
     private int _persistInFlight;
+    private int _disposed;
 
     public MetricsStoreService(
         DedicatedServerInstanceCatalog catalog,
@@ -42,7 +43,17 @@ public sealed class MetricsStoreService : IHostedService, IDisposable
 
     public void Dispose()
     {
-        _shutdown.Cancel();
+        if (Interlocked.Exchange(ref _disposed, 1) == 1)
+            return;
+
+        try
+        {
+            _shutdown.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
         _shutdown.Dispose();
     }
 

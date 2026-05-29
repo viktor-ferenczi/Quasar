@@ -1,0 +1,229 @@
+<MudDialog>
+    <DialogContent>
+        <div class="instance-editor-dialog-content">
+        <MudStack Spacing="3">
+            <MudText Typo="Typo.body2">
+                Define the full Quasar-managed instance here. Create and edit use the same workflow so paths, launch settings, and health policy stay in one place.
+            </MudText>
+
+            <section>
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Identity</MudText>
+                <MudGrid>
+                    <MudItem xs="12" md="6">
+                        <MudTextField Value="_editor.InstanceId" Label="Instance ID" Variant="Variant.Outlined" ReadOnly="true" Class="mono" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="DedicatedServerInstanceGoalState" @bind-Value="_editor.GoalState" Label="Goal state" Variant="Variant.Outlined">
+                            <MudSelectItem Value="DedicatedServerInstanceGoalState.Off">Off</MudSelectItem>
+                            <MudSelectItem Value="DedicatedServerInstanceGoalState.On">On</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField @bind-Value="_editor.Name" Label="Display name" Variant="Variant.Outlined" Immediate="true" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="string" @bind-Value="_editor.ConfigProfileId" Label="Config profile" Variant="Variant.Outlined" HelperText="Reusable world, plugin, and mod preset from Configs page.">
+                            <MudSelectItem T="string" Value="@string.Empty">(No config profile)</MudSelectItem>
+                            @foreach (var profile in ConfigProfiles.GetProfiles())
+                            {
+                                <MudSelectItem T="string" Value="@profile.ConfigProfileId">@profile.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudSelect T="string" @bind-Value="_editor.WorldProfileId" Label="World profile" Variant="Variant.Outlined" HelperText="Blueprint world copied into the instance world path on first launch if the world directory does not already exist.">
+                            <MudSelectItem T="string" Value="@string.Empty">(No world profile)</MudSelectItem>
+                            @foreach (var profile in WorldProfiles.GetProfiles())
+                            {
+                                <MudSelectItem T="string" Value="@profile.WorldProfileId">@profile.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                </MudGrid>
+            </section>
+
+            <MudDivider />
+
+            <section>
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Runtime</MudText>
+                <MudGrid>
+                    <MudItem xs="12" md="6">
+                        <MudTextField
+                            @bind-Value="_editor.ExecutablePath"
+                            Label="Launcher executable path"
+                            Variant="Variant.Outlined"
+                            HelperText="Leave blank and Quasar will auto-download and manage the Magnetar install." />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField
+                            @bind-Value="_editor.WorkingDirectory"
+                            Label="Working directory"
+                            Variant="Variant.Outlined"
+                            HelperText="Leave blank to use the Magnetar install directory automatically." />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField
+                            @bind-Value="_editor.DedicatedServerAppDataPath"
+                            Label="DS app-data path"
+                            Variant="Variant.Outlined"
+                            HelperText="@($"Space Engineers Dedicated Server data (-path). Default: {MagnetarPaths.GetQuasarInstanceDedicatedServerAppDataDirectory(_editor.InstanceId)}")" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField
+                            @bind-Value="_editor.MagnetarAppDataPath"
+                            Label="Magnetar app-data path"
+                            Variant="Variant.Outlined"
+                            HelperText="@($"Magnetar profiles and sources (-config). Default: {MagnetarPaths.GetQuasarInstanceMagnetarAppDataDirectory(_editor.InstanceId)}")" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField
+                            @bind-Value="_editor.WorldPath"
+                            Label="World path"
+                            Variant="Variant.Outlined"
+                            HelperText="@($"Must be an existing SE save folder containing Sandbox.sbc. Default (auto-created on first DS boot): {GetDefaultWorldPath()}")" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudTextField
+                            @bind-Value="_editor.ConfigFilePath"
+                            Label="Rendered DS config path"
+                            Variant="Variant.Outlined"
+                            HelperText="@($"Quasar writes the rendered SpaceEngineers-Dedicated.cfg here. Default: {GetDefaultConfigFilePath()}")" />
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudTextField
+                            @bind-Value="_editor.LaunchArguments"
+                            Label="Launch arguments"
+                            Variant="Variant.Outlined"
+                            Lines="3"
+                            HelperText="Tokens: {instanceId} {configPath} {quasarBaseUrl} {nodeId} {dsAppDataPath} {magnetarAppDataPath} {ds64Path} {worldPath}. Quasar enforces -noconsole, -path, -config, and -ds64 for managed instances." />
+                    </MudItem>
+                </MudGrid>
+            </section>
+
+            <MudDivider />
+
+            <section>
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Restart Policy</MudText>
+                <MudGrid>
+                    <MudItem xs="12" md="4">
+                        <MudNumericField T="int" @bind-Value="_editor.RestartDelaySeconds" Label="Restart delay (seconds)" Variant="Variant.Outlined" Min="0" />
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudNumericField T="int" @bind-Value="_editor.MaxRestartAttempts" Label="Max restart attempts (0 = unlimited)" Variant="Variant.Outlined" Min="0" />
+                    </MudItem>
+                    <MudItem xs="12" md="4" Class="d-flex align-center">
+                        <MudCheckBox @bind-Value="_editor.RestartOnCrash" Label="Restart when process crashes" />
+                    </MudItem>
+                </MudGrid>
+            </section>
+
+            <MudDivider />
+
+            <section>
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Health Policy</MudText>
+                <MudGrid>
+                    <MudItem xs="12" md="6" lg="4">
+                        <MudCheckBox @bind-Value="_editor.EnableHealthMonitoring" Label="Enable health monitoring" />
+                    </MudItem>
+                    <MudItem xs="12" md="6" lg="4">
+                        <MudCheckBox @bind-Value="_editor.AutoRestartOnUnhealthy" Label="Auto-restart when unhealthy" Disabled="@(!_editor.EnableHealthMonitoring)" />
+                    </MudItem>
+                    <MudItem xs="12" md="6" lg="4">
+                        <MudNumericField T="int" @bind-Value="_editor.AgentStartupGraceSeconds" Label="Agent startup grace (seconds)" Variant="Variant.Outlined" Min="0" />
+                    </MudItem>
+                    <MudItem xs="12" md="6" lg="4">
+                        <MudNumericField T="int" @bind-Value="_editor.AgentHeartbeatTimeoutSeconds" Label="Agent heartbeat timeout (seconds)" Variant="Variant.Outlined" Min="1" />
+                    </MudItem>
+                    <MudItem xs="12" md="6" lg="4">
+                        <MudNumericField T="int" @bind-Value="_editor.SimulationProgressWindowSeconds" Label="Simulation frame window (seconds)" Variant="Variant.Outlined" Min="1" />
+                    </MudItem>
+                    <MudItem xs="12" md="6" lg="4">
+                        <MudNumericField T="float" @bind-Value="_editor.MinimumSimulationProgressScore" Label="Minimum frame progress score" Variant="Variant.Outlined" Min="0f" Max="1f" Step="0.01f" HelperText="Score = frames advanced / (seconds * 60)." />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudNumericField T="int" @bind-Value="_editor.WarnAfterUptimeHours" Label="Warn after uptime (hours)" Variant="Variant.Outlined" Min="0" />
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudNumericField T="int" @bind-Value="_editor.RecycleAfterUptimeHours" Label="Recycle after uptime (hours, 0 = disabled)" Variant="Variant.Outlined" Min="0" />
+                    </MudItem>
+                </MudGrid>
+            </section>
+        </MudStack>
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Text" Color="Color.Default" OnClick="Cancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">@(_isEditing ? "Save Changes" : "Create Instance")</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code
+{
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Inject]
+    private QuasarConfigProfileCatalog ConfigProfiles { get; set; } = default!;
+
+    [Inject]
+    private QuasarWorldProfileCatalog WorldProfiles { get; set; } = default!;
+
+    [Inject]
+    private ISnackbar Snackbar { get; set; } = default!;
+
+    [Parameter]
+    public DedicatedServerInstanceDefinition Definition { get; set; } = new();
+
+    [Parameter]
+    public bool IsEditing { get; set; }
+
+    private DedicatedServerInstanceDefinition _editor = new();
+    private bool _isEditing;
+
+    protected override void OnInitialized()
+    {
+        _editor = Definition.Clone();
+        _isEditing = IsEditing;
+    }
+
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+
+    private void Save()
+    {
+        if (string.IsNullOrWhiteSpace(_editor.Name))
+        {
+            Snackbar.Add("Instance name required.", Severity.Warning);
+            return;
+        }
+
+        MudDialog.Close(DialogResult.Ok(_editor.Clone()));
+    }
+
+    private string GetDefaultWorldPath()
+    {
+        var dsPath = string.IsNullOrWhiteSpace(_editor.DedicatedServerAppDataPath)
+            ? MagnetarPaths.GetQuasarInstanceDedicatedServerAppDataDirectory(_editor.InstanceId)
+            : _editor.DedicatedServerAppDataPath;
+
+        var worldName = string.IsNullOrWhiteSpace(_editor.Name)
+            ? _editor.InstanceId
+            : _editor.Name.Trim();
+
+        foreach (var ch in Path.GetInvalidFileNameChars())
+            worldName = worldName.Replace(ch, '-');
+
+        return Path.Combine(dsPath, "Saves", worldName);
+    }
+
+    private string GetDefaultConfigFilePath()
+    {
+        var dsPath = string.IsNullOrWhiteSpace(_editor.DedicatedServerAppDataPath)
+            ? MagnetarPaths.GetQuasarInstanceDedicatedServerAppDataDirectory(_editor.InstanceId)
+            : _editor.DedicatedServerAppDataPath;
+
+        return Path.Combine(dsPath, "SpaceEngineers-Dedicated.cfg");
+    }
+}

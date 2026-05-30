@@ -43,6 +43,7 @@ public class Program
             builder.Services.AddSingleton<MetricsStoreService>();
             builder.Services.AddHostedService(serviceProvider => serviceProvider.GetRequiredService<MetricsStoreService>());
             builder.Services.AddSingleton<AgentRegistry>();
+            builder.Services.AddSingleton<EntityService>();
             builder.Services.AddSingleton<QuasarConfigProfileCatalog>();
             builder.Services.AddSingleton<QuasarWorldProfileCatalog>();
             builder.Services.AddSingleton<QuasarPluginCatalogService>();

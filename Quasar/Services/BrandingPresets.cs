@@ -14,12 +14,14 @@ public static class BrandingPresets
     public const string QuasarId = "quasar";
     public const string MidnightId = "midnight";
     public const string SlateId = "slate";
+    public const string HighContrastId = "high-contrast";
 
     public static IReadOnlyList<BrandingPresetDefinition> All { get; } =
     [
         new(QuasarId, "Quasar Default"),
         new(MidnightId, "Midnight Blue"),
         new(SlateId, "Slate"),
+        new(HighContrastId, "High Contrast"),
     ];
 
     public static bool IsKnownPreset(string? presetId)
@@ -34,6 +36,7 @@ public static class BrandingPresets
         {
             MidnightId => MidnightLight(),
             SlateId => SlateLight(),
+            HighContrastId => HighContrastLight(),
             _ => ThemePalette.QuasarLight(),
         };
     }
@@ -44,6 +47,7 @@ public static class BrandingPresets
         {
             MidnightId => MidnightDark(),
             SlateId => SlateDark(),
+            HighContrastId => HighContrastDark(),
             _ => ThemePalette.QuasarDark(),
         };
     }
@@ -135,6 +139,72 @@ public static class BrandingPresets
         palette.Divider = "#3a485f";
         palette.DividerLight = "#313e54";
         palette.Info = "#cbd5e1";
+        return palette;
+    }
+
+    private static ThemePalette HighContrastLight()
+    {
+        var palette = ThemePalette.QuasarLight();
+        palette.Primary = "#000000";
+        palette.PrimaryContrastText = "#ffffff";
+        palette.Secondary = "#000000";
+        palette.SecondaryContrastText = "#ffffff";
+        palette.Background = "#ffffff";
+        palette.BackgroundGray = "#f0f0f0";
+        palette.Surface = "#ffffff";
+        palette.DrawerBackground = "#f0f0f0";
+        palette.DrawerText = "#000000";
+        palette.DrawerIcon = "#000000";
+        palette.AppbarBackground = "#ffffff";
+        palette.AppbarText = "#000000";
+        palette.TextPrimary = "#000000";
+        palette.TextSecondary = "#1a1a1a";
+        palette.LinesDefault = "#000000";
+        palette.LinesInputs = "#000000";
+        palette.TableLines = "#767676";
+        palette.Divider = "#000000";
+        palette.DividerLight = "#767676";
+        palette.Info = "#000080";
+        palette.InfoContrastText = "#ffffff";
+        palette.Success = "#006400";
+        palette.SuccessContrastText = "#ffffff";
+        palette.Warning = "#7c5000";
+        palette.WarningContrastText = "#ffffff";
+        palette.Error = "#c00000";
+        palette.ErrorContrastText = "#ffffff";
+        return palette;
+    }
+
+    private static ThemePalette HighContrastDark()
+    {
+        var palette = ThemePalette.QuasarDark();
+        palette.Primary = "#ffffff";
+        palette.PrimaryContrastText = "#000000";
+        palette.Secondary = "#ffff00";
+        palette.SecondaryContrastText = "#000000";
+        palette.Background = "#000000";
+        palette.BackgroundGray = "#0a0a0a";
+        palette.Surface = "#0f0f0f";
+        palette.DrawerBackground = "#0a0a0a";
+        palette.DrawerText = "#ffffff";
+        palette.DrawerIcon = "#ffffff";
+        palette.AppbarBackground = "#000000";
+        palette.AppbarText = "#ffffff";
+        palette.TextPrimary = "#ffffff";
+        palette.TextSecondary = "#ffff00";
+        palette.LinesDefault = "#ffffff";
+        palette.LinesInputs = "#ffffff";
+        palette.TableLines = "#767676";
+        palette.Divider = "#ffffff";
+        palette.DividerLight = "#767676";
+        palette.Info = "#00ffff";
+        palette.InfoContrastText = "#000000";
+        palette.Success = "#00ff00";
+        palette.SuccessContrastText = "#000000";
+        palette.Warning = "#ffff00";
+        palette.WarningContrastText = "#000000";
+        palette.Error = "#ff4444";
+        palette.ErrorContrastText = "#000000";
         return palette;
     }
 }

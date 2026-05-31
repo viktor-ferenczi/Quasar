@@ -182,6 +182,26 @@ public sealed class AgentRegistry
     }
 
     /// <summary>
+    /// Sends an arbitrary wire message to a connected agent. Used for
+    /// fire-and-forget control messages such as plugin config updates that do
+    /// not flow through the command/result pipeline.
+    /// </summary>
+    public async Task SendToAgentAsync(string agentId, AgentWireMessage message, CancellationToken cancellationToken = default)
+    {
+        Func<AgentWireMessage, CancellationToken, Task>? sender;
+
+        lock (_sync)
+        {
+            if (!_agents.TryGetValue(agentId, out var state) || state.Sender is null || !state.IsConnected)
+                throw new InvalidOperationException($"Agent '{agentId}' is not connected.");
+
+            sender = state.Sender;
+        }
+
+        await sender(message, cancellationToken);
+    }
+
+    /// <summary>
     /// Sends a command and awaits the matching <see cref="ServerCommandResult"/> from the agent.
     /// Used by request/response commands such as <see cref="ServerCommandType.ListEntities"/>.
     /// Throws <see cref="TimeoutException"/> if the agent does not respond in time, or

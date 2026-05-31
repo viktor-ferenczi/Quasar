@@ -3,6 +3,7 @@ using System.Text.Json;
 using Magnetar.Protocol.Runtime;
 using Magnetar.Protocol.Transport;
 using Quasar.Models;
+using Quasar.Services.PluginSdk;
 
 namespace Quasar.Services;
 
@@ -22,6 +23,7 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
     private readonly ManagedDedicatedServerRuntimeResolver _runtimeResolver;
     private readonly WebServiceOptions _options;
     private readonly ILogger<DedicatedServerSupervisor> _logger;
+    private readonly PluginLogStream _pluginLogStream;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Dictionary<string, ManagedInstanceState> _states = new(StringComparer.OrdinalIgnoreCase);
     private CancellationTokenSource? _persistDebounce;
@@ -34,6 +36,7 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
         DedicatedServerRuntimePreparer runtimePreparer,
         ManagedDedicatedServerRuntimeResolver runtimeResolver,
         WebServiceOptions options,
+        PluginLogStream pluginLogStream,
         ILogger<DedicatedServerSupervisor> logger)
     {
         _catalog = catalog;
@@ -41,6 +44,7 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
         _runtimePreparer = runtimePreparer;
         _runtimeResolver = runtimeResolver;
         _options = options;
+        _pluginLogStream = pluginLogStream;
         _logger = logger;
     }
 
@@ -413,6 +417,12 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
         process.StartInfo.Environment["QUASAR_DS_CONFIG_PATH"] = launch.RuntimeConfigPath;
         process.StartInfo.Environment["QUASAR_LAST_SESSION_PATH"] = launch.LastSessionPath;
 
+        // Activate the PluginSdk QuasarLogSink inside the dedicated server: any
+        // non-empty QUASAR_AGENT value makes plugins emit structured JSON log
+        // lines on standard output (LogEnvironment.IsManagedByQuasar), which the
+        // supervisor parses into the plugin log stream below.
+        process.StartInfo.Environment["QUASAR_AGENT"] = definition.UniqueName;
+
         process.Exited += async (_, _) => await HandleProcessExitedAsync(state.UniqueName);
 
         try
@@ -456,7 +466,7 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
         _logger.LogInformation("Started instance {UniqueName} with pid {Pid}.", state.UniqueName, process.Id);
         NotifyChanged();
 
-        _ = PumpOutputAsync(process.StandardOutput, stdoutPath, cancellationToken);
+        _ = PumpStandardOutputAsync(process.StandardOutput, stdoutPath, state.UniqueName, cancellationToken);
         _ = PumpOutputAsync(process.StandardError, stderrPath, cancellationToken);
     }
 
@@ -710,6 +720,27 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
 
         _logger.LogWarning("Instance {UniqueName} faulted: {Message}", uniqueName, message);
         NotifyChanged();
+    }
+
+    private async Task PumpStandardOutputAsync(StreamReader reader, string path, string uniqueName, CancellationToken cancellationToken)
+    {
+        await using var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+        await using var writer = new StreamWriter(stream)
+        {
+            AutoFlush = true,
+        };
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var line = await reader.ReadLineAsync(cancellationToken);
+            if (line is null)
+                break;
+
+            await writer.WriteLineAsync($"{DateTimeOffset.UtcNow:O} {line}");
+
+            if (PluginLogStream.TryParseSinkLine(uniqueName, line, out var entry) && entry is not null)
+                _pluginLogStream.Append(entry);
+        }
     }
 
     private static async Task PumpOutputAsync(StreamReader reader, string path, CancellationToken cancellationToken)

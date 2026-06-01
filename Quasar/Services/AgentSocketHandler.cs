@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Magnetar.Protocol.Transport;
+using Quasar.Services.PluginSdk;
 
 namespace Quasar.Services;
 
@@ -14,11 +15,16 @@ public sealed class AgentSocketHandler
     };
 
     private readonly AgentRegistry _registry;
+    private readonly PluginConfigService _pluginConfigService;
     private readonly ILogger<AgentSocketHandler> _logger;
 
-    public AgentSocketHandler(AgentRegistry registry, ILogger<AgentSocketHandler> logger)
+    public AgentSocketHandler(
+        AgentRegistry registry,
+        PluginConfigService pluginConfigService,
+        ILogger<AgentSocketHandler> logger)
     {
         _registry = registry;
+        _pluginConfigService = pluginConfigService;
         _logger = logger;
     }
 
@@ -82,6 +88,10 @@ public sealed class AgentSocketHandler
 
             case WireMessageKind.CommandResult when message.CommandResult is not null:
                 _registry.UpdateCommandResult(message.CommandResult);
+                break;
+
+            case WireMessageKind.PluginConfigSnapshot when message.PluginConfigSnapshot is not null:
+                _pluginConfigService.IngestSnapshot(message.PluginConfigSnapshot);
                 break;
 
             case WireMessageKind.Ping:

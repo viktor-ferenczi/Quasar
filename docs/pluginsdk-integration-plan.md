@@ -157,13 +157,48 @@ Extend `/Quasar/Pages/Plugins/` (or relevant existing page) with a tab per plugi
 
 ---
 
-## Step 6 — Logging (QuasarLogSink)
+## Step 6 — Logging (QuasarLogSink) — implemented via stdout capture
 
-`QuasarLogSink` already exists in PluginSdk. It outputs structured JSON. The agent needs to:
-- Provide an `ILogSink` bridge that forwards log entries as `WireMessageKind` messages (or embed in snapshot)
-- Quasar side: display in existing log stream UI
+`QuasarLogSink` already exists in PluginSdk and outputs one structured JSON line
+per entry. The plan's original sketch (an agent-side `ILogSink` bridge forwarding
+over `WireMessageKind`) does **not** fit the live code:
 
-This is a lower-priority follow-on after core config editing works.
+- Each plugin builds its **own** `Logger` + sink via
+  `LogEnvironment.CreateDefaultSink()`; there is no shared/global sink registry
+  an external component could hook to intercept other plugins' entries.
+- `Quasar.Agent` does **not** reference `PluginSdk`, so it cannot construct or
+  inject an `ILogSink` anyway.
+- The SDK itself documents the intended transport: `QuasarLogSink` "lines are
+  written to standard output (which the agent captures from the managed
+  process)."
+
+So Step 6 is implemented entirely on the **Quasar supervisor** side — no SDK,
+agent, or wire-protocol changes:
+
+1. **Activate the sink.** `DedicatedServerSupervisor.StartProcessAsync` sets the
+   `QUASAR_AGENT` env var (= the instance unique name) on the DS child process.
+   Any non-empty value makes `LogEnvironment.IsManagedByQuasar()` return true, so
+   every SDK-using plugin selects `QuasarLogSink` and emits JSON on stdout.
+   (Note: while managed by Quasar, plugin logs route to stdout instead of the
+   game `MyLog` — this is the SDK's intended behavior.)
+2. **Parse it.** The supervisor already redirects + pumps the child's stdout. The
+   stdout pump (`PumpStandardOutputAsync`) now also calls
+   `PluginLogStream.TryParseSinkLine`, which cheaply pre-filters then parses each
+   `{timestamp,level,plugin,thread,message,data?,exception?}` line into a
+   `PluginLogEntry`. Raw lines still go to `stdout.log` as before; non-JSON game
+   output is untouched.
+3. **Stream it.** `PluginLogStream` (new singleton) keeps a bounded per-instance
+   ring buffer and raises `Changed`.
+4. **Display it.** `PluginLogPanel.razor` (new component, on the Plugins page)
+   subscribes to `PluginLogStream.Changed` and renders recent entries
+   (time / level / server / plugin / message + exception) in a `MudTable`.
+
+**Files:** `Quasar/Services/PluginSdk/PluginLogEntry.cs` (new),
+`Quasar/Services/PluginSdk/PluginLogStream.cs` (new),
+`Quasar/Components/PluginLogPanel.razor` (new),
+`Quasar/Services/DedicatedServerSupervisor.cs` (env var + stdout parse + DI),
+`Quasar/Program.cs` (register `PluginLogStream`),
+`Quasar/Components/Pages/Plugins.razor` (embed panel).
 
 ---
 

@@ -1,0 +1,417 @@
+@using System.Text.Json
+@using System.Text.Json.Nodes
+@using Magnetar.Protocol.Model
+@using Quasar.Services.PluginSdk
+
+@* Renders a live editor for a single plugin's configuration from its schema.
+   Scalars get dedicated MudBlazor controls; structs / lists / dicts and other
+   complex types fall back to an editable raw-JSON field so every option can be
+   round-tripped. *@
+
+@if (_envelope is null)
+{
+    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined">
+        This plugin did not provide an editable configuration schema.
+    </MudAlert>
+}
+else if (_tabs.Count == 0)
+{
+    <MudText Typo="Typo.body2" Class="mud-text-secondary">No configurable options.</MudText>
+}
+else
+{
+    <MudStack>
+        @if (_tabs.Count == 1)
+        {
+            @RenderTabBody(_tabs[0])
+        }
+        else
+        {
+            <MudTabs Elevation="0" Rounded="true">
+                @foreach (var tab in _tabs)
+                {
+                    <MudTabPanel Text="@tab.Caption">
+                        @RenderTabBody(tab)
+                    </MudTabPanel>
+                }
+            </MudTabs>
+        }
+
+        <MudStack Row="true" Justify="Justify.FlexEnd" AlignItems="AlignItems.Center" Class="mt-2">
+            @if (_dirty)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Warning">Unsaved changes</MudText>
+            }
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Save"
+                       Disabled="@(!_dirty || _applying)"
+                       OnClick="ApplyAsync">
+                @(_applying ? "Applying…" : "Apply changes")
+            </MudButton>
+        </MudStack>
+    </MudStack>
+}
+
+@code {
+    [Parameter, EditorRequired] public string AgentId { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired] public PluginConfigData Plugin { get; set; } = default!;
+
+    [Inject] private PluginConfigService Service { get; set; } = default!;
+
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+
+    private PluginConfigEnvelope? _envelope;
+    private JsonObject _values = new();
+    private string? _signature;
+    private bool _dirty;
+    private bool _applying;
+    private readonly Dictionary<string, string?> _rawErrors = new();
+
+    private Dictionary<string, LayoutContainerDto> _containersById = new(StringComparer.Ordinal);
+    private List<TabModel> _tabs = new();
+
+    protected override void OnParametersSet()
+    {
+        var signature = (Plugin?.PluginId ?? string.Empty) + "" + (Plugin?.ConfigJson ?? string.Empty);
+
+        // Same document we are already showing → nothing to do.
+        if (signature == _signature)
+            return;
+
+        // The server pushed a different document, but the user has unsaved
+        // edits — keep their work rather than clobbering it.
+        if (_dirty && _signature is not null)
+            return;
+
+        _signature = signature;
+        _envelope = PluginConfigEnvelope.Parse(Plugin?.ConfigJson);
+        _values = _envelope?.CloneValues() ?? new JsonObject();
+        _dirty = false;
+        _rawErrors.Clear();
+        BuildLayout();
+    }
+
+    private void BuildLayout()
+    {
+        _containersById = new Dictionary<string, LayoutContainerDto>(StringComparer.Ordinal);
+        _tabs = new List<TabModel>();
+
+        var schema = _envelope?.Schema;
+        if (schema is null)
+            return;
+
+        foreach (var container in schema.Layout)
+        {
+            if (!string.IsNullOrEmpty(container.Id) && !_containersById.ContainsKey(container.Id!))
+                _containersById[container.Id!] = container;
+        }
+
+        var properties = schema.Properties ?? new List<ConfigPropertyDto>();
+        var generalProps = new List<ConfigPropertyDto>();
+        var byTop = new Dictionary<string, List<ConfigPropertyDto>>(StringComparer.Ordinal);
+
+        foreach (var property in properties)
+        {
+            var top = ResolveTop(property);
+            if (top.Length == 0)
+            {
+                generalProps.Add(property);
+                continue;
+            }
+
+            if (!byTop.TryGetValue(top, out var list))
+            {
+                list = new List<ConfigPropertyDto>();
+                byTop[top] = list;
+            }
+
+            list.Add(property);
+        }
+
+        if (generalProps.Count > 0)
+            _tabs.Add(BuildTab(string.Empty, "General", generalProps));
+
+        foreach (var container in schema.Layout)
+        {
+            if (string.IsNullOrEmpty(container.Id))
+                continue;
+
+            var isTopLevel = string.IsNullOrEmpty(container.Parent) || !_containersById.ContainsKey(container.Parent!);
+            if (!isTopLevel)
+                continue;
+
+            if (!byTop.TryGetValue(container.Id!, out var tabProps) || tabProps.Count == 0)
+                continue;
+
+            _tabs.Add(BuildTab(container.Id!, string.IsNullOrWhiteSpace(container.Caption) ? container.Id! : container.Caption!, tabProps));
+        }
+    }
+
+    private TabModel BuildTab(string topId, string caption, List<ConfigPropertyDto> props)
+    {
+        var tab = new TabModel { Id = topId, Caption = caption };
+        var sectionOrder = new List<string>();
+        var sectionMap = new Dictionary<string, SectionModel>(StringComparer.Ordinal);
+
+        foreach (var property in props)
+        {
+            var immediate = ImmediateParentId(property);
+            if (immediate == topId)
+            {
+                tab.DirectProps.Add(property);
+                continue;
+            }
+
+            if (!sectionMap.TryGetValue(immediate, out var section))
+            {
+                var sectionCaption = _containersById.TryGetValue(immediate, out var container) && !string.IsNullOrWhiteSpace(container.Caption)
+                    ? container.Caption!
+                    : immediate;
+                section = new SectionModel { Caption = sectionCaption };
+                sectionMap[immediate] = section;
+                sectionOrder.Add(immediate);
+            }
+
+            section.Props.Add(property);
+        }
+
+        foreach (var id in sectionOrder)
+            tab.Sections.Add(sectionMap[id]);
+
+        return tab;
+    }
+
+    private string ResolveTop(ConfigPropertyDto property)
+    {
+        if (string.IsNullOrEmpty(property.Parent) || !_containersById.TryGetValue(property.Parent!, out var current))
+            return string.Empty;
+
+        while (true)
+        {
+            if (string.IsNullOrEmpty(current.Parent) || !_containersById.TryGetValue(current.Parent!, out var next))
+                break;
+            current = next;
+        }
+
+        return current.Id ?? string.Empty;
+    }
+
+    private string ImmediateParentId(ConfigPropertyDto property)
+    {
+        if (string.IsNullOrEmpty(property.Parent) || !_containersById.ContainsKey(property.Parent!))
+            return string.Empty;
+        return property.Parent!;
+    }
+
+    private List<EnumValueDto> EnumValues(ConfigPropertyDto property)
+    {
+        if (!string.IsNullOrEmpty(property.EnumName)
+            && _envelope?.Schema.Enums.TryGetValue(property.EnumName!, out var values) == true)
+        {
+            return values;
+        }
+
+        return new List<EnumValueDto>();
+    }
+
+    private RenderFragment RenderTabBody(TabModel tab) => @<text>
+        @foreach (var property in tab.DirectProps)
+        {
+            @RenderProperty(property)
+        }
+        @foreach (var group in tab.Sections)
+        {
+            <MudExpansionPanels Class="mt-2" MultiExpansion="true">
+                <MudExpansionPanel Text="@group.Caption" Expanded="true">
+                    @foreach (var property in group.Props)
+                    {
+                        @RenderProperty(property)
+                    }
+                </MudExpansionPanel>
+            </MudExpansionPanels>
+        }
+    </text>;
+
+    private RenderFragment RenderProperty(ConfigPropertyDto property) => @<div class="mb-3">
+        @switch (property.Type)
+        {
+            case "bool":
+                <MudCheckBox T="bool" Label="@property.Name"
+                             Value="@GetBool(property.JsonKey)"
+                             ValueChanged="@((bool value) => OnBool(property, value))" />
+                @if (!string.IsNullOrWhiteSpace(property.Description))
+                {
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">@property.Description</MudText>
+                }
+                break;
+
+            case "int":
+            case "long":
+            case "float":
+            case "double":
+                <MudNumericField T="double?" Label="@property.Name"
+                                 Value="@GetNumber(property.JsonKey)"
+                                 ValueChanged="@((double? value) => OnNumber(property, value))"
+                                 Min="@property.Min" Max="@property.Max"
+                                 HelperText="@property.Description" Immediate="false" />
+                break;
+
+            case "string":
+                <MudTextField T="string" Label="@property.Name"
+                              Value="@GetString(property.JsonKey)"
+                              ValueChanged="@((string value) => OnString(property, value))"
+                              MaxLength="@(property.MaxLength ?? 524288)"
+                              HelperText="@property.Description" />
+                break;
+
+            case "enum":
+            case "Direction":
+                <MudSelect T="string" Label="@property.Name"
+                           Value="@GetString(property.JsonKey)"
+                           ValueChanged="@((string value) => OnString(property, value))"
+                           HelperText="@property.Description">
+                    @foreach (var enumValue in EnumValues(property))
+                    {
+                        <MudSelectItem T="string" Value="@enumValue.Name">@enumValue.Caption</MudSelectItem>
+                    }
+                </MudSelect>
+                break;
+
+            case "Color":
+                <MudTextField T="string" Label="@($"{property.Name} (hex)")"
+                              Value="@GetString(property.JsonKey)"
+                              ValueChanged="@((string value) => OnString(property, value))"
+                              HelperText="@(property.Description ?? "Hex colour, e.g. #1E88E5")" />
+                break;
+
+            default:
+                <MudTextField T="string" Label="@($"{property.Name} ({property.Type})")"
+                              Value="@GetRaw(property.JsonKey)"
+                              ValueChanged="@((string value) => OnRaw(property, value))"
+                              Lines="3"
+                              Error="@(_rawErrors.TryGetValue(property.JsonKey, out var error) && error is not null)"
+                              ErrorText="@(_rawErrors.TryGetValue(property.JsonKey, out var errorText) ? errorText : null)"
+                              HelperText="@(property.Description ?? "Raw JSON value")" />
+                break;
+        }
+    </div>;
+
+    private bool GetBool(string key)
+    {
+        try { return _values[key]?.GetValue<bool>() ?? false; }
+        catch { return false; }
+    }
+
+    private double? GetNumber(string key)
+    {
+        var node = _values[key];
+        if (node is null)
+            return null;
+        try { return node.GetValue<double>(); }
+        catch { return null; }
+    }
+
+    private string GetString(string key)
+    {
+        var node = _values[key];
+        if (node is null)
+            return string.Empty;
+        try { return node.GetValue<string>(); }
+        catch { return node.ToJsonString(); }
+    }
+
+    private string GetRaw(string key)
+    {
+        var node = _values[key];
+        return node is null ? "null" : node.ToJsonString(RawOptions);
+    }
+
+    private void OnBool(ConfigPropertyDto property, bool value)
+    {
+        _values[property.JsonKey] = JsonValue.Create(value);
+        _dirty = true;
+    }
+
+    private void OnString(ConfigPropertyDto property, string value)
+    {
+        _values[property.JsonKey] = JsonValue.Create(value ?? string.Empty);
+        _dirty = true;
+    }
+
+    private void OnNumber(ConfigPropertyDto property, double? value)
+    {
+        if (value is null)
+            _values[property.JsonKey] = null;
+        else if (property.Type is "int" or "long")
+            _values[property.JsonKey] = JsonValue.Create((long)Math.Round(value.Value));
+        else
+            _values[property.JsonKey] = JsonValue.Create(value.Value);
+
+        _dirty = true;
+    }
+
+    private void OnRaw(ConfigPropertyDto property, string value)
+    {
+        try
+        {
+            _values[property.JsonKey] = string.IsNullOrWhiteSpace(value) ? null : JsonNode.Parse(value);
+            _rawErrors[property.JsonKey] = null;
+            _dirty = true;
+        }
+        catch (JsonException exception)
+        {
+            _rawErrors[property.JsonKey] = exception.Message;
+        }
+    }
+
+    private async Task ApplyAsync()
+    {
+        if (Plugin is null)
+            return;
+
+        if (_rawErrors.Values.Any(error => error is not null))
+        {
+            Snackbar.Add("Fix the invalid JSON values before applying.", Severity.Error);
+            return;
+        }
+
+        _applying = true;
+        try
+        {
+            var json = _values.ToJsonString();
+            await Service.UpdatePluginConfigAsync(AgentId, Plugin.PluginId, json);
+            _dirty = false;
+            Snackbar.Add($"Applied configuration to {Plugin.DisplayName}.", Severity.Success);
+        }
+        catch (InvalidOperationException exception)
+        {
+            Snackbar.Add($"Could not reach the server: {exception.Message}", Severity.Error);
+        }
+        catch (Exception exception)
+        {
+            Snackbar.Add($"Failed to apply configuration: {exception.Message}", Severity.Error);
+        }
+        finally
+        {
+            _applying = false;
+        }
+    }
+
+    private static readonly JsonSerializerOptions RawOptions = new() { WriteIndented = true };
+
+    private sealed class TabModel
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Caption { get; set; } = string.Empty;
+        public List<ConfigPropertyDto> DirectProps { get; } = new();
+        public List<SectionModel> Sections { get; } = new();
+    }
+
+    private sealed class SectionModel
+    {
+        public string Caption { get; set; } = string.Empty;
+        public List<ConfigPropertyDto> Props { get; } = new();
+    }
+}

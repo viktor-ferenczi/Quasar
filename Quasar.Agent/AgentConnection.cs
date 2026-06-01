@@ -4,6 +4,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Magnetar.Protocol.Model;
 using Magnetar.Protocol.Transport;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
@@ -23,6 +24,7 @@ namespace Quasar.Agent
         private readonly SemaphoreSlim _sendLock = new SemaphoreSlim(1, 1);
         private CancellationTokenSource _cancellation;
         private Task _runTask;
+        private string _lastPluginConfigJson;
 
         public AgentConnection(GameBridge bridge, WebServiceLocator locator)
         {
@@ -90,11 +92,15 @@ namespace Quasar.Agent
                         Log($"Connecting to {socketUri}");
                         await socket.ConnectAsync(socketUri, cancellationToken).ConfigureAwait(false);
 
+                        _lastPluginConfigJson = null;
+
                         await SendAsync(socket, new AgentWireMessage
                         {
                             Kind = WireMessageKind.Hello,
                             Hello = _bridge.GetHello(),
                         }, cancellationToken).ConfigureAwait(false);
+
+                        await SendPluginConfigsAsync(socket, force: true, cancellationToken).ConfigureAwait(false);
 
                         var snapshotTask = SnapshotLoopAsync(socket, cancellationToken);
                         var receiveTask = ReceiveLoopAsync(socket, cancellationToken);
@@ -124,6 +130,8 @@ namespace Quasar.Agent
                     Snapshot = _bridge.GetSnapshot(),
                 }, cancellationToken).ConfigureAwait(false);
 
+                await SendPluginConfigsAsync(socket, force: false, cancellationToken).ConfigureAwait(false);
+
                 await Task.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
             }
         }
@@ -145,6 +153,15 @@ namespace Quasar.Agent
                         CommandResult = result,
                     }, cancellationToken).ConfigureAwait(false);
                 }
+                else if (message.Kind == WireMessageKind.PluginConfigUpdate && message.PluginConfigUpdateRequest != null)
+                {
+                    var request = message.PluginConfigUpdateRequest;
+                    await _bridge.ApplyPluginConfigAsync(request.PluginId, request.ValuesJson).ConfigureAwait(false);
+
+                    // Push the post-apply state so the editor reflects exactly
+                    // what the plugin accepted (clamped / normalized values).
+                    await SendPluginConfigsAsync(socket, force: true, cancellationToken).ConfigureAwait(false);
+                }
                 else if (message.Kind == WireMessageKind.Ping)
                 {
                     await SendAsync(socket, new AgentWireMessage
@@ -154,6 +171,32 @@ namespace Quasar.Agent
                     }, cancellationToken).ConfigureAwait(false);
                 }
             }
+        }
+
+        private async Task SendPluginConfigsAsync(ClientWebSocket socket, bool force, CancellationToken cancellationToken)
+        {
+            PluginConfigSnapshot configs;
+            try
+            {
+                configs = _bridge.GetPluginConfigs();
+            }
+            catch (Exception exception)
+            {
+                Log($"Failed collecting plugin configs: {exception.Message}");
+                return;
+            }
+
+            var serialized = JsonConvert.SerializeObject(configs, JsonSettings);
+            if (!force && string.Equals(serialized, _lastPluginConfigJson, StringComparison.Ordinal))
+                return;
+
+            _lastPluginConfigJson = serialized;
+
+            await SendAsync(socket, new AgentWireMessage
+            {
+                Kind = WireMessageKind.PluginConfigSnapshot,
+                PluginConfigSnapshot = configs,
+            }, cancellationToken).ConfigureAwait(false);
         }
 
         private async Task SendAsync(ClientWebSocket socket, AgentWireMessage message, CancellationToken cancellationToken)

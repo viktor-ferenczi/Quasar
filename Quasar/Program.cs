@@ -3,6 +3,7 @@ using Quasar.Models;
 using Quasar.Services;
 using Quasar.Services.Analytics;
 using Quasar.Services.Discord;
+using Quasar.Services.PluginSdk;
 using Magnetar.Protocol.Runtime;
 using Microsoft.Extensions.FileProviders;
 using MudBlazor;
@@ -58,6 +59,9 @@ public class Program
             builder.Services.AddSingleton<DedicatedServerSupervisor>();
             builder.Services.AddSingleton<DedicatedServerRuntimePreparer>();
             builder.Services.AddSingleton<WebServiceState>();
+            builder.Services.AddSingleton<PluginLogStream>();
+            builder.Services.AddSingleton<PluginConfigService>();
+            builder.Services.AddHostedService(serviceProvider => serviceProvider.GetRequiredService<PluginConfigService>());
             builder.Services.AddSingleton<AgentSocketHandler>();
             builder.Services.AddHostedService(serviceProvider => serviceProvider.GetRequiredService<DedicatedServerSupervisor>());
             builder.Services.AddHostedService<WebServiceManifestHostedService>();

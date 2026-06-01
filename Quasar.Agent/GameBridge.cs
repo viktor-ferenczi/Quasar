@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Magnetar.Protocol.Bridge;
 using Magnetar.Protocol.Model;
 using Magnetar.Protocol.Transport;
 using Newtonsoft.Json;
@@ -19,6 +20,7 @@ using Sandbox.Game.Screens.Helpers;
 using Sandbox.Game.World;
 using VRage.Game;
 using VRage.Game.ModAPI;
+using VRage.Plugins;
 
 namespace Quasar.Agent
 {
@@ -184,6 +186,122 @@ namespace Quasar.Agent
             _deathQueue.Enqueue(death);
             while (_deathQueue.Count > 50)
                 _deathQueue.TryDequeue(out _);
+        }
+
+        /// <summary>
+        /// Collects the configuration of every loaded plugin that implements
+        /// <see cref="IQuasarConfigProvider"/>. Each entry carries the full
+        /// <c>SaveJson</c> envelope (schema + defaults + values). Reading is a
+        /// pure serialization of the config POCO, so it runs off the game
+        /// thread for responsiveness.
+        /// </summary>
+        public PluginConfigSnapshot GetPluginConfigs()
+        {
+            var snapshot = new PluginConfigSnapshot { AgentId = GetHello().AgentId };
+
+            foreach (var provider in EnumerateConfigProviders())
+            {
+                string pluginId;
+                string json;
+                try
+                {
+                    pluginId = provider.PluginId ?? string.Empty;
+                    json = provider.GetConfigJson();
+                }
+                catch (Exception exception)
+                {
+                    Console.Error.WriteLine($"[Quasar.Agent] Failed reading plugin config from {provider.GetType().Name}: {exception.Message}");
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(json))
+                    continue;
+
+                snapshot.Plugins.Add(new PluginConfigData
+                {
+                    PluginId = pluginId,
+                    DisplayName = provider.GetType().Name,
+                    ConfigJson = json,
+                });
+            }
+
+            return snapshot;
+        }
+
+        /// <summary>
+        /// Applies a values document to the plugin identified by
+        /// <paramref name="pluginId"/>. The apply is marshalled onto the game
+        /// thread because it mutates live config state observed by game logic.
+        /// </summary>
+        public Task ApplyPluginConfigAsync(string pluginId, string valuesJson)
+        {
+            if (string.IsNullOrWhiteSpace(pluginId))
+                return Task.CompletedTask;
+
+            IQuasarConfigProvider provider = null;
+            foreach (var candidate in EnumerateConfigProviders())
+            {
+                if (string.Equals(candidate.PluginId, pluginId, StringComparison.OrdinalIgnoreCase))
+                {
+                    provider = candidate;
+                    break;
+                }
+            }
+
+            if (provider == null)
+            {
+                Console.Error.WriteLine($"[Quasar.Agent] No plugin config provider matched id '{pluginId}'.");
+                return Task.CompletedTask;
+            }
+
+            var completion = new TaskCompletionSource<bool>();
+
+            void Apply()
+            {
+                try
+                {
+                    provider.ApplyConfigJson(valuesJson ?? string.Empty);
+                    completion.TrySetResult(true);
+                }
+                catch (Exception exception)
+                {
+                    Console.Error.WriteLine($"[Quasar.Agent] Failed applying plugin config to '{pluginId}': {exception.Message}");
+                    completion.TrySetResult(false);
+                }
+            }
+
+            var game = MySandboxGame.Static;
+            if (game == null)
+                Apply();
+            else
+                game.Invoke(Apply, "Quasar.Agent:ApplyPluginConfig");
+
+            return completion.Task;
+        }
+
+        private static IEnumerable<IQuasarConfigProvider> EnumerateConfigProviders()
+        {
+            foreach (var plugin in EnumeratePlugins())
+            {
+                if (plugin is IQuasarConfigProvider provider)
+                    yield return provider;
+            }
+        }
+
+        private static IEnumerable<IPlugin> EnumeratePlugins()
+        {
+            try
+            {
+                // MyPlugins.Plugins is the live ListReader<IPlugin> aggregate of
+                // every loaded plugin (game, user and console). Boxing it to
+                // IEnumerable<IPlugin> keeps a live view without copying.
+                return MyPlugins.Plugins;
+            }
+            catch (Exception exception)
+            {
+                Console.Error.WriteLine($"[Quasar.Agent] Failed enumerating plugins: {exception.Message}");
+                return Array.Empty<IPlugin>();
+            }
         }
 
         private ServerMetrics BuildMetrics(MySession session)

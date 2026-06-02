@@ -1,23 +1,37 @@
 .configs-sidebar {
+    display: flex;
+    flex-direction: column;
     height: 100%;
 }
 
-.config-profile-tile {
+.configs-sidebar-inner {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.configs-template-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.config-template-tile {
     background: var(--mud-palette-background-gray);
     border-radius: calc(var(--mud-default-borderradius) + 2px);
     transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
 
-.config-profile-selected {
+.config-template-selected {
     background: var(--mud-palette-primary);
     color: var(--mud-palette-primary-text);
 }
 
-.config-profile-row {
+.config-template-row {
     flex-wrap: nowrap;
 }
 
-.config-profile-button {
+.config-template-button {
     border-radius: inherit;
     color: inherit;
     flex: 1 1 auto;
@@ -30,18 +44,18 @@
     width: auto;
 }
 
-.config-profile-button-selected {
+.config-template-button-selected {
     box-shadow: inset 4px 0 0 currentColor;
 }
 
-.config-profile-button ::deep .mud-button-label {
+.config-template-button ::deep .mud-button-label {
     align-items: stretch;
     height: 100%;
     justify-content: flex-start;
     width: 100%;
 }
 
-.config-profile-delete {
+.config-template-delete {
     flex: 0 0 auto;
 }
 
@@ -56,6 +70,35 @@
 
 .configs-add-button {
     height: 56px;
+}
+
+.configs-expansion-panels {
+    display: grid;
+    gap: 0;
+}
+
+.configs-world-panels-shell {
+    padding: 0.85rem;
+    border-radius: calc(var(--mud-default-borderradius) + 2px);
+    background: var(--mud-palette-background-gray);
+    border: 1px solid var(--mud-palette-lines-default);
+    max-height: 40rem;
+    overflow-y: auto;
+}
+
+.configs-expansion-panel {
+    background: var(--mud-palette-background);
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.configs-expansion-panel .mud-expand-panel-header {
+    transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.configs-expansion-panel .mud-expand-panel-header:hover {
+    background-color: var(--mud-palette-action-default-hover);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
 }
 
 .config-option-card {
@@ -88,6 +131,6 @@
 @media (min-width: 1280px) {
     .configs-sidebar {
         position: sticky;
-        top: 1rem;
+        top: calc(64px + 1rem);
     }
 }

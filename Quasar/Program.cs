@@ -3,6 +3,7 @@ using Quasar.Models;
 using Quasar.Services;
 using Quasar.Services.Analytics;
 using Quasar.Services.Discord;
+using Quasar.Services.PluginSdk;
 using Magnetar.Protocol.Runtime;
 using Microsoft.Extensions.FileProviders;
 using MudBlazor;
@@ -27,7 +28,12 @@ public class Program
             QuasarLoggingConfigurator.Configure(builder, webServiceOptions);
 
             if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCORE_URLS")))
-                builder.WebHost.UseUrls(webServiceOptions.ListenUrl);
+            {
+                if (ShouldListenOnAnyInterface(webServiceOptions.Host))
+                    builder.WebHost.ConfigureKestrel(options => options.ListenAnyIP(webServiceOptions.Port));
+                else
+                    builder.WebHost.UseUrls(webServiceOptions.ListenUrl);
+            }
 
             builder.Services.AddRazorComponents()
                 .AddInteractiveServerComponents();
@@ -45,7 +51,7 @@ public class Program
             builder.Services.AddSingleton<AgentRegistry>();
             builder.Services.AddSingleton<EntityService>();
             builder.Services.AddSingleton<QuasarConfigProfileCatalog>();
-            builder.Services.AddSingleton<QuasarWorldProfileCatalog>();
+            builder.Services.AddSingleton<QuasarWorldTemplateCatalog>();
             builder.Services.AddSingleton<QuasarPluginCatalogService>();
             builder.Services.AddSingleton<QuasarWorkshopModResolver>();
             builder.Services.AddSingleton<ManagedDedicatedServerRuntimeResolver>();
@@ -53,6 +59,9 @@ public class Program
             builder.Services.AddSingleton<DedicatedServerSupervisor>();
             builder.Services.AddSingleton<DedicatedServerRuntimePreparer>();
             builder.Services.AddSingleton<WebServiceState>();
+            builder.Services.AddSingleton<PluginLogStream>();
+            builder.Services.AddSingleton<PluginConfigService>();
+            builder.Services.AddHostedService(serviceProvider => serviceProvider.GetRequiredService<PluginConfigService>());
             builder.Services.AddSingleton<AgentSocketHandler>();
             builder.Services.AddHostedService(serviceProvider => serviceProvider.GetRequiredService<DedicatedServerSupervisor>());
             builder.Services.AddHostedService<WebServiceManifestHostedService>();
@@ -197,5 +206,13 @@ public class Program
         }
 
         return false;
+    }
+
+    private static bool ShouldListenOnAnyInterface(string host)
+    {
+        return string.Equals(host, "0.0.0.0", StringComparison.Ordinal) ||
+               string.Equals(host, "[::]", StringComparison.Ordinal) ||
+               string.Equals(host, "*", StringComparison.Ordinal) ||
+               string.Equals(host, "+", StringComparison.Ordinal);
     }
 }

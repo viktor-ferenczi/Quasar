@@ -8,4 +8,6 @@ public static class WireMessageKind
     public const string CommandResult = "command-result";
     public const string Ping = "ping";
     public const string Pong = "pong";
+    public const string PluginConfigSnapshot = "plugin-config-snapshot";
+    public const string PluginConfigUpdate = "plugin-config-update";
 }

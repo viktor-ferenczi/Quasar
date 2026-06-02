@@ -1,0 +1,85 @@
+@implements IDisposable
+@inject PluginLogStream LogStream
+@inject AgentRegistry Registry
+
+<MudPaper Class="server-card pa-4">
+    <div class="d-flex align-center justify-space-between mb-2">
+        <MudText Typo="Typo.h6">Recent plugin logs</MudText>
+        <MudText Typo="Typo.caption" Class="mud-text-secondary">@_entries.Count shown</MudText>
+    </div>
+
+    @if (_entries.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+            No plugin logs received yet. Entries from plugins that log through the PluginSdk appear here while a managed server is running.
+        </MudAlert>
+    }
+    else
+    {
+        <MudTable T="PluginLogEntry" Dense="true" Hover="true" FixedHeader="true" Height="420px"
+                  Items="_entries" Breakpoint="Breakpoint.Sm">
+            <HeaderContent>
+                <MudTh>Time (UTC)</MudTh>
+                <MudTh>Level</MudTh>
+                <MudTh>Server</MudTh>
+                <MudTh>Plugin</MudTh>
+                <MudTh>Message</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Time (UTC)">@context.TimestampUtc.ToString("yyyy-MM-dd HH:mm:ss.fff")</MudTd>
+                <MudTd DataLabel="Level">
+                    <MudText Typo="Typo.body2" Color="@LevelColor(context.Level)">@context.Level</MudText>
+                </MudTd>
+                <MudTd DataLabel="Server">@ServerName(context.UniqueName)</MudTd>
+                <MudTd DataLabel="Plugin">@context.Plugin</MudTd>
+                <MudTd DataLabel="Message">
+                    <div>@context.Message</div>
+                    @if (!string.IsNullOrEmpty(context.Exception))
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Error" Class="d-block" Style="white-space: pre-wrap;">@context.Exception</MudText>
+                    }
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
+</MudPaper>
+
+@code
+{
+    private IReadOnlyList<PluginLogEntry> _entries = Array.Empty<PluginLogEntry>();
+
+    protected override void OnInitialized()
+    {
+        LogStream.Changed += HandleChanged;
+        Refresh();
+    }
+
+    public void Dispose()
+    {
+        LogStream.Changed -= HandleChanged;
+    }
+
+    private void HandleChanged()
+    {
+        Refresh();
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void Refresh() => _entries = LogStream.GetRecent();
+
+    private string ServerName(string uniqueName)
+    {
+        var agent = Registry.GetAgents()
+            .FirstOrDefault(a => string.Equals(a.UniqueNameKey, uniqueName, StringComparison.OrdinalIgnoreCase));
+        return agent?.ServerDisplayName ?? uniqueName;
+    }
+
+    private static Color LevelColor(string level) => level switch
+    {
+        "Critical" => Color.Error,
+        "Error" => Color.Error,
+        "Warning" => Color.Warning,
+        "Info" => Color.Info,
+        _ => Color.Default,
+    };
+}

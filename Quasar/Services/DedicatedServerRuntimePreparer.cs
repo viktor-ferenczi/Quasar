@@ -22,18 +22,18 @@ public sealed class DedicatedServerRuntimePreparer
     private readonly ILogger<DedicatedServerRuntimePreparer> _logger;
     private readonly WebServiceOptions _options;
     private readonly QuasarConfigProfileCatalog _configProfiles;
-    private readonly QuasarWorldProfileCatalog _worldProfiles;
+    private readonly QuasarWorldTemplateCatalog _worldTemplates;
 
     public DedicatedServerRuntimePreparer(
         ILogger<DedicatedServerRuntimePreparer> logger,
         WebServiceOptions options,
         QuasarConfigProfileCatalog configProfiles,
-        QuasarWorldProfileCatalog worldProfiles)
+        QuasarWorldTemplateCatalog worldTemplates)
     {
         _logger = logger;
         _options = options;
         _configProfiles = configProfiles;
-        _worldProfiles = worldProfiles;
+        _worldTemplates = worldTemplates;
     }
 
     public async Task<PreparedDedicatedServerLaunch> PrepareAsync(
@@ -161,7 +161,9 @@ public sealed class DedicatedServerRuntimePreparer
         Directory.CreateDirectory(profilesDirectory);
         Directory.CreateDirectory(localDirectory);
 
-        var currentProfileName = string.IsNullOrWhiteSpace(configProfile?.Name)
+        var agentLocalFileNames = await DeployQuasarAgentAsync(localDirectory, cancellationToken);
+
+        var currentTemplateName = string.IsNullOrWhiteSpace(configProfile?.Name)
             ? "Quasar Current"
             : configProfile.Name.Trim();
 
@@ -196,7 +198,7 @@ public sealed class DedicatedServerRuntimePreparer
             new XDeclaration("1.0", "utf-8", null),
             new XElement(
                 "Profile",
-                new XElement("Name", currentProfileName),
+                new XElement("Name", currentTemplateName),
                 new XElement(
                     "GitHub",
                     (configProfile?.Plugins ?? [])
@@ -206,7 +208,9 @@ public sealed class DedicatedServerRuntimePreparer
                         new XElement("Id", plugin.PluginId),
                         new XElement("SelectedVersion", plugin.SelectedVersion)))),
                 new XElement("DevFolder"),
-                new XElement("Local"),
+                new XElement(
+                    "Local",
+                    agentLocalFileNames.Select(fileName => new XElement("string", fileName))),
                 new XElement(
                     "Mods",
                     (configProfile?.Mods ?? [])
@@ -223,16 +227,98 @@ public sealed class DedicatedServerRuntimePreparer
             cancellationToken);
     }
 
+    private async Task<IReadOnlyList<string>> DeployQuasarAgentAsync(
+        string localPluginDirectory,
+        CancellationToken cancellationToken)
+    {
+        var sourceDirectory = LocateAgentSourceDirectory();
+        if (sourceDirectory is null)
+        {
+            _logger.LogWarning("Quasar.Agent.dll could not be located on disk; the agent plugin will not be deployed.");
+            return Array.Empty<string>();
+        }
+
+        var enabledNames = new List<string>();
+        foreach (var fileName in AgentDeploymentFiles)
+        {
+            var sourcePath = Path.Combine(sourceDirectory, fileName);
+            if (!File.Exists(sourcePath))
+                continue;
+
+            var destinationPath = Path.Combine(localPluginDirectory, fileName);
+            await CopyFileIfChangedAsync(sourcePath, destinationPath, cancellationToken);
+
+            if (string.Equals(fileName, AgentPluginFileName, StringComparison.OrdinalIgnoreCase))
+                enabledNames.Add(fileName);
+        }
+
+        if (enabledNames.Count == 0)
+            _logger.LogWarning("Quasar.Agent.dll was not found in {SourceDirectory}; the agent plugin will not be enabled.", sourceDirectory);
+
+        return enabledNames;
+    }
+
+    private static async Task CopyFileIfChangedAsync(string sourcePath, string destinationPath, CancellationToken cancellationToken)
+    {
+        if (File.Exists(destinationPath))
+        {
+            var sourceInfo = new FileInfo(sourcePath);
+            var destinationInfo = new FileInfo(destinationPath);
+            if (sourceInfo.Length == destinationInfo.Length &&
+                sourceInfo.LastWriteTimeUtc <= destinationInfo.LastWriteTimeUtc)
+            {
+                return;
+            }
+        }
+
+        await using var source = File.OpenRead(sourcePath);
+        await using var destination = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None);
+        await source.CopyToAsync(destination, cancellationToken);
+    }
+
+    private static string? LocateAgentSourceDirectory()
+    {
+        var stagedDirectory = Path.Combine(AppContext.BaseDirectory, "Agent");
+        if (File.Exists(Path.Combine(stagedDirectory, AgentPluginFileName)))
+            return stagedDirectory;
+
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        for (var depth = 0; directory is not null && depth < 8; depth++, directory = directory.Parent)
+        {
+            var devBin = Path.Combine(directory.FullName, "Quasar.Agent", "bin");
+            if (!Directory.Exists(devBin))
+                continue;
+
+            var candidate = Directory
+                .EnumerateFiles(devBin, AgentPluginFileName, SearchOption.AllDirectories)
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .FirstOrDefault();
+
+            if (candidate is not null)
+                return Path.GetDirectoryName(candidate);
+        }
+
+        return null;
+    }
+
+    private const string AgentPluginFileName = "Quasar.Agent.dll";
+
+    private static readonly string[] AgentDeploymentFiles =
+    [
+        AgentPluginFileName,
+        "Magnetar.Protocol.dll",
+    ];
+
     private QuasarConfigProfile? ResolveConfigProfile(DedicatedServerInstanceDefinition definition)
     {
         if (string.IsNullOrWhiteSpace(definition.ConfigProfileId))
             return null;
 
-        var profile = _configProfiles.GetProfile(definition.ConfigProfileId);
-        if (profile is null)
+        var template = _configProfiles.GetProfile(definition.ConfigProfileId);
+        if (template is null)
             throw new InvalidOperationException($"Unknown Quasar config profile '{definition.ConfigProfileId}' for instance '{definition.UniqueName}'.");
 
-        return profile;
+        return template;
     }
 
     private static XDocument CreateEmptyDedicatedConfigDocument()
@@ -356,35 +442,35 @@ public sealed class DedicatedServerRuntimePreparer
         if (Directory.Exists(worldPath) && File.Exists(Path.Combine(worldPath, "Sandbox.sbc")))
             return ResolveWorldPath(worldPath);
 
-        // World doesn't exist yet — seed from profile if one is set.
-        if (!string.IsNullOrWhiteSpace(definition.WorldProfileId))
+        // World doesn't exist yet — seed from template if one is set.
+        if (!string.IsNullOrWhiteSpace(definition.WorldTemplateId))
         {
-            var profile = _worldProfiles.GetProfile(definition.WorldProfileId)
-                ?? throw new InvalidOperationException($"Unknown world profile '{definition.WorldProfileId}' for instance '{definition.UniqueName}'.");
+            var template = _worldTemplates.GetTemplate(definition.WorldTemplateId)
+                ?? throw new InvalidOperationException($"Unknown world template '{definition.WorldTemplateId}' for instance '{definition.UniqueName}'.");
 
-            await SeedWorldFromProfileAsync(definition.WorldProfileId, worldPath, cancellationToken);
+            await SeedWorldFromTemplateAsync(definition.WorldTemplateId, worldPath, cancellationToken);
             _logger.LogInformation(
-                "Seeded world for instance {UniqueName} from profile '{ProfileName}' at {WorldPath}.",
-                definition.UniqueName, profile.Name, worldPath);
+                "Seeded world for instance {UniqueName} from template '{TemplateName}' at {WorldPath}.",
+                definition.UniqueName, template.Name, worldPath);
             return worldPath;
         }
 
-        // No profile — fall through to standard validation (throws if missing).
+        // No template — fall through to standard validation (throws if missing).
         return ResolveWorldPath(worldPath);
     }
 
-    private async Task SeedWorldFromProfileAsync(
-        string worldProfileId,
+    private async Task SeedWorldFromTemplateAsync(
+        string worldTemplateId,
         string destWorldPath,
         CancellationToken cancellationToken)
     {
-        var sourceDir = _worldProfiles.GetWorldDirectory(worldProfileId);
+        var sourceDir = _worldTemplates.GetWorldDirectory(worldTemplateId);
 
         if (!Directory.Exists(sourceDir))
-            throw new InvalidOperationException($"World profile '{worldProfileId}' has no stored world files at '{sourceDir}'.");
+            throw new InvalidOperationException($"World template '{worldTemplateId}' has no stored world files at '{sourceDir}'.");
 
         if (!File.Exists(Path.Combine(sourceDir, "Sandbox.sbc")))
-            throw new InvalidOperationException($"World profile '{worldProfileId}' is missing Sandbox.sbc.");
+            throw new InvalidOperationException($"World template '{worldTemplateId}' is missing Sandbox.sbc.");
 
         Directory.CreateDirectory(destWorldPath);
         foreach (var sourceFile in Directory.EnumerateFiles(sourceDir, "*", SearchOption.AllDirectories))

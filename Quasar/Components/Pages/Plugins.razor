@@ -1,6 +1,7 @@
 @page "/plugins"
 @implements IDisposable
 @inject AgentRegistry Registry
+@inject PluginConfigService ConfigService
 
 <PageTitle>Plugins</PageTitle>
 
@@ -31,6 +32,49 @@
     </MudTable>
 </MudPaper>
 
+<MudText Typo="Typo.h5" Class="mt-8 mb-2">Plugin configuration</MudText>
+<MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">
+    Live configuration for plugins that expose a Quasar config provider.
+</MudText>
+
+@{
+    var configAgents = Registry.GetAgents()
+        .Where(agent => agent.IsConnected && ConfigService.HasConfigs(agent.AgentId))
+        .ToList();
+}
+
+@if (configAgents.Count == 0)
+{
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+        No connected server is exposing editable plugin configuration.
+    </MudAlert>
+}
+else
+{
+    foreach (var agent in configAgents)
+    {
+        <MudPaper Class="server-card mb-4 pa-4">
+            <MudText Typo="Typo.h6">@agent.ServerDisplayName</MudText>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block mb-3">@agent.NodeDisplayName</MudText>
+            @foreach (var plugin in ConfigService.GetConfigsForAgent(agent.AgentId))
+            {
+                <MudExpansionPanels Class="mb-2" MultiExpansion="true">
+                    <MudExpansionPanel Text="@plugin.DisplayName">
+                        <PluginConfigEditor AgentId="@agent.AgentId" Plugin="@plugin" />
+                    </MudExpansionPanel>
+                </MudExpansionPanels>
+            }
+        </MudPaper>
+    }
+}
+
+<MudText Typo="Typo.h5" Class="mt-8 mb-2">Plugin logs</MudText>
+<MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">
+    Structured logs emitted by plugins through the PluginSdk, captured from managed servers.
+</MudText>
+
+<PluginLogPanel />
+
 @code
 {
     private IReadOnlyList<PluginRow> PluginRows => Registry
@@ -51,11 +95,13 @@
     protected override void OnInitialized()
     {
         Registry.Changed += HandleRegistryChanged;
+        ConfigService.Changed += HandleRegistryChanged;
     }
 
     public void Dispose()
     {
         Registry.Changed -= HandleRegistryChanged;
+        ConfigService.Changed -= HandleRegistryChanged;
     }
 
     private void HandleRegistryChanged()

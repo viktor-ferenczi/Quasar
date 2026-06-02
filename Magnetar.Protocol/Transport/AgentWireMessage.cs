@@ -15,4 +15,8 @@ public class AgentWireMessage
     public ServerCommandEnvelope? Command { get; set; }
 
     public ServerCommandResult? CommandResult { get; set; }
+
+    public PluginConfigSnapshot? PluginConfigSnapshot { get; set; }
+
+    public PluginConfigUpdateRequest? PluginConfigUpdateRequest { get; set; }
 }

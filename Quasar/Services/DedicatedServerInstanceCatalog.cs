@@ -262,6 +262,10 @@ public sealed class DedicatedServerInstanceCatalog : IDisposable
             instance.MaxRestartAttempts = 0;
         instance.DailyRestartTimeLocal = instance.DailyRestartTimeLocal?.Trim() ?? string.Empty;
         instance.MaximumUptime = instance.MaximumUptime?.Trim() ?? string.Empty;
+        if (!Enum.IsDefined(instance.StartupProcessPriority))
+            instance.StartupProcessPriority = DedicatedServerProcessPriority.BelowNormal;
+        if (!Enum.IsDefined(instance.ReadyProcessPriority))
+            instance.ReadyProcessPriority = DedicatedServerProcessPriority.Normal;
         if (instance.UpdatedAtUtc == default)
             instance.UpdatedAtUtc = DateTimeOffset.UtcNow;
         return instance;
@@ -309,6 +313,9 @@ public sealed class DedicatedServerInstanceCatalog : IDisposable
             MaxRestartAttempts = instance.MaxRestartAttempts,
             DailyRestartTimeLocal = instance.DailyRestartTimeLocal,
             MaximumUptime = instance.MaximumUptime,
+            AvoidSimultaneousScheduledRestarts = instance.AvoidSimultaneousScheduledRestarts,
+            StartupProcessPriority = instance.StartupProcessPriority,
+            ReadyProcessPriority = instance.ReadyProcessPriority,
             UpdatedAtUtc = instance.UpdatedAtUtc,
         };
     }

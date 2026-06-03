@@ -158,6 +158,10 @@
                                                   Validation="@(new Func<string, string?>(ValidateMaximumUptime))"
                                                   HelperText="Leave blank to disable. Restarts once process uptime reaches this duration." />
                                 </MudItem>
+                                <MudItem xs="12">
+                                    <MudCheckBox @bind-Value="_editor.AvoidSimultaneousScheduledRestarts"
+                                                 Label="Avoid restarting more than one server at once for scheduled or maximum-uptime restarts" />
+                                </MudItem>
                             </MudGrid>
                         </ChildContent>
                     </MudExpansionPanel>
@@ -269,6 +273,30 @@
                                         Variant="Variant.Outlined"
                                         HelperText="@($"Quasar writes the rendered SpaceEngineers-Dedicated.cfg here. Default: {GetDefaultConfigFilePath()}")" />
                                 </MudItem>
+                                <MudItem xs="12" md="6">
+                                    <MudSelect T="DedicatedServerProcessPriority"
+                                               @bind-Value="_editor.StartupProcessPriority"
+                                               Label="Startup process priority"
+                                               Variant="Variant.Outlined"
+                                               HelperText="Applied after process start. Linux uses nice level.">
+                                        @foreach (var priority in ProcessPriorities)
+                                        {
+                                            <MudSelectItem T="DedicatedServerProcessPriority" Value="@priority">@FormatPriority(priority)</MudSelectItem>
+                                        }
+                                    </MudSelect>
+                                </MudItem>
+                                <MudItem xs="12" md="6">
+                                    <MudSelect T="DedicatedServerProcessPriority"
+                                               @bind-Value="_editor.ReadyProcessPriority"
+                                               Label="Ready process priority"
+                                               Variant="Variant.Outlined"
+                                               HelperText="Applied when agent snapshot confirms the server is open.">
+                                        @foreach (var priority in ProcessPriorities)
+                                        {
+                                            <MudSelectItem T="DedicatedServerProcessPriority" Value="@priority">@FormatPriority(priority)</MudSelectItem>
+                                        }
+                                    </MudSelect>
+                                </MudItem>
                                 <MudItem xs="12">
                                     <MudTextField
                                         @bind-Value="_editor.LaunchArguments"
@@ -329,6 +357,14 @@
     private bool _restartPolicyExpanded;
     private bool _healthPolicyExpanded;
     private bool _runtimeExpanded;
+    private static readonly DedicatedServerProcessPriority[] ProcessPriorities =
+    [
+        DedicatedServerProcessPriority.Low,
+        DedicatedServerProcessPriority.BelowNormal,
+        DedicatedServerProcessPriority.Normal,
+        DedicatedServerProcessPriority.AboveNormal,
+        DedicatedServerProcessPriority.High,
+    ];
 
     protected override void OnInitialized()
     {
@@ -583,6 +619,15 @@
         UniqueNameLocked
             ? "Stop instance before renaming. Allowed: letters, numbers, underscore, hyphen. Used as canonical identity and Magnetars subdirectory name."
             : "Required. Allowed: letters, numbers, underscore, hyphen. Used as canonical identity and Magnetars subdirectory name.";
+
+    private static string FormatPriority(DedicatedServerProcessPriority priority) => priority switch
+    {
+        DedicatedServerProcessPriority.Low => "Low",
+        DedicatedServerProcessPriority.BelowNormal => "Below normal",
+        DedicatedServerProcessPriority.AboveNormal => "Above normal",
+        DedicatedServerProcessPriority.High => "High",
+        _ => "Normal",
+    };
 
     private string? ValidateUniqueNameField(string? value)
     {

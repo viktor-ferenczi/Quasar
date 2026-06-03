@@ -265,6 +265,7 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
     private async Task ReconcileAsync(CancellationToken cancellationToken)
     {
         List<(string UniqueName, ReconcileAction Action, string Reason)> actions = new();
+        List<(string UniqueName, DedicatedServerProcessPriority Priority, string Phase)> priorityActions = new();
         var agents = BuildAgentLookup();
         var now = DateTimeOffset.UtcNow;
         var healthChanged = false;
@@ -293,6 +294,17 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
                 state.SimulationProgressWindowSeconds = health.SimulationProgressWindowSeconds;
                 state.SimulationFramesAdvanced = health.SimulationFramesAdvanced;
 
+                if (processActive &&
+                    state.State == DedicatedServerInstanceProcessState.Running &&
+                    health.State is DedicatedServerInstanceHealthState.Healthy or DedicatedServerInstanceHealthState.Warning &&
+                    agents.TryGetValue(state.UniqueName, out var readyAgent) &&
+                    readyAgent.IsConnected &&
+                    readyAgent.Snapshot is not null)
+                {
+                    if (state.LastAppliedProcessPriority != state.Definition.ReadyProcessPriority)
+                        priorityActions.Add((state.UniqueName, state.Definition.ReadyProcessPriority, "ready"));
+                }
+
                 if (goalState == DedicatedServerInstanceGoalState.On)
                 {
                     if (!processActive && state.State is DedicatedServerInstanceProcessState.Stopped
@@ -314,14 +326,29 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
                              state.State == DedicatedServerInstanceProcessState.Running &&
                              ShouldMaximumUptimeRestartFire(state, now))
                     {
-                        actions.Add((state.UniqueName, ReconcileAction.Restart, $"maximum uptime {state.Definition.MaximumUptime} reached"));
+                        if (CanRunPlannedRestart(state))
+                        {
+                            actions.Add((state.UniqueName, ReconcileAction.Restart, $"maximum uptime {state.Definition.MaximumUptime} reached"));
+                        }
+                        else
+                        {
+                            state.LastMessage = "Maximum uptime restart delayed; another server is stopping or restarting.";
+                            healthChanged = true;
+                        }
                     }
                     else if (processActive &&
                              state.State == DedicatedServerInstanceProcessState.Running &&
-                             ShouldScheduledRestartFire(state, now))
+                             ShouldScheduledRestartFire(state, now, consume: CanRunPlannedRestart(state)))
                     {
-                        state.LastScheduledRestartUtc = now;
-                        actions.Add((state.UniqueName, ReconcileAction.Restart, $"scheduled restart at {state.Definition.DailyRestartTimeLocal}"));
+                        if (state.LastScheduledRestartUtc == now)
+                        {
+                            actions.Add((state.UniqueName, ReconcileAction.Restart, $"scheduled restart at {state.Definition.DailyRestartTimeLocal}"));
+                        }
+                        else
+                        {
+                            state.LastMessage = "Scheduled restart delayed; another server is stopping or restarting.";
+                            healthChanged = true;
+                        }
                     }
                 }
                 else
@@ -334,6 +361,9 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
 
         if (healthChanged)
             NotifyChanged();
+
+        foreach (var (uniqueName, priority, phase) in priorityActions)
+            TryApplyProcessPriority(uniqueName, priority, phase);
 
         foreach (var (uniqueName, action, reason) in actions)
         {
@@ -475,10 +505,12 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
             current.StandardErrorLogPath = stderrPath;
             current.IsRestartPending = false;
             current.StopRequested = false;
+            current.LastAppliedProcessPriority = null;
             ResetHealthTracking(current);
         }
 
         _logger.LogInformation("Started instance {UniqueName} with pid {Pid}.", state.UniqueName, process.Id);
+        TryApplyProcessPriority(state.UniqueName, process, definition.StartupProcessPriority, "startup");
         NotifyChanged();
 
         _ = PumpStandardOutputAsync(process.StandardOutput, stdoutPath, state.UniqueName, cancellationToken);
@@ -496,6 +528,129 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
         }
 
         NotifyChanged();
+    }
+
+    private void TryApplyProcessPriority(string uniqueName, DedicatedServerProcessPriority priority, string phase)
+    {
+        Process? process;
+        lock (_sync)
+        {
+            if (!_states.TryGetValue(uniqueName, out var state))
+                return;
+
+            if (state.LastAppliedProcessPriority == priority)
+                return;
+
+            process = state.Process;
+            if (!IsProcessActive(process))
+                return;
+        }
+
+        if (!TryApplyProcessPriority(uniqueName, process!, priority, phase))
+            return;
+
+        lock (_sync)
+        {
+            if (_states.TryGetValue(uniqueName, out var state))
+                state.LastAppliedProcessPriority = priority;
+        }
+    }
+
+    private bool TryApplyProcessPriority(string uniqueName, Process process, DedicatedServerProcessPriority priority, string phase)
+    {
+        try
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                process.PriorityClass = ToWindowsPriority(priority);
+                _logger.LogInformation("Applied {Phase} priority {Priority} to instance {UniqueName}.", phase, priority, uniqueName);
+                return true;
+            }
+
+            if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+            {
+                return TryApplyUnixNice(uniqueName, process.Id, priority, phase);
+            }
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(exception, "Failed applying {Phase} priority {Priority} to instance {UniqueName}.", phase, priority, uniqueName);
+        }
+
+        return false;
+    }
+
+    private static ProcessPriorityClass ToWindowsPriority(DedicatedServerProcessPriority priority) => priority switch
+    {
+        DedicatedServerProcessPriority.Low => ProcessPriorityClass.Idle,
+        DedicatedServerProcessPriority.BelowNormal => ProcessPriorityClass.BelowNormal,
+        DedicatedServerProcessPriority.AboveNormal => ProcessPriorityClass.AboveNormal,
+        DedicatedServerProcessPriority.High => ProcessPriorityClass.High,
+        _ => ProcessPriorityClass.Normal,
+    };
+
+    private bool TryApplyUnixNice(string uniqueName, int processId, DedicatedServerProcessPriority priority, string phase)
+    {
+        var nice = priority switch
+        {
+            DedicatedServerProcessPriority.Low => 10,
+            DedicatedServerProcessPriority.BelowNormal => 5,
+            DedicatedServerProcessPriority.AboveNormal => -5,
+            DedicatedServerProcessPriority.High => -10,
+            _ => 0,
+        };
+
+        try
+        {
+            using var renice = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "renice",
+                    Arguments = $"-n {nice} -p {processId}",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                },
+            };
+
+            if (!renice.Start())
+                return false;
+
+            var stdout = renice.StandardOutput.ReadToEnd();
+            var stderr = renice.StandardError.ReadToEnd();
+            renice.WaitForExit(3000);
+            if (renice.ExitCode == 0)
+            {
+                _logger.LogInformation("Applied {Phase} nice {Nice} to instance {UniqueName}.", phase, nice, uniqueName);
+                return true;
+            }
+
+            _logger.LogWarning(
+                "renice failed applying {Phase} nice {Nice} to instance {UniqueName}. ExitCode={ExitCode}. Stdout={Stdout}. Stderr={Stderr}",
+                phase,
+                nice,
+                uniqueName,
+                renice.ExitCode,
+                TrimForLog(stdout),
+                TrimForLog(stderr));
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(exception, "Failed running renice for instance {UniqueName}.", uniqueName);
+        }
+
+        return false;
+    }
+
+    private static string TrimForLog(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        value = value.Trim();
+        return value.Length <= 2000 ? value : value[..2000] + "...";
     }
 
     private async Task HandleProcessExitedAsync(string uniqueName)
@@ -1027,7 +1182,17 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
         return (now - state.LastHealthRecoveryActionUtc.Value) >= TimeSpan.FromSeconds(Math.Max(30, state.Definition.RestartDelaySeconds));
     }
 
-    private static bool ShouldScheduledRestartFire(ManagedInstanceState state, DateTimeOffset now)
+    private bool CanRunPlannedRestart(ManagedInstanceState state)
+    {
+        if (!state.Definition.AvoidSimultaneousScheduledRestarts)
+            return true;
+
+        return !_states.Values.Any(current =>
+            !string.Equals(current.UniqueName, state.UniqueName, StringComparison.OrdinalIgnoreCase) &&
+            current.State is DedicatedServerInstanceProcessState.Stopping or DedicatedServerInstanceProcessState.Restarting);
+    }
+
+    private static bool ShouldScheduledRestartFire(ManagedInstanceState state, DateTimeOffset now, bool consume)
     {
         if (!state.StartedAtUtc.HasValue)
             return false;
@@ -1053,7 +1218,12 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
             if (string.Equals(state.LastScheduledRestartKey, scheduleKey, StringComparison.Ordinal))
                 continue;
 
-            state.LastScheduledRestartKey = scheduleKey;
+            if (consume)
+            {
+                state.LastScheduledRestartKey = scheduleKey;
+                state.LastScheduledRestartUtc = now;
+            }
+
             return true;
         }
 
@@ -1231,6 +1401,9 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
             MaxRestartAttempts = definition.MaxRestartAttempts,
             DailyRestartTimeLocal = definition.DailyRestartTimeLocal,
             MaximumUptime = definition.MaximumUptime,
+            AvoidSimultaneousScheduledRestarts = definition.AvoidSimultaneousScheduledRestarts,
+            StartupProcessPriority = definition.StartupProcessPriority,
+            ReadyProcessPriority = definition.ReadyProcessPriority,
             UpdatedAtUtc = definition.UpdatedAtUtc,
         };
     }
@@ -1324,6 +1497,8 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
         public DateTimeOffset? LastScheduledRestartUtc { get; set; }
 
         public string LastScheduledRestartKey { get; set; } = string.Empty;
+
+        public DedicatedServerProcessPriority? LastAppliedProcessPriority { get; set; }
 
         public ulong? LastSimulationFrameCounter { get; set; }
 

@@ -5,6 +5,7 @@
 @inject DedicatedServerSupervisor Supervisor
 @inject QuasarConfigProfileCatalog ConfigProfiles
 @inject QuasarWorldTemplateCatalog WorldTemplates
+@inject ManagedRuntimeWarmupService RuntimeWarmup
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 
@@ -344,6 +345,15 @@
     </MudAlert>
 }
 
+@if (RuntimeWarmupSnapshot.State is ManagedRuntimeWarmupState.Running or ManagedRuntimeWarmupState.Failed)
+{
+    <MudAlert Severity="@(RuntimeWarmupSnapshot.State == ManagedRuntimeWarmupState.Failed ? Severity.Warning : Severity.Info)"
+              Variant="Variant.Outlined"
+              Class="mb-4">
+        @RuntimeWarmupSnapshot.Message
+    </MudAlert>
+}
+
 <MudGrid Class="mb-4">
     <MudItem xs="12" sm="6" lg="3">
         <MudPaper Class="pa-4 summary-card">
@@ -402,6 +412,7 @@ else
     private IReadOnlyList<AgentRuntimeState> Agents => Registry.GetAgents();
     private IReadOnlyList<DedicatedServerInstanceDefinition> Instances => InstanceCatalog.GetInstances();
     private IReadOnlyList<DedicatedServerInstanceRuntimeSnapshot> RuntimeSnapshotList => Supervisor.GetSnapshots();
+    private ManagedRuntimeWarmupSnapshot RuntimeWarmupSnapshot => RuntimeWarmup.GetSnapshot();
     private IReadOnlyDictionary<string, DedicatedServerInstanceRuntimeSnapshot> RuntimeSnapshots => Supervisor
         .GetSnapshots()
         .ToDictionary(snapshot => snapshot.UniqueName, StringComparer.OrdinalIgnoreCase);
@@ -540,6 +551,7 @@ else
         Supervisor.Changed += HandleRegistryChanged;
         ConfigProfiles.Changed += HandleRegistryChanged;
         WorldTemplates.Changed += HandleRegistryChanged;
+        RuntimeWarmup.Changed += HandleRegistryChanged;
     }
 
     public void Dispose()
@@ -549,6 +561,7 @@ else
         Supervisor.Changed -= HandleRegistryChanged;
         ConfigProfiles.Changed -= HandleRegistryChanged;
         WorldTemplates.Changed -= HandleRegistryChanged;
+        RuntimeWarmup.Changed -= HandleRegistryChanged;
     }
 
     private void HandleRegistryChanged()

@@ -63,6 +63,12 @@ public sealed class DedicatedServerInstanceDefinition
 
     public string MaximumUptime { get; set; } = string.Empty;
 
+    public bool AvoidSimultaneousScheduledRestarts { get; set; } = true;
+
+    public DedicatedServerProcessPriority StartupProcessPriority { get; set; } = DedicatedServerProcessPriority.BelowNormal;
+
+    public DedicatedServerProcessPriority ReadyProcessPriority { get; set; } = DedicatedServerProcessPriority.Normal;
+
     public DateTimeOffset UpdatedAtUtc { get; set; } = DateTimeOffset.UtcNow;
 
     public DedicatedServerInstanceDefinition Clone()
@@ -98,6 +104,9 @@ public sealed class DedicatedServerInstanceDefinition
             MaxRestartAttempts = MaxRestartAttempts,
             DailyRestartTimeLocal = DailyRestartTimeLocal,
             MaximumUptime = MaximumUptime,
+            AvoidSimultaneousScheduledRestarts = AvoidSimultaneousScheduledRestarts,
+            StartupProcessPriority = StartupProcessPriority,
+            ReadyProcessPriority = ReadyProcessPriority,
             UpdatedAtUtc = UpdatedAtUtc,
         };
     }

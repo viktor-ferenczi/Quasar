@@ -140,6 +140,8 @@ public class Program
             builder.Services.AddSingleton<QuasarPluginCatalogService>();
             builder.Services.AddSingleton<QuasarWorkshopModResolver>();
             builder.Services.AddSingleton<ManagedDedicatedServerRuntimeResolver>();
+            builder.Services.AddSingleton<ManagedRuntimeWarmupService>();
+            builder.Services.AddHostedService(serviceProvider => serviceProvider.GetRequiredService<ManagedRuntimeWarmupService>());
             builder.Services.AddSingleton<DedicatedServerInstanceCatalog>();
             builder.Services.AddSingleton<DedicatedServerSupervisor>();
             builder.Services.AddSingleton<DedicatedServerRuntimePreparer>();

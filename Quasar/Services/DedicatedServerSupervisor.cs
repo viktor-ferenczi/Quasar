@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Magnetar.Protocol.Runtime;
 using Magnetar.Protocol.Transport;
 using Quasar.Models;
@@ -16,6 +18,9 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
 
     private static readonly TimeSpan RestartCounterResetWindow = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan ReconcileInterval = TimeSpan.FromSeconds(2);
+    private static readonly Regex PrefixedLogLinePattern = new(
+        @"^(?<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,7})?)\s*[:\-]\s*(?<message>.*)$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
     private readonly object _sync = new();
     private readonly DedicatedServerInstanceCatalog _catalog;
     private readonly AgentRegistry _registry;
@@ -951,14 +956,54 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
         }
     }
 
-    private static PluginLogEntry BuildMagnetarEntry(string uniqueName, string line, string level) => new()
+    private static PluginLogEntry BuildMagnetarEntry(string uniqueName, string line, string level)
     {
-        UniqueName = uniqueName,
-        TimestampUtc = DateTimeOffset.UtcNow,
-        Level = level,
-        Plugin = MagnetarLogSource,
-        Message = line,
-    };
+        var timestamp = DateTimeOffset.UtcNow;
+        var message = line;
+
+        if (TryNormalizePrefixedLogLine(line, out var parsedTimestamp, out var parsedMessage))
+        {
+            timestamp = parsedTimestamp;
+            message = parsedMessage;
+        }
+
+        return new PluginLogEntry
+        {
+            UniqueName = uniqueName,
+            TimestampUtc = timestamp,
+            Level = level,
+            Plugin = MagnetarLogSource,
+            Message = message,
+        };
+    }
+
+    private static bool TryNormalizePrefixedLogLine(
+        string line,
+        out DateTimeOffset timestampUtc,
+        out string message)
+    {
+        timestampUtc = DateTimeOffset.UtcNow;
+        message = line;
+
+        var match = PrefixedLogLinePattern.Match(line);
+        if (!match.Success)
+            return false;
+
+        var timestampText = match.Groups["timestamp"].Value;
+        if (!DateTime.TryParseExact(
+                timestampText,
+                ["yyyy-MM-dd HH:mm:ss.FFFFFFF", "yyyy-MM-dd HH:mm:ss"],
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AllowWhiteSpaces,
+                out var localTimestamp))
+        {
+            return false;
+        }
+
+        timestampUtc = new DateTimeOffset(DateTime.SpecifyKind(localTimestamp, DateTimeKind.Local)).ToUniversalTime();
+        message = match.Groups["message"].Value.TrimStart();
+        return true;
+    }
 
     private static bool IsProcessActive(Process? process) =>
         process is not null && !process.HasExited;

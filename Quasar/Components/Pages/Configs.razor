@@ -409,91 +409,145 @@
 
                     <MudTabPanel Text="Mods">
                         <MudPaper Class="server-card pa-4" Square="true">
-                        <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="2" Class="mb-4">
-                            <MudTextField
-                                @bind-Value="_workshopSearchText"
-                                Label="Search Steam Workshop mods"
-                                Variant="Variant.Outlined"
-                                Immediate="true"
-                                Adornment="Adornment.Start"
-                                AdornmentIcon="@Icons.Material.Filled.Search"
-                                OnKeyDown="HandleWorkshopSearchKeyDown"
-                                Class="configs-search-field" />
-                            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SearchWorkshopModsAsync" Disabled="@(!WorkshopCredentials.HasWebApiKey || _workshopSearchLoading)" StartIcon="@Icons.Material.Filled.Search">
-                                @(_workshopSearchLoading ? "Searching..." : "Search Workshop")
-                            </MudButton>
-                            <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="LoadPopularWorkshopModsAsync" Disabled="@(!WorkshopCredentials.HasWebApiKey || _workshopSearchLoading)" StartIcon="@Icons.Material.Filled.Whatshot">
-                                Popular Mods
-                            </MudButton>
-                            <MudChip T="string" Variant="Variant.Outlined" Color="@(WorkshopCredentials.HasWebApiKey ? Color.Success : Color.Warning)" Icon="@(WorkshopCredentials.HasWebApiKey ? Icons.Material.Filled.Key : Icons.Material.Filled.KeyOff)">
-                                @(WorkshopCredentials.HasWebApiKey ? "Workshop API key set" : "Workshop API key needed")
-                            </MudChip>
-                            <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="OpenWorkshopApiKeyDialogAsync" StartIcon="@Icons.Material.Filled.Key">
-                                @(WorkshopCredentials.HasWebApiKey ? "Update API Key" : "Add API Key")
-                            </MudButton>
-                            <MudChip T="string" Variant="Variant.Outlined">Selected @FilteredMods.Count</MudChip>
-                        </MudStack>
-
-                        @if (!string.IsNullOrWhiteSpace(_workshopSearchError))
-                        {
-                            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
-                                @_workshopSearchError
-                            </MudAlert>
-                        }
-                        else if (_workshopSearchLoading)
-                        {
-                            <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
-                        }
-                        else if (_workshopResultsLoaded && _workshopResults.Count == 0)
-                        {
-                            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4">
-                                No Steam Workshop mods found.
-                            </MudAlert>
-                        }
-
-                        @if (_workshopResults.Count > 0)
-                        {
-                            <MudTable T="QuasarWorkshopSearchResult" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Items="_workshopResults" Class="mb-4">
-                                <HeaderContent>
-                                    <MudTh Style="width:96px;"></MudTh>
-                                    <MudTh>Workshop mod</MudTh>
-                                    <MudTh>Tags</MudTh>
-                                    <MudTh></MudTh>
-                                </HeaderContent>
-                                <RowTemplate>
-                                    <MudTd DataLabel="Preview">
-                                        @if (!string.IsNullOrWhiteSpace(context.PreviewUrl))
-                                        {
-                                            <MudLink Href="@GetWorkshopUrl(context.WorkshopId)" Target="_blank" Underline="Underline.None">
-                                                <img src="@context.PreviewUrl" alt="@context.Title" loading="lazy" class="workshop-thumbnail" />
-                                            </MudLink>
-                                        }
-                                    </MudTd>
-                                    <MudTd DataLabel="Workshop mod">
-                                        <MudStack Spacing="0">
-                                            <MudText Typo="Typo.subtitle2">@context.Title</MudText>
-                                            <MudText Typo="Typo.caption" Class="mono">@context.WorkshopId</MudText>
-                                            @if (!string.IsNullOrWhiteSpace(context.Description))
-                                            {
-                                                <MudText Typo="Typo.caption" Class="config-secondary">@context.Description</MudText>
-                                            }
-                                        </MudStack>
-                                    </MudTd>
-                                    <MudTd DataLabel="Tags">@GetWorkshopTagText(context)</MudTd>
-                                    <MudTd Style="text-align:right;">
-                                        <MudStack Row="true" Justify="Justify.FlexEnd" Spacing="1">
-                                            <MudIconButton Icon="@Icons.Material.Filled.OpenInNew" Color="Color.Default" Href="@GetWorkshopUrl(context.WorkshopId)" Target="_blank" />
-                                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" Disabled="@IsModSelected(context.WorkshopId)" OnClick="@(() => AddWorkshopResult(context))">
-                                                @(IsModSelected(context.WorkshopId) ? "Selected" : "Add")
-                                            </MudButton>
-                                        </MudStack>
-                                    </MudTd>
-                                </RowTemplate>
-                            </MudTable>
-                        }
-
                         <MudExpansionPanels MultiExpansion="false" Elevation="0" Outlined="true" Dense="true" Class="configs-expansion-panels mb-4">
-                            <MudExpansionPanel Text="Advanced/manual mod setup">
+                            <MudExpansionPanel Class="configs-expansion-panel" Expanded="@IsModPanelExpanded(ModListPanelKey)" ExpandedChanged="@(expanded => SetModPanelExpanded(ModListPanelKey, expanded))">
+                                <TitleContent>
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                        <MudText Typo="Typo.subtitle2">Mod list</MudText>
+                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@FilteredMods.Count</MudChip>
+                                    </MudStack>
+                                </TitleContent>
+                                <ChildContent>
+                                <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="2" Class="mb-3 mt-2">
+                                    <MudTextField
+                                        @bind-Value="_modSearch"
+                                        Label="Filter selected mods"
+                                        Variant="Variant.Outlined"
+                                        Immediate="true"
+                                        Adornment="Adornment.Start"
+                                        AdornmentIcon="@Icons.Material.Filled.Search"
+                                        Class="configs-search-field" />
+                                    <MudChip T="string" Variant="Variant.Outlined">Selected mods @FilteredMods.Count</MudChip>
+                                </MudStack>
+
+                                <MudTable T="QuasarModSelection" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Items="FilteredMods">
+                                    <HeaderContent>
+                                        <MudTh>Name</MudTh>
+                                        <MudTh>Workshop ID</MudTh>
+                                        <MudTh></MudTh>
+                                    </HeaderContent>
+                                    <RowTemplate>
+                                        <MudTd DataLabel="Name">@context.DisplayName</MudTd>
+                                        <MudTd DataLabel="Workshop ID" Class="mono">@context.WorkshopId</MudTd>
+                                        <MudTd Style="text-align:right;">
+                                            <MudIconButton Icon="@Icons.Material.Filled.DeleteOutline" Color="Color.Error" OnClick="@(() => RemoveMod(context.WorkshopId))" />
+                                        </MudTd>
+                                    </RowTemplate>
+                                    <NoRecordsContent>
+                                        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="ma-4">
+                                            No mods match current search.
+                                        </MudAlert>
+                                    </NoRecordsContent>
+                                </MudTable>
+                                </ChildContent>
+                            </MudExpansionPanel>
+
+                            <MudExpansionPanel Class="configs-expansion-panel" Expanded="@IsModPanelExpanded(WorkshopPanelKey)" ExpandedChanged="@(expanded => SetModPanelExpanded(WorkshopPanelKey, expanded))">
+                                <TitleContent>
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                        <MudText Typo="Typo.subtitle2">Steam Workshop</MudText>
+                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@_workshopResults.Count result(s)</MudChip>
+                                    </MudStack>
+                                </TitleContent>
+                                <ChildContent>
+                                <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="2" Class="mb-4 mt-2">
+                                    <MudTextField
+                                        @bind-Value="_workshopSearchText"
+                                        Label="Search Steam Workshop mods"
+                                        Variant="Variant.Outlined"
+                                        Immediate="true"
+                                        Adornment="Adornment.Start"
+                                        AdornmentIcon="@Icons.Material.Filled.Search"
+                                        OnKeyDown="HandleWorkshopSearchKeyDown"
+                                        Class="configs-search-field" />
+                                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SearchWorkshopModsAsync" Disabled="@(!WorkshopCredentials.HasWebApiKey || _workshopSearchLoading)" StartIcon="@Icons.Material.Filled.Search">
+                                        @(_workshopSearchLoading ? "Searching..." : "Search Workshop")
+                                    </MudButton>
+                                    <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="LoadPopularWorkshopModsAsync" Disabled="@(!WorkshopCredentials.HasWebApiKey || _workshopSearchLoading)" StartIcon="@Icons.Material.Filled.Whatshot">
+                                        Popular Mods
+                                    </MudButton>
+                                    <MudChip T="string" Variant="Variant.Outlined" Color="@(WorkshopCredentials.HasWebApiKey ? Color.Success : Color.Warning)" Icon="@(WorkshopCredentials.HasWebApiKey ? Icons.Material.Filled.Key : Icons.Material.Filled.KeyOff)">
+                                        @(WorkshopCredentials.HasWebApiKey ? "Workshop API key set" : "Workshop API key needed")
+                                    </MudChip>
+                                    <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="OpenWorkshopApiKeyDialogAsync" StartIcon="@Icons.Material.Filled.Key">
+                                        @(WorkshopCredentials.HasWebApiKey ? "Update API Key" : "Add API Key")
+                                    </MudButton>
+                                </MudStack>
+
+                                @if (!string.IsNullOrWhiteSpace(_workshopSearchError))
+                                {
+                                    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
+                                        @_workshopSearchError
+                                    </MudAlert>
+                                }
+                                else if (_workshopSearchLoading)
+                                {
+                                    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mb-4" />
+                                }
+                                else if (_workshopResultsLoaded && _workshopResults.Count == 0)
+                                {
+                                    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4">
+                                        No Steam Workshop mods found.
+                                    </MudAlert>
+                                }
+
+                                @if (_workshopResults.Count > 0)
+                                {
+                                    <MudTable T="QuasarWorkshopSearchResult" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Items="_workshopResults" Class="mb-4">
+                                        <HeaderContent>
+                                            <MudTh Style="width:56px;">Use</MudTh>
+                                            <MudTh Style="width:96px;"></MudTh>
+                                            <MudTh>Workshop mod</MudTh>
+                                            <MudTh>Tags</MudTh>
+                                            <MudTh></MudTh>
+                                        </HeaderContent>
+                                        <RowTemplate>
+                                            <MudTd DataLabel="Use">
+                                                <MudCheckBox T="bool"
+                                                             Dense="true"
+                                                             Value="@IsModSelected(context.WorkshopId)"
+                                                             ValueChanged="@(selected => SetWorkshopResultSelection(context, selected))" />
+                                            </MudTd>
+                                            <MudTd DataLabel="Preview">
+                                                @if (!string.IsNullOrWhiteSpace(context.PreviewUrl))
+                                                {
+                                                    <MudLink Href="@GetWorkshopUrl(context.WorkshopId)" Target="_blank" Underline="Underline.None">
+                                                        <img src="@context.PreviewUrl" alt="@context.Title" loading="lazy" class="workshop-thumbnail" />
+                                                    </MudLink>
+                                                }
+                                            </MudTd>
+                                            <MudTd DataLabel="Workshop mod">
+                                                <MudStack Spacing="0">
+                                                    <MudText Typo="Typo.subtitle2">@context.Title</MudText>
+                                                    <MudText Typo="Typo.caption" Class="mono">@context.WorkshopId</MudText>
+                                                    @if (!string.IsNullOrWhiteSpace(context.Description))
+                                                    {
+                                                        <MudText Typo="Typo.caption" Class="config-secondary">@context.Description</MudText>
+                                                    }
+                                                </MudStack>
+                                            </MudTd>
+                                            <MudTd DataLabel="Tags">@GetWorkshopTagText(context)</MudTd>
+                                            <MudTd Style="text-align:right;">
+                                                <MudIconButton Icon="@Icons.Material.Filled.OpenInNew" Color="Color.Default" Href="@GetWorkshopUrl(context.WorkshopId)" Target="_blank" />
+                                            </MudTd>
+                                        </RowTemplate>
+                                    </MudTable>
+                                }
+                                </ChildContent>
+                            </MudExpansionPanel>
+
+                            <MudExpansionPanel Class="configs-expansion-panel" Text="Advanced/manual mod setup" Expanded="@IsModPanelExpanded(AdvancedModsPanelKey)" ExpandedChanged="@(expanded => SetModPanelExpanded(AdvancedModsPanelKey, expanded))">
+                                <ChildContent>
                                 <MudGrid Class="mt-2">
                                     <MudItem xs="12">
                                         <MudTextField
@@ -522,40 +576,9 @@
                                         </MudButton>
                                     </MudItem>
                                 </MudGrid>
+                                </ChildContent>
                             </MudExpansionPanel>
                         </MudExpansionPanels>
-
-                        <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="2" Class="mb-3">
-                            <MudTextField
-                                @bind-Value="_modSearch"
-                                Label="Filter selected mods"
-                                Variant="Variant.Outlined"
-                                Immediate="true"
-                                Adornment="Adornment.Start"
-                                AdornmentIcon="@Icons.Material.Filled.Search"
-                                Class="configs-search-field" />
-                            <MudChip T="string" Variant="Variant.Outlined">Selected mods @FilteredMods.Count</MudChip>
-                        </MudStack>
-
-                        <MudTable T="QuasarModSelection" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Items="FilteredMods">
-                            <HeaderContent>
-                                <MudTh>Name</MudTh>
-                                <MudTh>Workshop ID</MudTh>
-                                <MudTh></MudTh>
-                            </HeaderContent>
-                            <RowTemplate>
-                                <MudTd DataLabel="Name">@context.DisplayName</MudTd>
-                                <MudTd DataLabel="Workshop ID" Class="mono">@context.WorkshopId</MudTd>
-                                <MudTd Style="text-align:right;">
-                                    <MudIconButton Icon="@Icons.Material.Filled.DeleteOutline" Color="Color.Error" OnClick="@(() => RemoveMod(context.WorkshopId))" />
-                                </MudTd>
-                            </RowTemplate>
-                            <NoRecordsContent>
-                                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="ma-4">
-                                    No mods match current search.
-                                </MudAlert>
-                            </NoRecordsContent>
-                        </MudTable>
                         </MudPaper>
                     </MudTabPanel>
                 </MudTabs>
@@ -573,6 +596,9 @@
     private const string AccessAdministratorsAnchorId = "config-access-administrators";
     private const string AccessReservedAnchorId = "config-access-reserved";
     private const string AccessBannedAnchorId = "config-access-banned";
+    private const string ModListPanelKey = "mod-list";
+    private const string WorkshopPanelKey = "workshop";
+    private const string AdvancedModsPanelKey = "advanced-mods";
     private string _selectedProfileId = string.Empty;
     private QuasarConfigProfile? _editor;
     private string _newProfileName = string.Empty;
@@ -591,6 +617,7 @@
     private bool _modResolving;
     private string? _workshopSearchError;
     private string? _expandedCategoryKey;
+    private string _expandedModPanelKey = ModListPanelKey;
     private bool _hasExplicitCategoryExpansion;
 
     private IReadOnlyList<QuasarConfigProfile> Templates => ConfigProfiles.GetProfiles();
@@ -830,6 +857,17 @@
         _expandedCategoryKey = expanded
             ? categoryKey
             : null;
+        return Task.CompletedTask;
+    }
+
+    private bool IsModPanelExpanded(string panelKey) =>
+        string.Equals(_expandedModPanelKey, panelKey, StringComparison.OrdinalIgnoreCase);
+
+    private Task SetModPanelExpanded(string panelKey, bool expanded)
+    {
+        _expandedModPanelKey = expanded
+            ? panelKey
+            : string.Empty;
         return Task.CompletedTask;
     }
 
@@ -1258,14 +1296,23 @@
         }
     }
 
-    private void AddWorkshopResult(QuasarWorkshopSearchResult result)
+    private void SetWorkshopResultSelection(QuasarWorkshopSearchResult result, bool selected)
+    {
+        if (selected)
+            AddWorkshopResult(result, showSnackbar: false);
+        else
+            RemoveMod(result.WorkshopId);
+    }
+
+    private void AddWorkshopResult(QuasarWorkshopSearchResult result, bool showSnackbar = true)
     {
         if (_editor is null)
             return;
 
         if (IsModSelected(result.WorkshopId))
         {
-            Snackbar.Add("Mod already selected.", Severity.Info);
+            if (showSnackbar)
+                Snackbar.Add("Mod already selected.", Severity.Info);
             return;
         }
 
@@ -1281,7 +1328,8 @@
             .ThenBy(mod => mod.WorkshopId)
             .ToList();
 
-        Snackbar.Add("Workshop mod added.", Severity.Success);
+        if (showSnackbar)
+            Snackbar.Add("Workshop mod added.", Severity.Success);
     }
 
     private async Task ResolveWorkshopModsAsync()

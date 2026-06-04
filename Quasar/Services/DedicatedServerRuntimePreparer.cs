@@ -46,10 +46,10 @@ public sealed class DedicatedServerRuntimePreparer
 
         var dedicatedServerAppDataPath = RequirePath(definition.DedicatedServerAppDataPath, "DedicatedServerAppDataPath");
         var magnetarAppDataPath = RequirePath(definition.MagnetarAppDataPath, "MagnetarAppDataPath");
+        var configProfile = ResolveConfigProfile(definition);
         var worldPath = await ResolveOrSeedWorldPathAsync(definition, cancellationToken);
         var runtimeConfigPath = Path.Combine(dedicatedServerAppDataPath, "SpaceEngineers-Dedicated.cfg");
         var lastSessionPath = Path.Combine(dedicatedServerAppDataPath, "Saves", "LastSession.sbl");
-        var configProfile = ResolveConfigProfile(definition);
 
         Directory.CreateDirectory(dedicatedServerAppDataPath);
         Directory.CreateDirectory(magnetarAppDataPath);
@@ -57,6 +57,7 @@ public sealed class DedicatedServerRuntimePreparer
 
         await PrepareRuntimeConfigAsync(definition, configProfile, runtimeConfigPath, cancellationToken);
         await PrepareMagnetarConfigAsync(configProfile, magnetarAppDataPath, cancellationToken);
+        await PrepareWorldModListAsync(definition, configProfile, worldPath, cancellationToken);
         await WriteLastSessionAsync(definition, worldPath, dedicatedServerAppDataPath, lastSessionPath, cancellationToken);
 
         var arguments = BuildLaunchArguments(
@@ -80,7 +81,7 @@ public sealed class DedicatedServerRuntimePreparer
 
     private async Task PrepareRuntimeConfigAsync(
         DedicatedServerInstanceDefinition definition,
-        QuasarConfigProfile? configProfile,
+        QuasarConfigProfile configProfile,
         string runtimeConfigPath,
         CancellationToken cancellationToken)
     {
@@ -120,8 +121,7 @@ public sealed class DedicatedServerRuntimePreparer
         if (!string.IsNullOrWhiteSpace(definition.ServerIP))
             UpsertElement(root, "ServerIP", definition.ServerIP.Trim());
 
-        if (configProfile is not null)
-            ApplyConfigProfile(root, configProfile);
+        ApplyConfigProfile(root, configProfile);
 
         var content = SerializeXml(document);
         await AtomicFileWriter.WriteTextAsync(runtimeConfigPath, content, cancellationToken);
@@ -158,7 +158,7 @@ public sealed class DedicatedServerRuntimePreparer
     }
 
     private async Task PrepareMagnetarConfigAsync(
-        QuasarConfigProfile? configProfile,
+        QuasarConfigProfile configProfile,
         string magnetarAppDataPath,
         CancellationToken cancellationToken)
     {
@@ -171,7 +171,7 @@ public sealed class DedicatedServerRuntimePreparer
 
         var agentLocalFileNames = await DeployQuasarAgentAsync(localDirectory, cancellationToken);
 
-        var currentTemplateName = string.IsNullOrWhiteSpace(configProfile?.Name)
+        var currentTemplateName = string.IsNullOrWhiteSpace(configProfile.Name)
             ? "Quasar Current"
             : configProfile.Name.Trim();
 
@@ -195,13 +195,16 @@ public sealed class DedicatedServerRuntimePreparer
                 new XElement("LocalPluginSources"),
                 new XElement(
                     "ModSources",
-                    (configProfile?.Mods ?? [])
+                    configProfile.Mods
                     .Select(mod => new XElement(
                         "Mod",
                         new XElement("Name", string.IsNullOrWhiteSpace(mod.DisplayName) ? mod.WorkshopId.ToString(CultureInfo.InvariantCulture) : mod.DisplayName),
                         new XElement("ID", mod.WorkshopId.ToString(CultureInfo.InvariantCulture)),
                         new XElement("Enabled", "true"))))));
 
+        // Mods are written authoritatively into the world's Sandbox_config.sbc by
+        // PrepareWorldModListAsync; Magnetar's profile override is intentionally
+        // empty so it cannot drift from the world's mod list.
         var currentProfileDocument = new XDocument(
             new XDeclaration("1.0", "utf-8", null),
             new XElement(
@@ -209,7 +212,7 @@ public sealed class DedicatedServerRuntimePreparer
                 new XElement("Name", currentTemplateName),
                 new XElement(
                     "GitHub",
-                    (configProfile?.Plugins ?? [])
+                    configProfile.Plugins
                     .Where(plugin => QuasarPluginCatalogService.IsManualSelectionAllowed(plugin.PluginId))
                     .Select(plugin => new XElement(
                         "GitHubPluginConfig",
@@ -219,10 +222,7 @@ public sealed class DedicatedServerRuntimePreparer
                 new XElement(
                     "Local",
                     agentLocalFileNames.Select(fileName => new XElement("string", fileName))),
-                new XElement(
-                    "Mods",
-                    (configProfile?.Mods ?? [])
-                    .Select(mod => new XElement("unsignedLong", mod.WorkshopId.ToString(CultureInfo.InvariantCulture))))));
+                new XElement("Mods")));
 
         await AtomicFileWriter.WriteTextAsync(
             Path.Combine(sourcesDirectory, "sources.xml"),
@@ -321,16 +321,40 @@ public sealed class DedicatedServerRuntimePreparer
         "Magnetar.Protocol.dll",
     ];
 
-    private QuasarConfigProfile? ResolveConfigProfile(DedicatedServerInstanceDefinition definition)
+    private QuasarConfigProfile ResolveConfigProfile(DedicatedServerInstanceDefinition definition)
     {
         if (string.IsNullOrWhiteSpace(definition.ConfigProfileId))
-            return null;
+            throw new InvalidOperationException(
+                $"Instance '{definition.UniqueName}' has no config profile assigned. " +
+                "Assign a profile from the Configs page before starting the server.");
 
         var template = _configProfiles.GetProfile(definition.ConfigProfileId);
         if (template is null)
-            throw new InvalidOperationException($"Unknown Quasar config profile '{definition.ConfigProfileId}' for instance '{definition.UniqueName}'.");
+            throw new InvalidOperationException(
+                $"Unknown Quasar config profile '{definition.ConfigProfileId}' for instance '{definition.UniqueName}'.");
 
         return template;
+    }
+
+    private async Task PrepareWorldModListAsync(
+        DedicatedServerInstanceDefinition definition,
+        QuasarConfigProfile configProfile,
+        string worldPath,
+        CancellationToken cancellationToken)
+    {
+        var sandboxConfigPath = Path.Combine(worldPath, WorldSandboxConfigEditor.SandboxConfigFileName);
+        if (!File.Exists(sandboxConfigPath))
+        {
+            _logger.LogWarning(
+                "Skipping mod list rewrite for instance {UniqueName}: {File} not found at {Path}.",
+                definition.UniqueName, WorldSandboxConfigEditor.SandboxConfigFileName, sandboxConfigPath);
+            return;
+        }
+
+        await WorldSandboxConfigEditor.WriteModsAsync(sandboxConfigPath, configProfile.Mods, cancellationToken);
+        _logger.LogInformation(
+            "Wrote {Count} mod entr(y/ies) from profile '{ProfileName}' into {Path}.",
+            configProfile.Mods.Count, configProfile.Name, sandboxConfigPath);
     }
 
     private static XDocument CreateEmptyDedicatedConfigDocument()

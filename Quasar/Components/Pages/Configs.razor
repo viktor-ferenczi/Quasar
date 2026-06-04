@@ -477,6 +477,12 @@
                                         AdornmentIcon="@Icons.Material.Filled.Search"
                                         Class="configs-search-field" />
                                     <MudChip T="string" Variant="Variant.Outlined">Selected mods @FilteredMods.Count</MudChip>
+                                    <MudButton Variant="Variant.Outlined"
+                                               Color="Color.Primary"
+                                               StartIcon="@Icons.Material.Filled.MergeType"
+                                               OnClick="MergeModsFromWorldTemplateAsync">
+                                        Merge from World Template
+                                    </MudButton>
                                 </MudStack>
 
                                 <MudTable T="QuasarModSelection" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Items="FilteredMods">
@@ -1546,6 +1552,61 @@
             return;
 
         _editor.Mods.RemoveAll(mod => mod.WorkshopId == workshopId);
+    }
+
+    private async Task MergeModsFromWorldTemplateAsync()
+    {
+        if (_editor is null)
+            return;
+
+        var parameters = new DialogParameters
+        {
+            [nameof(MergeWorldTemplateModsDialog.ExistingWorkshopIds)] =
+                _editor.Mods.Select(mod => mod.WorkshopId).ToArray(),
+        };
+
+        var options = new DialogOptions
+        {
+            CloseOnEscapeKey = true,
+            FullWidth = true,
+            MaxWidth = MaxWidth.Medium,
+        };
+
+        var dialog = await DialogService.ShowAsync<MergeWorldTemplateModsDialog>(
+            "Merge mods from world template",
+            parameters,
+            options);
+
+        var result = await dialog.Result;
+        if (result is null || result.Canceled || result.Data is not List<QuasarModSelection> mergedMods)
+            return;
+
+        if (mergedMods.Count == 0)
+            return;
+
+        var existing = _editor.Mods
+            .Select(mod => mod.WorkshopId)
+            .ToHashSet();
+
+        var added = 0;
+        foreach (var mod in mergedMods)
+        {
+            if (mod.WorkshopId <= 0 || !existing.Add(mod.WorkshopId))
+                continue;
+
+            _editor.Mods.Add(mod);
+            added++;
+        }
+
+        _editor.Mods = _editor.Mods
+            .OrderBy(mod => mod.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(mod => mod.WorkshopId)
+            .ToList();
+
+        if (added > 0)
+            Snackbar.Add($"Merged {added} mod(s) from world template.", Severity.Success);
+        else
+            Snackbar.Add("All template mods were already in this profile.", Severity.Info);
     }
 
     private string GetProfileSummary(QuasarConfigProfile template)

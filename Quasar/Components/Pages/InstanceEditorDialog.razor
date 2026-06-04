@@ -69,8 +69,10 @@
                                        @bind-Value="_editor.ConfigProfileId"
                                        Label="Config template"
                                        Variant="Variant.Outlined"
-                                       HelperText="Reusable world, plugin, and mod preset from Configs page.">
-                                <MudSelectItem T="string" Value="@string.Empty">(No config template)</MudSelectItem>
+                                       Required="true"
+                                       RequiredError="Config template required."
+                                       Validation="@(new Func<string, string?>(ValidateConfigProfileField))"
+                                       HelperText="Reusable world, plugin, and mod preset from Configs page. The profile's mod list is written into the world's Sandbox_config.sbc on every start.">
                                 @foreach (var template in ConfigProfiles.GetProfiles())
                                 {
                                     <MudSelectItem T="string" Value="@template.ConfigProfileId">@template.Name</MudSelectItem>
@@ -112,6 +114,20 @@
                         </MudStack>
                     </MudItem>
                 </MudGrid>
+
+                @if (TemplateModsMissingFromProfile.Count > 0)
+                {
+                    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mt-3">
+                        <MudText Typo="Typo.subtitle2">World template has @TemplateModsMissingFromProfile.Count mod(s) not in the selected config profile.</MudText>
+                        <MudText Typo="Typo.body2" Class="mt-1">
+                            Quasar writes the profile's mod list into the world's <code>Sandbox_config.sbc</code> on every start, which will drop these mods from the world.
+                            Open Configs → @SelectedProfileName → Mods, then click <strong>Merge from World Template</strong> to add them before starting the server.
+                        </MudText>
+                        <MudText Typo="Typo.caption" Class="mt-1">
+                            Missing: @string.Join(", ", TemplateModsMissingFromProfile.Take(8).Select(mod => mod.DisplayName))@(TemplateModsMissingFromProfile.Count > 8 ? $", +{TemplateModsMissingFromProfile.Count - 8} more" : string.Empty)
+                        </MudText>
+                    </MudAlert>
+                }
             </section>
 
             <MudDivider />
@@ -642,6 +658,52 @@
 
     private static string? ValidateWorldTemplateField(string? value) =>
         string.IsNullOrWhiteSpace(value) ? "World template required." : null;
+
+    private static string? ValidateConfigProfileField(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "Config template required." : null;
+
+    private string SelectedProfileName =>
+        string.IsNullOrWhiteSpace(_editor.ConfigProfileId)
+            ? string.Empty
+            : ConfigProfiles.GetProfile(_editor.ConfigProfileId)?.Name ?? string.Empty;
+
+    private IReadOnlyList<QuasarModSelection> TemplateModsMissingFromProfile
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(_editor.WorldTemplateId) ||
+                string.IsNullOrWhiteSpace(_editor.ConfigProfileId))
+            {
+                return Array.Empty<QuasarModSelection>();
+            }
+
+            var profile = ConfigProfiles.GetProfile(_editor.ConfigProfileId);
+            if (profile is null)
+                return Array.Empty<QuasarModSelection>();
+
+            var sandboxConfigPath = Path.Combine(
+                WorldTemplates.GetWorldDirectory(_editor.WorldTemplateId),
+                WorldSandboxConfigEditor.SandboxConfigFileName);
+
+            IReadOnlyList<QuasarModSelection> templateMods;
+            try
+            {
+                templateMods = WorldSandboxConfigEditor.ReadMods(sandboxConfigPath);
+            }
+            catch
+            {
+                return Array.Empty<QuasarModSelection>();
+            }
+
+            if (templateMods.Count == 0)
+                return Array.Empty<QuasarModSelection>();
+
+            var profileIds = profile.Mods.Select(mod => mod.WorkshopId).ToHashSet();
+            return templateMods
+                .Where(mod => !profileIds.Contains(mod.WorkshopId))
+                .ToArray();
+        }
+    }
 
     private static string NormalizeWhitespace(string? value) =>
         System.Text.RegularExpressions.Regex.Replace(value?.Trim() ?? string.Empty, @"\s+", " ");

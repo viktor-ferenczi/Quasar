@@ -6,10 +6,16 @@ public sealed class ManagedRuntimeOptions
 {
     private const string DefaultLinuxMagnetarArchiveUrl = "https://nas.ferenczi.eu/public.php/dav/files/q4godba6fXH6w74/MagnetarForLinux.7z";
     private const string DefaultMagnetarArchiveUrl = "https://nas.ferenczi.eu/public.php/dav/files/q4godba6fXH6w74/?accept=zip";
+    private const string DefaultLinuxSteamCmdArchiveUrl = "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz";
+    private const string DefaultWindowsSteamCmdArchiveUrl = "https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip";
 
     public string MagnetarArchiveUrl { get; init; } = GetDefaultMagnetarArchiveUrl();
 
     public string MagnetarInstallDirectory { get; init; } = MagnetarPaths.GetQuasarManagedMagnetarInstallDirectory();
+
+    public string SteamCmdArchiveUrl { get; init; } = GetDefaultSteamCmdArchiveUrl();
+
+    public string SteamCmdInstallDirectory { get; init; } = MagnetarPaths.GetQuasarManagedSteamCmdInstallDirectory();
 
     public string DedicatedServerInstallDirectory { get; init; } = MagnetarPaths.GetQuasarManagedDedicatedServerInstallDirectory();
 
@@ -32,6 +38,16 @@ public sealed class ManagedRuntimeOptions
                                        ?? section["MagnetarInstallDirectory"];
         if (string.IsNullOrWhiteSpace(magnetarInstallDirectory))
             magnetarInstallDirectory = MagnetarPaths.GetQuasarManagedMagnetarInstallDirectory();
+
+        var steamCmdArchiveUrl = Environment.GetEnvironmentVariable("QUASAR_STEAMCMD_ARCHIVE_URL")
+                                 ?? section["SteamCmdArchiveUrl"];
+        if (string.IsNullOrWhiteSpace(steamCmdArchiveUrl))
+            steamCmdArchiveUrl = GetDefaultSteamCmdArchiveUrl();
+
+        var steamCmdInstallDirectory = Environment.GetEnvironmentVariable("QUASAR_STEAMCMD_INSTALL_DIR")
+                                      ?? section["SteamCmdInstallDirectory"];
+        if (string.IsNullOrWhiteSpace(steamCmdInstallDirectory))
+            steamCmdInstallDirectory = MagnetarPaths.GetQuasarManagedSteamCmdInstallDirectory();
 
         var dedicatedServerInstallDirectory = Environment.GetEnvironmentVariable("QUASAR_DS_INSTALL_DIR")
                                               ?? section["DedicatedServerInstallDirectory"];
@@ -57,6 +73,8 @@ public sealed class ManagedRuntimeOptions
         {
             MagnetarArchiveUrl = magnetarArchiveUrl.Trim(),
             MagnetarInstallDirectory = magnetarInstallDirectory.Trim(),
+            SteamCmdArchiveUrl = steamCmdArchiveUrl.Trim(),
+            SteamCmdInstallDirectory = steamCmdInstallDirectory.Trim(),
             DedicatedServerInstallDirectory = dedicatedServerInstallDirectory.Trim(),
             DedicatedServer64OverridePath = dedicatedServer64OverridePath.Trim(),
             SteamCmdPath = steamCmdPath.Trim(),
@@ -68,4 +86,9 @@ public sealed class ManagedRuntimeOptions
         OperatingSystem.IsLinux()
             ? DefaultLinuxMagnetarArchiveUrl
             : DefaultMagnetarArchiveUrl;
+
+    private static string GetDefaultSteamCmdArchiveUrl() =>
+        OperatingSystem.IsWindows()
+            ? DefaultWindowsSteamCmdArchiveUrl
+            : DefaultLinuxSteamCmdArchiveUrl;
 }

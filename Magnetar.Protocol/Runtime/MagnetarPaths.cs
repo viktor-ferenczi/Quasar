@@ -152,6 +152,9 @@ public static class MagnetarPaths
     public static string GetQuasarManagedMagnetarInstallDirectory() =>
         Path.Combine(GetQuasarManagedRuntimeToolsDirectory(), "Magnetar");
 
+    public static string GetQuasarManagedSteamCmdInstallDirectory() =>
+        Path.Combine(GetQuasarManagedRuntimeToolsDirectory(), "SteamCMD");
+
     public static string GetQuasarManagedDedicatedServerInstallDirectory() =>
         Path.Combine(GetQuasarManagedRuntimeToolsDirectory(), "SpaceEngineersDedicatedServer");
 

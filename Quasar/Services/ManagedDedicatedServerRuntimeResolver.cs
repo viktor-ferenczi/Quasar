@@ -24,6 +24,14 @@ public sealed class ManagedDedicatedServerRuntimeResolver
         "SpaceEngineersDedicated.exe",
     ];
 
+    private static readonly string[] SteamCmdFileNames =
+    [
+        "steamcmd",
+        "steamcmd.sh",
+        "steamcmd.exe",
+        "steamcmd.bat",
+    ];
+
     private static readonly UnixFileMode ExecutableUnixFileMode =
         UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
         UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
@@ -33,6 +41,7 @@ public sealed class ManagedDedicatedServerRuntimeResolver
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ManagedRuntimeOptions _options;
     private readonly SemaphoreSlim _magnetarInstallLock = new(1, 1);
+    private readonly SemaphoreSlim _steamCmdInstallLock = new(1, 1);
     private readonly SemaphoreSlim _dedicatedServerInstallLock = new(1, 1);
 
     public ManagedDedicatedServerRuntimeResolver(
@@ -191,18 +200,16 @@ public sealed class ManagedDedicatedServerRuntimeResolver
     private async Task<string> TryEnsureManagedDedicatedServerInstallAsync(CancellationToken cancellationToken)
     {
         var dedicatedServer64Path = Path.Combine(_options.DedicatedServerInstallDirectory, "DedicatedServer64");
-        if (IsValidDedicatedServer64Directory(dedicatedServer64Path))
-            return dedicatedServer64Path;
+        var hadValidInstall = IsValidDedicatedServer64Directory(dedicatedServer64Path);
 
-        var steamCmdPath = ResolveSteamCmdPath();
+        var steamCmdPath = await ResolveSteamCmdPathAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(steamCmdPath))
-            return string.Empty;
+            return hadValidInstall ? dedicatedServer64Path : string.Empty;
 
         await _dedicatedServerInstallLock.WaitAsync(cancellationToken);
         try
         {
-            if (IsValidDedicatedServer64Directory(dedicatedServer64Path))
-                return dedicatedServer64Path;
+            hadValidInstall = IsValidDedicatedServer64Directory(dedicatedServer64Path);
 
             Directory.CreateDirectory(_options.DedicatedServerInstallDirectory);
 
@@ -211,7 +218,7 @@ public sealed class ManagedDedicatedServerRuntimeResolver
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = steamCmdPath,
-                    Arguments = $"+force_install_dir {QuoteArgument(_options.DedicatedServerInstallDirectory)} +login anonymous +app_update {DedicatedServerAppId} validate +quit",
+                    Arguments = BuildDedicatedServerUpdateArguments(_options.DedicatedServerInstallDirectory),
                     WorkingDirectory = Path.GetDirectoryName(steamCmdPath) ?? AppContext.BaseDirectory,
                     UseShellExecute = false,
                     CreateNoWindow = true,
@@ -241,11 +248,11 @@ public sealed class ManagedDedicatedServerRuntimeResolver
             if (process.ExitCode != 0)
             {
                 _logger.LogWarning(
-                    "steamcmd failed installing managed DS. ExitCode={ExitCode}. Stdout={Stdout}. Stderr={Stderr}",
+                    "steamcmd failed installing/updating managed DS. ExitCode={ExitCode}. Stdout={Stdout}. Stderr={Stderr}",
                     process.ExitCode,
                     TrimForLog(stdout),
                     TrimForLog(stderr));
-                return string.Empty;
+                return hadValidInstall ? dedicatedServer64Path : string.Empty;
             }
 
             if (!IsValidDedicatedServer64Directory(dedicatedServer64Path))
@@ -254,7 +261,7 @@ public sealed class ManagedDedicatedServerRuntimeResolver
                 return string.Empty;
             }
 
-            _logger.LogInformation("Installed managed DedicatedServer64 into {Path}.", dedicatedServer64Path);
+            _logger.LogInformation("{Action} managed DedicatedServer64 into {Path}.", hadValidInstall ? "Updated" : "Installed", dedicatedServer64Path);
             return dedicatedServer64Path;
         }
         finally
@@ -263,22 +270,31 @@ public sealed class ManagedDedicatedServerRuntimeResolver
         }
     }
 
-    private string ResolveSteamCmdPath()
+    private async Task<string> ResolveSteamCmdPathAsync(CancellationToken cancellationToken)
     {
         if (!string.IsNullOrWhiteSpace(_options.SteamCmdPath))
             return File.Exists(_options.SteamCmdPath) ? _options.SteamCmdPath : string.Empty;
 
+        var managedPath = FindSteamCmdExecutable(_options.SteamCmdInstallDirectory);
+        if (!string.IsNullOrWhiteSpace(managedPath))
+            return managedPath;
+
+        var pathCandidate = ResolveSteamCmdPathFromEnvironment();
+        if (!string.IsNullOrWhiteSpace(pathCandidate))
+            return pathCandidate;
+
+        return await TryEnsureManagedSteamCmdInstallAsync(cancellationToken);
+    }
+
+    private static string ResolveSteamCmdPathFromEnvironment()
+    {
         var path = Environment.GetEnvironmentVariable("PATH");
         if (string.IsNullOrWhiteSpace(path))
             return string.Empty;
 
-        var fileNames = OperatingSystem.IsWindows()
-            ? new[] { "steamcmd.exe", "steamcmd.bat" }
-            : new[] { "steamcmd" };
-
         foreach (var directory in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            foreach (var fileName in fileNames)
+            foreach (var fileName in SteamCmdFileNames)
             {
                 var candidate = Path.Combine(directory, fileName);
                 if (File.Exists(candidate))
@@ -287,6 +303,112 @@ public sealed class ManagedDedicatedServerRuntimeResolver
         }
 
         return string.Empty;
+    }
+
+    private async Task<string> TryEnsureManagedSteamCmdInstallAsync(CancellationToken cancellationToken)
+    {
+        await _steamCmdInstallLock.WaitAsync(cancellationToken);
+        try
+        {
+            var steamCmdPath = FindSteamCmdExecutable(_options.SteamCmdInstallDirectory);
+            if (!string.IsNullOrWhiteSpace(steamCmdPath))
+                return steamCmdPath;
+
+            Directory.CreateDirectory(MagnetarPaths.GetQuasarManagedRuntimeCacheDirectory());
+            var extractRoot = Path.Combine(MagnetarPaths.GetQuasarManagedRuntimeCacheDirectory(), $"steamcmd-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(extractRoot);
+
+            try
+            {
+                using var client = _httpClientFactory.CreateClient();
+                client.Timeout = TimeSpan.FromMinutes(5);
+
+                var archivePath = Path.Combine(extractRoot, "steamcmd-download" + InferArchiveExtension(_options.SteamCmdArchiveUrl));
+                using var response = await client.GetAsync(_options.SteamCmdArchiveUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning(
+                        "Failed downloading SteamCMD archive from {Url}. Status={Status} {Reason}.",
+                        _options.SteamCmdArchiveUrl,
+                        (int)response.StatusCode,
+                        response.ReasonPhrase);
+                    return string.Empty;
+                }
+
+                await using (var archiveFile = File.Create(archivePath))
+                {
+                    await response.Content.CopyToAsync(archiveFile, cancellationToken);
+                }
+
+                ExtractArchive(archivePath, extractRoot);
+                TryDeleteFile(archivePath);
+
+                if (Directory.Exists(_options.SteamCmdInstallDirectory))
+                    Directory.Delete(_options.SteamCmdInstallDirectory, recursive: true);
+
+                Directory.CreateDirectory(_options.SteamCmdInstallDirectory);
+                CopyDirectory(extractRoot, _options.SteamCmdInstallDirectory);
+
+                steamCmdPath = FindSteamCmdExecutable(_options.SteamCmdInstallDirectory);
+                if (string.IsNullOrWhiteSpace(steamCmdPath))
+                {
+                    _logger.LogWarning("Downloaded SteamCMD archive did not contain a SteamCMD executable.");
+                    return string.Empty;
+                }
+
+                EnsureExecutableBit(steamCmdPath);
+                _logger.LogInformation("Installed managed SteamCMD into {Path}.", _options.SteamCmdInstallDirectory);
+                return steamCmdPath;
+            }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                _logger.LogWarning(exception, "Failed installing managed SteamCMD.");
+                return string.Empty;
+            }
+            finally
+            {
+                TryDeleteDirectory(extractRoot);
+            }
+        }
+        finally
+        {
+            _steamCmdInstallLock.Release();
+        }
+    }
+
+    private static string FindSteamCmdExecutable(string directory)
+    {
+        if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+            return string.Empty;
+
+        var files = Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories).ToList();
+        var preferredFileNames = OperatingSystem.IsWindows()
+            ? new[] { "steamcmd.exe", "steamcmd.bat" }
+            : new[] { "steamcmd.sh", "steamcmd" };
+
+        foreach (var preferredFileName in preferredFileNames)
+        {
+            var match = files.FirstOrDefault(file => string.Equals(
+                Path.GetFileName(file),
+                preferredFileName,
+                StringComparison.OrdinalIgnoreCase));
+            if (!string.IsNullOrWhiteSpace(match))
+                return match;
+        }
+
+        return files.FirstOrDefault(file => SteamCmdFileNames.Any(fileName => string.Equals(
+            Path.GetFileName(file),
+            fileName,
+            StringComparison.OrdinalIgnoreCase))) ?? string.Empty;
+    }
+
+    private static string BuildDedicatedServerUpdateArguments(string installDirectory)
+    {
+        var forcePlatform = OperatingSystem.IsWindows()
+            ? string.Empty
+            : "+@sSteamCmdForcePlatformType windows ";
+
+        return $"+force_install_dir {QuoteArgument(installDirectory)} {forcePlatform}+login anonymous +app_update {DedicatedServerAppId} validate +quit";
     }
 
     private static bool LooksLikeDedicatedServerExecutable(string path)
@@ -352,11 +474,23 @@ public sealed class ManagedDedicatedServerRuntimeResolver
             case ArchiveKind.Zip:
                 ExtractZipArchive(archivePath, destinationRoot);
                 return;
+            case ArchiveKind.TarGz:
+                ExtractReaderArchive(archivePath, destinationRoot);
+                return;
             case ArchiveKind.SevenZip:
                 ExtractSevenZipArchive(archivePath, destinationRoot);
                 return;
             default:
                 throw new InvalidOperationException($"Unsupported Magnetar archive format: {archivePath}");
+        }
+    }
+
+    private static void ExtractReaderArchive(string archivePath, string destinationRoot)
+    {
+        using var archive = ArchiveFactory.OpenArchive(archivePath, new ReaderOptions());
+        foreach (var entry in archive.Entries)
+        {
+            ExtractSharpCompressEntry(entry, destinationRoot);
         }
     }
 
@@ -429,6 +563,12 @@ public sealed class ManagedDedicatedServerRuntimeResolver
 
     private static ArchiveKind DetectArchiveKind(string archivePath)
     {
+        if (archivePath.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase) ||
+            archivePath.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase))
+        {
+            return ArchiveKind.TarGz;
+        }
+
         Span<byte> header = stackalloc byte[8];
         using (var stream = File.OpenRead(archivePath))
         {
@@ -457,6 +597,8 @@ public sealed class ManagedDedicatedServerRuntimeResolver
         }
 
         var extension = Path.GetExtension(archivePath);
+        if (header.Length >= 2 && header[0] == 0x1F && header[1] == 0x8B)
+            return ArchiveKind.TarGz;
         if (string.Equals(extension, ".7z", StringComparison.OrdinalIgnoreCase))
             return ArchiveKind.SevenZip;
         if (string.Equals(extension, ".zip", StringComparison.OrdinalIgnoreCase))
@@ -472,6 +614,10 @@ public sealed class ManagedDedicatedServerRuntimeResolver
             if (Uri.TryCreate(archiveUrl, UriKind.Absolute, out var uri))
             {
                 var extension = Path.GetExtension(uri.AbsolutePath);
+                if (uri.AbsolutePath.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase))
+                    return ".tar.gz";
+                if (string.Equals(extension, ".tgz", StringComparison.OrdinalIgnoreCase))
+                    return ".tgz";
                 if (string.Equals(extension, ".7z", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(extension, ".zip", StringComparison.OrdinalIgnoreCase))
                 {
@@ -586,6 +732,18 @@ public sealed class ManagedDedicatedServerRuntimeResolver
         }
     }
 
+    private static void TryDeleteFile(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch
+        {
+        }
+    }
+
     private static string QuoteArgument(string value) => $"\"{value.Replace("\"", "\\\"", StringComparison.Ordinal)}\"";
 
     private static string TrimForLog(string value)
@@ -604,6 +762,7 @@ internal enum ArchiveKind
 {
     Unknown,
     Zip,
+    TarGz,
     SevenZip,
 }
 

@@ -42,14 +42,14 @@ else
 {
     <MudTable T="KnownPlayerView" Dense="true" Hover="true" Breakpoint="Breakpoint.Md" Items="FilteredPlayers">
         <HeaderContent>
-            <MudTh>Server</MudTh>
-            <MudTh>Player</MudTh>
-            <MudTh>Service</MudTh>
-            <MudTh>Steam ID</MudTh>
-            <MudTh>Faction</MudTh>
-            <MudTh>Role</MudTh>
-            <MudTh>Last Seen</MudTh>
-            <MudTh>Status</MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<KnownPlayerView, object>(x => x.ServerDisplayName)">Server</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<KnownPlayerView, object>(x => GetDisplayName(x.Record))">Player</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<KnownPlayerView, object>(x => GetServiceLabel(x.Record.ServiceName))">Service</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<KnownPlayerView, object>(x => x.Record.SteamId)">Steam ID</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<KnownPlayerView, object>(x => x.Record.FactionTag)">Faction</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<KnownPlayerView, object>(x => GetRoleLabel(x.Record))">Role</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<KnownPlayerView, object>(x => x.Record.LastSeenUtc)">Last Seen</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel SortBy="new Func<KnownPlayerView, object>(x => x.IsOnline)">Status</MudTableSortLabel></MudTh>
             <MudTh></MudTh>
         </HeaderContent>
         <RowTemplate>
@@ -189,7 +189,7 @@ else
     {
         if (view.Agent is null)
         {
-            Snackbar.Add($"Instance '{view.Record.UniqueName}' is not connected.", Severity.Error);
+            Snackbar.Add($"Server '{view.Record.UniqueName}' is not connected.", Severity.Error);
             return;
         }
 

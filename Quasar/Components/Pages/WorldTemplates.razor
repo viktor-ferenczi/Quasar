@@ -63,14 +63,14 @@
                     <HeaderContent>
                         <MudTh><MudTableSortLabel SortBy="new Func<WorldTemplateRow, object>(x => x.Template.Name)">Name</MudTableSortLabel></MudTh>
                         <MudTh><MudTableSortLabel SortBy="new Func<WorldTemplateRow, object>(x => x.Template.Description)">Description</MudTableSortLabel></MudTh>
-                        <MudTh><MudTableSortLabel SortBy="new Func<WorldTemplateRow, object>(x => x.FileSizeMb)">World files</MudTableSortLabel></MudTh>
+                        <MudTh><MudTableSortLabel SortBy="new Func<WorldTemplateRow, object>(x => x.FileSizeMb)">Size</MudTableSortLabel></MudTh>
                         <MudTh><MudTableSortLabel SortBy="new Func<WorldTemplateRow, object>(x => x.Template.UpdatedAtUtc)">Updated</MudTableSortLabel></MudTh>
                         <MudTh></MudTh>
                     </HeaderContent>
                     <RowTemplate>
                         <MudTd DataLabel="Name">@context.Template.Name</MudTd>
                         <MudTd DataLabel="Description">@context.Template.Description</MudTd>
-                        <MudTd DataLabel="World files">
+                        <MudTd DataLabel="Size">
                             @if (context.WorldExists)
                             {
                                 <MudText Typo="Typo.caption">@context.FileSizeMb MB</MudText>

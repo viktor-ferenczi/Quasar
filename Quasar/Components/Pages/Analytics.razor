@@ -45,7 +45,7 @@
                   Wrap="Wrap.Wrap"
                   Justify="Justify.FlexEnd"
                   AlignItems="AlignItems.Center">
-            <MudButton Variant="Variant.Outlined" Color="MudBlazor.Color.Default" StartIcon="@Icons.Material.Filled.Refresh" OnClick="RefreshAsync">
+            <MudButton Variant="Variant.Outlined" Color="MudBlazor.Color.Default" StartIcon="@Icons.Material.Filled.Refresh" OnClick="@(() => RefreshAsync())">
                 Refresh
             </MudButton>
             <MudButton Variant="Variant.Filled" Color="MudBlazor.Color.Primary" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportAsync">
@@ -165,7 +165,8 @@ else
                     </MudStack>
                     <div class="analytics-apex-chart">
                         <ApexChart TItem="AnalyticsChartPoint"
-                                   @key="chart.Panel.Key"
+                                   @key="chart.RenderKey"
+                                   @ref="chart.ChartRef"
                                    Options="@chart.Options"
                                    Width="@("100%")"
                                    Height="@chart.Height">
@@ -227,12 +228,14 @@ else
     private readonly List<SummaryChipModel> _summaryChips = [];
     private AnalyticsViewConfig _config = CreateDefaultConfig();
     private IReadOnlyList<ServerOption> _serverOptions = [];
-    private Timer? _refreshTimer;
     private CancellationTokenSource _refreshCts = new();
     private bool _disposed;
     private bool _configLoaded;
     private bool _selectionInitialized;
+    private bool _pendingChartUpdate;
     private int _refreshing;
+    private int _refreshRequested;
+    private long _chartRenderVersion;
     private bool _isDarkTheme = true;
     private int _cachedViewportWidthPx = DefaultViewportWidthPx;
 
@@ -248,33 +251,41 @@ else
 
     protected override void OnInitialized()
     {
+        MetricsStore.Changed += HandleSourceChanged;
         Registry.Changed += HandleSourceChanged;
         ServerCatalog.Changed += HandleSourceChanged;
         ThemePreference.ThemeModeChanged += HandleThemeModeChanged;
-        _ = RefreshViewAsync();
+        _ = RefreshViewAsync(remountCharts: true);
         UpdateRefreshTimer();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender)
-            return;
-
+        if (firstRender)
+        {
         await ThemePreference.InitializeAsync();
         _isDarkTheme = ThemePreference.IsDarkMode;
         await LoadConfigAsync();
-        await RefreshViewAsync();
+        await RefreshViewAsync(remountCharts: true);
         UpdateRefreshTimer();
         await InvokeAsync(StateHasChanged);
+        return;
+        }
+
+        if (_pendingChartUpdate)
+        {
+            _pendingChartUpdate = false;
+            await UpdateRenderedChartsAsync();
+        }
     }
 
     public void Dispose()
     {
         _disposed = true;
+        MetricsStore.Changed -= HandleSourceChanged;
         Registry.Changed -= HandleSourceChanged;
         ServerCatalog.Changed -= HandleSourceChanged;
         ThemePreference.ThemeModeChanged -= HandleThemeModeChanged;
-        _refreshTimer?.Dispose();
         _refreshCts.Cancel();
         _refreshCts.Dispose();
     }
@@ -314,9 +325,12 @@ else
         }
     }
 
-    private async Task RefreshAsync()
+    private async Task RefreshAsync(bool remountCharts = false)
     {
-        await RefreshViewAsync();
+        await RefreshViewAsync(remountCharts);
+        if (!remountCharts)
+            RequestChartUpdate();
+
         await PersistConfigAsync();
         await InvokeAsync(StateHasChanged);
     }
@@ -339,20 +353,20 @@ else
         _config.GridColumns = 2;
         _config.GridRows = 4;
         _config.RowHeightPx = 320;
-        await RefreshAsync();
+        await RefreshAsync(remountCharts: true);
     }
 
     private async Task ResetPanelsAsync()
     {
         _config.Panels = CreateDefaultPanels();
-        await RefreshAsync();
+        await RefreshAsync(remountCharts: true);
     }
 
     private async Task SelectAllServersAsync()
     {
         _config.SelectedUniqueNames = _serverOptions.Select(option => option.UniqueName).ToList();
         _selectionInitialized = true;
-        await RefreshAsync();
+        await RefreshAsync(remountCharts: true);
     }
 
     private async Task HandleServerToggled(string uniqueName, bool value)
@@ -368,14 +382,14 @@ else
         }
 
         _selectionInitialized = true;
-        await RefreshAsync();
+        await RefreshAsync(remountCharts: true);
     }
 
     private Task HandleRangeChanged(string value)
     {
         _config.SelectedRangeKey = string.IsNullOrWhiteSpace(value) ? "1h" : value;
         UpdateRefreshTimer();
-        return RefreshAsync();
+        return RefreshAsync(remountCharts: true);
     }
 
     private Task HandleAutoRefreshChanged(int value)
@@ -388,25 +402,25 @@ else
     private Task HandleCustomFromDateChanged(DateTime? value)
     {
         _config.CustomFromDate = value;
-        return RefreshAsync();
+        return RefreshAsync(remountCharts: true);
     }
 
     private Task HandleCustomFromTimeChanged(TimeSpan? value)
     {
         _config.CustomFromTime = value;
-        return RefreshAsync();
+        return RefreshAsync(remountCharts: true);
     }
 
     private Task HandleCustomToDateChanged(DateTime? value)
     {
         _config.CustomToDate = value;
-        return RefreshAsync();
+        return RefreshAsync(remountCharts: true);
     }
 
     private Task HandleCustomToTimeChanged(TimeSpan? value)
     {
         _config.CustomToTime = value;
-        return RefreshAsync();
+        return RefreshAsync(remountCharts: true);
     }
 
     private Task HandleGridColumnsChanged(int value)
@@ -415,7 +429,7 @@ else
         foreach (var panel in _config.Panels)
             panel.ColumnSpan = Math.Clamp(panel.ColumnSpan, 1, _config.GridColumns);
 
-        return RefreshAsync();
+        return RefreshAsync(remountCharts: true);
     }
 
     private Task HandleGridRowsChanged(int value)
@@ -424,31 +438,31 @@ else
         foreach (var panel in _config.Panels)
             panel.RowSpan = Math.Clamp(panel.RowSpan, 1, _config.GridRows);
 
-        return RefreshAsync();
+        return RefreshAsync(remountCharts: true);
     }
 
     private Task HandleRowHeightChanged(int value)
     {
         _config.RowHeightPx = Math.Clamp(value, 180, 960);
-        return RefreshAsync();
+        return RefreshAsync(remountCharts: true);
     }
 
     private Task HandleMaxVisibleServersChanged(int value)
     {
         _config.MaxVisibleServersForCharts = Math.Clamp(value, 1, 40);
-        return RefreshAsync();
+        return RefreshAsync(remountCharts: true);
     }
 
     private Task HandleShowAllServersChanged(bool value)
     {
         _config.ShowAllServers = value;
-        return RefreshAsync();
+        return RefreshAsync(remountCharts: true);
     }
 
     private async Task RestorePanelAsync(AnalyticsPanelConfig panel)
     {
         panel.Visible = true;
-        await RefreshAsync();
+        await RefreshAsync(remountCharts: true);
     }
 
     private void HandleSourceChanged()
@@ -456,24 +470,33 @@ else
         if (_disposed)
             return;
 
-        _ = InvokeAsync(async () =>
+        Interlocked.Exchange(ref _refreshRequested, 1);
+        _ = InvokeAsync(ProcessQueuedRefreshAsync);
+    }
+
+    private async Task ProcessQueuedRefreshAsync()
+    {
+        if (_disposed)
+            return;
+
+        if (Interlocked.Exchange(ref _refreshing, 1) == 1)
+            return;
+
+        try
         {
-            if (_disposed)
-                return;
-
-            if (Interlocked.Exchange(ref _refreshing, 1) == 1)
-                return;
-
-            try
+            while (!_disposed && Interlocked.Exchange(ref _refreshRequested, 0) == 1)
             {
                 await RefreshViewAsync();
-                await InvokeAsync(StateHasChanged);
+                RequestChartUpdate();
+                StateHasChanged();
             }
-            finally
-            {
-                Interlocked.Exchange(ref _refreshing, 0);
-            }
-        });
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _refreshing, 0);
+            if (!_disposed && Volatile.Read(ref _refreshRequested) == 1)
+                _ = InvokeAsync(ProcessQueuedRefreshAsync);
+        }
     }
 
     private void HandleThemeModeChanged(bool isDark)
@@ -484,16 +507,13 @@ else
         _isDarkTheme = isDark;
         _ = InvokeAsync(async () =>
         {
-            await RefreshViewAsync();
+            await RefreshViewAsync(remountCharts: true);
             await InvokeAsync(StateHasChanged);
         });
     }
 
     private void UpdateRefreshTimer()
     {
-        _refreshTimer?.Dispose();
-        _refreshTimer = null;
-
         _refreshCts.Cancel();
         _refreshCts.Dispose();
         _refreshCts = new CancellationTokenSource();
@@ -501,23 +521,74 @@ else
         if (_config.AutoRefreshSeconds <= 0 || _disposed)
             return;
 
-        _refreshTimer = new Timer(_ =>
-        {
-            if (_disposed || _refreshCts.IsCancellationRequested)
-                return;
-
-            _ = InvokeAsync(async () =>
-            {
-                if (_disposed || _refreshCts.IsCancellationRequested)
-                    return;
-
-                await RefreshViewAsync();
-                await InvokeAsync(StateHasChanged);
-            });
-        }, null, TimeSpan.FromSeconds(_config.AutoRefreshSeconds), TimeSpan.FromSeconds(_config.AutoRefreshSeconds));
+        var interval = TimeSpan.FromSeconds(_config.AutoRefreshSeconds);
+        var token = _refreshCts.Token;
+        _ = RunAutoRefreshLoopAsync(interval, token);
     }
 
-    private async Task RefreshViewAsync()
+    private async Task RunAutoRefreshLoopAsync(TimeSpan interval, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(interval);
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                if (_disposed || cancellationToken.IsCancellationRequested)
+                    return;
+
+                await InvokeAsync(async () =>
+                {
+                    if (_disposed || cancellationToken.IsCancellationRequested)
+                        return;
+
+                    await RefreshAsync();
+                });
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
+    private void RequestChartUpdate()
+    {
+        _pendingChartUpdate = true;
+    }
+
+    private async Task UpdateRenderedChartsAsync()
+    {
+        await Task.Yield();
+
+        foreach (var chart in _charts)
+        {
+            if (_disposed)
+                return;
+
+            var chartRef = chart.ChartRef;
+            if (chartRef is null)
+                continue;
+
+            try
+            {
+                await chartRef.UpdateOptionsAsync(redrawPaths: false, animate: false, updateSyncedCharts: false, zoom: null);
+                await chartRef.UpdateSeriesAsync(animate: false);
+            }
+            catch (InvalidOperationException)
+            {
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+            catch (TaskCanceledException)
+            {
+            }
+        }
+    }
+
+    private async Task RefreshViewAsync(bool remountCharts = false)
     {
         _serverOptions = BuildServerOptions();
         NormalizeSelection();
@@ -530,6 +601,10 @@ else
         var samplesByServer = new Dictionary<string, MetricSample[]>(StringComparer.OrdinalIgnoreCase);
         var renderSamplesByServer = new Dictionary<string, MetricSample[]>(StringComparer.OrdinalIgnoreCase);
         var maxPointsPerSeries = ResolveMaxPointsPerSeries(maxChartPoints, effectiveServers.Count);
+        if (remountCharts)
+            _chartRenderVersion = unchecked(_chartRenderVersion + 1);
+
+        var chartRenderVersion = _chartRenderVersion;
 
         foreach (var uniqueName in effectiveServers)
         {
@@ -551,7 +626,7 @@ else
 
         var pointCache = new Dictionary<SeriesTransformCacheKey, IReadOnlyList<AnalyticsChartPoint>>();
         BuildSummary(selectedServers, samplesByServer, effectiveServers.Count);
-        BuildCharts(renderSamplesByServer, toUnix - fromUnix, fromUnix, toUnix, maxChartPoints, pointCache);
+        BuildCharts(renderSamplesByServer, toUnix - fromUnix, fromUnix, toUnix, maxChartPoints, chartRenderVersion, pointCache);
     }
 
     private IReadOnlyList<ServerOption> BuildServerOptions()
@@ -754,7 +829,7 @@ else
             return samples;
 
         var chunkSize = Math.Max(1, (int)Math.Ceiling(samples.Length / (double)maxPoints));
-        var chunkCount = samples.Length / chunkSize;
+        var chunkCount = (int)Math.Ceiling(samples.Length / (double)chunkSize);
         if (chunkCount == 0)
             return [];
 
@@ -762,7 +837,8 @@ else
         for (var chunkIndex = 0; chunkIndex < chunkCount; chunkIndex++)
         {
             var offset = chunkIndex * chunkSize;
-            result[chunkIndex] = AverageSamples(samples, offset, chunkSize);
+            var count = Math.Min(chunkSize, samples.Length - offset);
+            result[chunkIndex] = AverageSamples(samples, offset, count);
         }
 
         return result;
@@ -895,6 +971,7 @@ else
         long fromUnix,
         long toUnix,
         int denseThreshold,
+        long chartRenderVersion,
         Dictionary<SeriesTransformCacheKey, IReadOnlyList<AnalyticsChartPoint>> pointCache)
     {
         _charts.Clear();
@@ -938,6 +1015,7 @@ else
             var isDenseChart = series.Sum(s => s.Points.Count) >= denseThreshold;
 
             _charts.Add(new ChartModel(
+                RenderKey: $"{panel.Key}:{chartRenderVersion}",
                 Title: definition.Title,
                 Subtitle: definition.Subtitle,
                 Series: series,
@@ -978,7 +1056,7 @@ else
         panel.Order = Math.Clamp(updated.Order, 0, 99);
         panel.ColumnSpan = Math.Clamp(updated.ColumnSpan, 1, _config.GridColumns);
         panel.RowSpan = Math.Clamp(updated.RowSpan, 1, Math.Max(1, _config.GridRows));
-        await RefreshAsync();
+        await RefreshAsync(remountCharts: true);
     }
 
     private static double? ResolveUnixMs(long unixSeconds)
@@ -1303,14 +1381,18 @@ else
         Func<MetricSample, bool> IsAvailable,
         bool RequiresZero);
 
-    private sealed record ChartModel(
-        string Title,
-        string Subtitle,
-        List<AnalyticsChartSeries> Series,
-        ApexCharts.ApexChartOptions<AnalyticsChartPoint> Options,
-        string Height,
-        string LayoutStyle,
-        AnalyticsPanelConfig Panel);
+    private sealed class ChartModel(string RenderKey, string Title, string Subtitle, List<AnalyticsChartSeries> Series, ApexCharts.ApexChartOptions<AnalyticsChartPoint> Options, string Height, string LayoutStyle, AnalyticsPanelConfig Panel)
+    {
+        public string RenderKey { get; } = RenderKey;
+        public string Title { get; } = Title;
+        public string Subtitle { get; } = Subtitle;
+        public List<AnalyticsChartSeries> Series { get; } = Series;
+        public ApexCharts.ApexChartOptions<AnalyticsChartPoint> Options { get; set; } = Options;
+        public string Height { get; } = Height;
+        public string LayoutStyle { get; } = LayoutStyle;
+        public AnalyticsPanelConfig Panel { get; } = Panel;
+        public ApexChart<AnalyticsChartPoint>? ChartRef { get; set; }
+    }
 
     private readonly record struct SeriesTransformCacheKey(string Server, string Metric, long FromUnix, long ToUnix);
 

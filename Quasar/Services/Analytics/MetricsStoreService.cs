@@ -71,6 +71,8 @@ public sealed class MetricsStoreService : IHostedService, IDisposable
         _shutdown.Dispose();
     }
 
+    public event Action? Changed;
+
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         foreach (var server in _catalog.GetServers())
@@ -169,6 +171,7 @@ public sealed class MetricsStoreService : IHostedService, IDisposable
                 {
                     var store = GetOrCreateStore(item.uniqueName);
                     store.Ingest(item.sample);
+                    NotifyChanged();
 
                     _itemsSincePersistCheck++;
                     if (_itemsSincePersistCheck >= 100)
@@ -186,6 +189,17 @@ public sealed class MetricsStoreService : IHostedService, IDisposable
         catch (Exception exception)
         {
             _logger.LogError(exception, "Metrics ingest loop terminated unexpectedly.");
+        }
+    }
+
+    private void NotifyChanged()
+    {
+        try
+        {
+            Changed?.Invoke();
+        }
+        catch
+        {
         }
     }
 

@@ -39,3 +39,10 @@ Linux service install:
 Agent workflow note:
 
 - Do not launch the Quasar web service process (`dotnet run --project Quasar/Quasar.csproj`) unless the user explicitly asks for a smoketest.
+
+Utilities:
+
+- Generate synthetic analytics data for local testing:
+  - `python3 scripts/generate-analytics-data.py`
+  - Optional `--server <name>` to target one server, `--days <n>`, `--seed <n>`, `--raw-hours <hours>`, `--raw-interval <seconds>`.
+  - Uses `QUASAR_DATA_DIR` automatically if set, otherwise defaults to the local Quasar data root.

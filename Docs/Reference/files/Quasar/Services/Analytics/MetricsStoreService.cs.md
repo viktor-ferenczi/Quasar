@@ -4,7 +4,7 @@
 
 ## Summary
 
-`IHostedService` that owns the per-server metric stores, drives the single-reader ingest loop via a bounded `Channel`, and persists samples to disk in an append-only JSONL format. On startup it loads from `analytics.jsonl`, then lazily appends only new points.
+`IHostedService` that owns the per-server metric stores, drives the single-reader ingest loop via a bounded `Channel`, raises a `Changed` event after samples are actually ingested, and persists samples to disk in an append-only JSONL format. On startup it loads from `analytics.jsonl`, then lazily appends only new points.
 
 ## Structure
 
@@ -21,9 +21,10 @@ Public API:
 - `GetUniqueNames() : IReadOnlyList<string>` — sorted list of all server names with stores
 - `PersistAllAsync(CancellationToken) : Task` — appends new points to disk, guarded by `_persistInFlight` flag to avoid concurrent persists
 - `PersistAllAsync(CancellationToken) : Task` — appends only new sample points since last successful flush; periodically rewrites JSONL file for retention-bound compaction
+- `Changed` — raised after a queued sample has been written into the in-memory RRD buffers so UI subscribers can refresh against current data
 
 Private internals:
-- `IngestLoopAsync` — single-reader loop; after every 100 items checks if 7 minutes have elapsed since last persist and fires `PersistAllAsync` fire-and-forget
+- `IngestLoopAsync` — single-reader loop; ingests samples, raises `Changed`, then after every 100 items checks if 7 minutes have elapsed since last persist and fires `PersistAllAsync` fire-and-forget
 - `PersistStoreAsync` — reads in-memory buffers, writes only new points (`PersistedMetricLogLine`) since last persist watermark, and periodically rewrites into bounded-retention JSONL
 - `TryLoadFromDiskAsync` — reads `analytics.jsonl` by lines, then calls `store.Restore` with retention-filtered data
 

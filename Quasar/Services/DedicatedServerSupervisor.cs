@@ -18,6 +18,7 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
 
     private static readonly TimeSpan RestartCounterResetWindow = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan ReconcileInterval = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan DefaultGracefulStopTimeout = TimeSpan.FromSeconds(30);
     private static readonly Regex PrefixedLogLinePattern = new(
         @"^(?<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,7})?)\s*[:\-]\s*(?<message>.*)$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -175,7 +176,10 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
         }
     }
 
-    public async Task StopInstanceAsync(string uniqueName, CancellationToken cancellationToken = default)
+    public Task StopInstanceAsync(string uniqueName, CancellationToken cancellationToken = default) =>
+        StopInstanceAsync(uniqueName, DefaultGracefulStopTimeout, cancellationToken);
+
+    public async Task StopInstanceAsync(string uniqueName, TimeSpan? forceAfter, CancellationToken cancellationToken = default)
     {
         ManagedInstanceState? state;
         Process? process;
@@ -210,11 +214,18 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
 
         try
         {
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(TimeSpan.FromSeconds(30));
-            await process.WaitForExitAsync(timeout.Token);
+            if (forceAfter is null)
+            {
+                await process.WaitForExitAsync(cancellationToken);
+            }
+            else
+            {
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeout.CancelAfter(forceAfter.Value);
+                await process.WaitForExitAsync(timeout.Token);
+            }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (forceAfter is not null && !cancellationToken.IsCancellationRequested)
         {
             if (IsProcessActive(process))
             {

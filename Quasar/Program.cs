@@ -253,7 +253,7 @@ public class Program
             app.MapGet("/access-denied", () => Results.Content(CreateAccessDeniedHtml(), "text/html"))
                 .AllowAnonymous();
 
-            app.MapPost("/api/internal/drain", (HttpContext context, DedicatedServerSupervisor supervisor, IHostApplicationLifetime lifetime, TrustedNetworkEvaluator trustedNetworkEvaluator) =>
+            app.MapPost("/api/internal/drain", (HttpContext context, DedicatedServerSupervisor supervisor, QuasarShutdownService shutdownService, IHostApplicationLifetime lifetime, TrustedNetworkEvaluator trustedNetworkEvaluator) =>
             {
                 var expectedToken = context.RequestServices.GetRequiredService<WebServiceOptions>().LauncherToken;
                 if (string.IsNullOrWhiteSpace(expectedToken) ||
@@ -269,20 +269,29 @@ public class Program
                 if (int.TryParse(context.Request.Query["delaySeconds"], out var parsedDelay))
                     delaySeconds = Math.Max(0, parsedDelay);
 
-                supervisor.BeginLauncherDrain();
+                var stopInstances = bool.TryParse(context.Request.Query["stopInstances"], out var parsedStopInstances) && parsedStopInstances;
+                if (!stopInstances)
+                    supervisor.BeginLauncherDrain();
+
                 _ = Task.Run(async () =>
                 {
                     try
                     {
                         if (delaySeconds > 0)
                             await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+
+                        if (stopInstances)
+                            await shutdownService.ShutdownAsync(cancellationToken: CancellationToken.None);
+                        else
+                            lifetime.StopApplication();
                     }
                     catch
                     {
                     }
                     finally
                     {
-                        lifetime.StopApplication();
+                        if (stopInstances)
+                            lifetime.StopApplication();
                     }
                 });
 
@@ -290,6 +299,7 @@ public class Program
                 {
                     status = "draining",
                     delaySeconds,
+                    stopInstances,
                 });
             });
 

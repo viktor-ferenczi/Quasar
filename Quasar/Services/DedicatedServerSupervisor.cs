@@ -483,6 +483,16 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
         process.StartInfo.Environment["QUASAR_DS_CONFIG_PATH"] = launch.RuntimeConfigPath;
         process.StartInfo.Environment["QUASAR_LAST_SESSION_PATH"] = launch.LastSessionPath;
 
+        // How the agent should behave when it loses contact with Quasar: keep the
+        // server running and reconnect, and only save+stop after the configured
+        // offline window (zero/negative = stop promptly once Quasar is gone).
+        process.StartInfo.Environment["QUASAR_AGENT_OFFLINE_SHUTDOWN_SECONDS"] =
+            _options.AgentOfflineShutdownSeconds.ToString(CultureInfo.InvariantCulture);
+        process.StartInfo.Environment["QUASAR_AGENT_RECONNECT_INTERVAL_SECONDS"] =
+            _options.AgentReconnectIntervalSeconds.ToString(CultureInfo.InvariantCulture);
+        process.StartInfo.Environment["QUASAR_AGENT_RECONNECT_JITTER_SECONDS"] =
+            _options.AgentReconnectJitterSeconds.ToString(CultureInfo.InvariantCulture);
+
         // Activate the PluginSdk QuasarLogSink inside the dedicated server: any
         // non-empty QUASAR_AGENT value makes plugins emit structured JSON log
         // lines on standard output (LogEnvironment.IsManagedByQuasar), which the

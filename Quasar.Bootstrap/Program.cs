@@ -585,6 +585,10 @@ internal sealed class BootstrapOptions
 
     public string LinuxWebAssetName { get; init; } = "quasar-web-linux-x64.tar.gz";
 
+    public string LinuxBootstrapAssetName { get; init; } = "quasar-linux-x64.tar.gz";
+
+    public TimeSpan UpdatesCheckInterval { get; init; } = TimeSpan.FromMinutes(5);
+
     public string Version { get; init; } = Assembly.GetEntryAssembly()?.GetName().Version?.ToString() ?? "0.0.0";
 
     public static BootstrapOptions Create()
@@ -632,6 +636,11 @@ internal sealed class BootstrapOptions
         if (!bool.TryParse(includePrereleaseValue, out var includePrerelease))
             includePrerelease = false;
 
+        var intervalValue = Environment.GetEnvironmentVariable("QUASAR_UPDATES_CHECK_INTERVAL_SECONDS")
+                            ?? updatesSection["CheckIntervalSeconds"];
+        if (!int.TryParse(intervalValue, out var intervalSeconds) || intervalSeconds < 60)
+            intervalSeconds = 300;
+
         return new BootstrapOptions
         {
             Host = host,
@@ -646,9 +655,13 @@ internal sealed class BootstrapOptions
                                 ?? updatesSection["Repository"]
                                 ?? "Quasar",
             UpdatesIncludePrerelease = includePrerelease,
+            UpdatesCheckInterval = TimeSpan.FromSeconds(intervalSeconds),
             LinuxWebAssetName = Environment.GetEnvironmentVariable("QUASAR_UPDATES_LINUX_WEB_ASSET")
                                 ?? updatesSection["LinuxWebAssetName"]
                                 ?? "quasar-web-linux-x64.tar.gz",
+            LinuxBootstrapAssetName = Environment.GetEnvironmentVariable("QUASAR_UPDATES_LINUX_BOOTSTRAP_ASSET")
+                                       ?? updatesSection["LinuxBootstrapAssetName"]
+                                       ?? "quasar-linux-x64.tar.gz",
         };
     }
 
@@ -705,8 +718,11 @@ internal sealed class LauncherCoordinator : IHostedService, IDisposable
     private readonly DateTimeOffset _startedAtUtc = DateTimeOffset.UtcNow;
     private FileSystemWatcher? _watcher;
     private CancellationTokenSource? _reloadDebounce;
+    private CancellationTokenSource? _bootstrapUpdateMonitor;
+    private Task? _bootstrapUpdateMonitorTask;
     private WorkerProcessHandle? _currentWorker;
     private bool _isStopping;
+    private bool _isRestartingForBootstrapUpdate;
 
     public LauncherCoordinator(BootstrapOptions options, LauncherForegroundOptions foregroundOptions, ILogger<LauncherCoordinator> logger)
     {
@@ -782,6 +798,7 @@ internal sealed class LauncherCoordinator : IHostedService, IDisposable
         EnsureActiveReleasePointerExists();
         await ActivateCurrentReleaseAsync(force: false, cancellationToken).ConfigureAwait(false);
         StartWatchingReleasePointer();
+        StartBootstrapUpdateMonitor();
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
@@ -790,6 +807,7 @@ internal sealed class LauncherCoordinator : IHostedService, IDisposable
         _watcher?.Dispose();
         _reloadDebounce?.Cancel();
         _reloadDebounce?.Dispose();
+        _bootstrapUpdateMonitor?.Cancel();
 
         WorkerProcessHandle? worker;
         lock (_sync)
@@ -800,6 +818,17 @@ internal sealed class LauncherCoordinator : IHostedService, IDisposable
 
         if (worker is not null)
             await DrainAndRetireWorkerAsync(worker, TimeSpan.Zero, stopManagedServers: !_options.PreserveServersOnShutdown, cancellationToken);
+
+        if (_bootstrapUpdateMonitorTask is not null)
+        {
+            try
+            {
+                await _bootstrapUpdateMonitorTask.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+            }
+        }
     }
 
     public void Dispose()
@@ -807,9 +836,147 @@ internal sealed class LauncherCoordinator : IHostedService, IDisposable
         _watcher?.Dispose();
         _reloadDebounce?.Cancel();
         _reloadDebounce?.Dispose();
+        _bootstrapUpdateMonitor?.Cancel();
+        _bootstrapUpdateMonitor?.Dispose();
         _activationLock.Dispose();
         _healthClient.Dispose();
         _downloadClient.Dispose();
+    }
+
+    private void StartBootstrapUpdateMonitor()
+    {
+        if (!_options.UpdatesEnabled || !OperatingSystem.IsLinux())
+            return;
+
+        _bootstrapUpdateMonitor = new CancellationTokenSource();
+        _bootstrapUpdateMonitorTask = Task.Run(
+            () => RunBootstrapUpdateMonitorAsync(_bootstrapUpdateMonitor.Token),
+            CancellationToken.None);
+    }
+
+    private async Task RunBootstrapUpdateMonitorAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken).ConfigureAwait(false);
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                try
+                {
+                    await TryUpgradeBootstrapAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    _logger.LogWarning(exception, "Bootstrap update check failed.");
+                }
+
+                await Task.Delay(_options.UpdatesCheckInterval, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(exception, "Bootstrap update monitor stopped unexpectedly.");
+        }
+    }
+
+    private async Task TryUpgradeBootstrapAsync(CancellationToken cancellationToken)
+    {
+        if (_isStopping || _isRestartingForBootstrapUpdate)
+            return;
+
+        var release = await GetLatestReleaseWithAssetAsync(_options.LinuxBootstrapAssetName, cancellationToken).ConfigureAwait(false);
+        if (release is null)
+            return;
+
+        var version = NormalizeVersion(release.TagName);
+        if (!IsNewerVersion(version, _options.Version))
+            return;
+
+        var asset = release.Assets.FirstOrDefault(asset =>
+            string.Equals(asset.Name, _options.LinuxBootstrapAssetName, StringComparison.OrdinalIgnoreCase));
+        if (asset is null || string.IsNullOrWhiteSpace(asset.BrowserDownloadUrl))
+            return;
+
+        var checksums = await GetChecksumsAsync(release, cancellationToken).ConfigureAwait(false);
+        var cacheDirectory = MagnetarPaths.GetQuasarManagedRuntimeCacheDirectory();
+        Directory.CreateDirectory(cacheDirectory);
+        var archivePath = Path.Combine(cacheDirectory, asset.Name);
+        var extractDirectory = Path.Combine(MagnetarPaths.GetQuasarStagingDirectory(), $"Bootstrap-{version}");
+
+        if (Directory.Exists(extractDirectory))
+            Directory.Delete(extractDirectory, recursive: true);
+        Directory.CreateDirectory(extractDirectory);
+
+        using (var response = await _downloadClient.GetAsync(asset.BrowserDownloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
+        {
+            response.EnsureSuccessStatusCode();
+            await using var archiveFile = File.Create(archivePath);
+            await response.Content.CopyToAsync(archiveFile, cancellationToken).ConfigureAwait(false);
+        }
+
+        await VerifySha256Async(archivePath, GetChecksum(checksums, asset.Name), cancellationToken).ConfigureAwait(false);
+        ExtractArchive(archivePath, extractDirectory);
+        TryDeleteFile(archivePath);
+
+        var replacement = Path.Combine(extractDirectory, "Quasar");
+        if (!File.Exists(replacement))
+            throw new InvalidOperationException($"Bootstrap update archive did not contain executable '{replacement}'.");
+
+        ApplyBootstrapUpdate(extractDirectory, AppContext.BaseDirectory);
+        _logger.LogInformation("Installed Bootstrap update {Version}; restarting Bootstrap.", version);
+        _isRestartingForBootstrapUpdate = true;
+
+        WorkerProcessHandle? worker;
+        lock (_sync)
+        {
+            worker = _currentWorker;
+            _currentWorker = null;
+        }
+
+        if (worker is not null)
+            await DrainAndRetireWorkerAsync(worker, TimeSpan.FromSeconds(20), stopManagedServers: false, cancellationToken).ConfigureAwait(false);
+
+        Environment.Exit(75);
+    }
+
+    private static void ApplyBootstrapUpdate(string sourceDirectory, string installDirectory)
+    {
+        installDirectory = Path.GetFullPath(installDirectory);
+        foreach (var sourcePath in Directory.EnumerateFiles(sourceDirectory, "*", SearchOption.AllDirectories))
+        {
+            var relativePath = Path.GetRelativePath(sourceDirectory, sourcePath);
+            if (string.Equals(relativePath, "appsettings.json", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var destinationPath = Path.GetFullPath(Path.Combine(installDirectory, relativePath));
+            var installRoot = Path.GetFullPath(installDirectory + Path.DirectorySeparatorChar);
+            if (!destinationPath.StartsWith(installRoot, StringComparison.Ordinal))
+                throw new InvalidOperationException($"Bootstrap update entry escapes install directory: {relativePath}");
+
+            Directory.CreateDirectory(Path.GetDirectoryName(destinationPath)!);
+            if (string.Equals(Path.GetFileName(destinationPath), "Quasar", StringComparison.OrdinalIgnoreCase) &&
+                File.Exists(destinationPath))
+            {
+                var backupPath = destinationPath + ".previous";
+                TryDeleteFile(backupPath);
+                File.Move(destinationPath, backupPath);
+            }
+
+            File.Copy(sourcePath, destinationPath, overwrite: true);
+            if (string.Equals(Path.GetFileName(destinationPath), "Quasar", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(Path.GetFileName(destinationPath), "install.sh", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(Path.GetFileName(destinationPath), "uninstall.sh", StringComparison.OrdinalIgnoreCase))
+            {
+                EnsureExecutableBit(destinationPath);
+            }
+        }
     }
 
     private async Task EnsureInitialWebReleaseAvailableAsync(CancellationToken cancellationToken)

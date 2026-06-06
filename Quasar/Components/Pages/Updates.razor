@@ -84,7 +84,7 @@
                 <MudStack Spacing="3">
                     <MudText Typo="Typo.h6">Bootstrap</MudText>
                     <MudText Typo="Typo.body2">
-                        Bootstrap updates are detected from the Bootstrap release stream, but Linux service replacement requires the installer path.
+                        Bootstrap updates are installed automatically by the launcher when a newer primary Quasar release is available.
                     </MudText>
                     <MudText Typo="Typo.body2">
                         Current version: <strong>@FormatBootstrapVersion()</strong>
@@ -105,7 +105,7 @@
                             <RowTemplate>
                                 <MudTd DataLabel="Version">@context.Version</MudTd>
                                 <MudTd DataLabel="Asset">@context.AssetName</MudTd>
-                                <MudTd DataLabel="Action">Run Linux installer package</MudTd>
+                                <MudTd DataLabel="Action">Automatic launcher restart</MudTd>
                             </RowTemplate>
                         </MudTable>
                     }

@@ -46,25 +46,25 @@ jobs:
             tag="$GITHUB_REF_NAME"
             version="${tag#v}"
             ui_tag="quasar-ui/v${version}"
-            bootstrap_tag="quasar-bootstrap/v${version}"
+            bootstrap_tag="v${version}"
             ui_name="Quasar UI v${version}"
-            bootstrap_name="Quasar Bootstrap v${version}"
+            bootstrap_name="Quasar v${version}"
             draft="false"
             prerelease="false"
           elif [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
             version="0.1.0-main.${GITHUB_RUN_NUMBER}"
             ui_tag="quasar-ui/v${version}"
-            bootstrap_tag="quasar-bootstrap/v${version}"
+            bootstrap_tag="v${version}"
             ui_name="Quasar UI main ${GITHUB_SHA::7}"
-            bootstrap_name="Quasar Bootstrap main ${GITHUB_SHA::7}"
+            bootstrap_name="Quasar main ${GITHUB_SHA::7}"
             draft="true"
             prerelease="true"
           else
             version="$(git rev-parse --short HEAD)"
             ui_tag="quasar-ui/$version"
-            bootstrap_tag="quasar-bootstrap/$version"
+            bootstrap_tag="$version"
             ui_name="Quasar UI $version"
-            bootstrap_name="Quasar Bootstrap $version"
+            bootstrap_name="Quasar $version"
             draft="true"
             prerelease="true"
           fi
@@ -120,7 +120,7 @@ jobs:
           name: quasar-linux
           path: |
             artifacts/linux/quasar-web-linux-x64.tar.gz
-            artifacts/linux/quasar-bootstrap-linux-x64.tar.gz
+            artifacts/linux/quasar-linux-x64.tar.gz
             artifacts/linux/SHA256SUMS
 
       - name: Attach UI artifact to GitHub release
@@ -146,5 +146,5 @@ jobs:
           draft: ${{ steps.release.outputs.draft }}
           prerelease: ${{ steps.release.outputs.prerelease }}
           files: |
-            artifacts/linux/quasar-bootstrap-linux-x64.tar.gz
+            artifacts/linux/quasar-linux-x64.tar.gz
             artifacts/linux/SHA256SUMS

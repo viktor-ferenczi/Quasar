@@ -4,7 +4,7 @@
 
 ## Summary
 
-Hosted service that checks Quasar GitHub releases on Linux, discovers newer UI-worker and Bootstrap assets from separate release streams, verifies `SHA256SUMS`, stages the UI worker under the Quasar updates directory, and activates a staged worker by writing `active-release.json` for Bootstrap. It keeps a thread-safe `QuasarUpdateSnapshot` for the UI and raises `Changed` whenever status moves.
+Hosted service that checks Quasar GitHub releases on Linux, discovers newer UI-worker and launcher assets from separate release tags, verifies `SHA256SUMS`, stages the UI worker under the Quasar updates directory, and activates a staged worker by writing `active-release.json` for Bootstrap. It keeps a thread-safe `QuasarUpdateSnapshot` for the UI and raises `Changed` whenever status moves.
 
 ## Structure
 
@@ -36,4 +36,4 @@ Private nested DTOs `GitHubRelease` and `GitHubAsset` model the small subset of 
 
 ## Notes
 
-Only Linux UI-worker update activation is automatic. Bootstrap update availability is reported from its own release stream, but service replacement remains the installer path because it can require root/systemd access.
+Linux UI-worker activation stays explicit from the Updates page. Launcher updates are reported in the UI, but the launcher itself installs them automatically from `quasar-linux-x64.tar.gz` and restarts under systemd.

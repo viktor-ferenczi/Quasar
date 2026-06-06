@@ -20,11 +20,10 @@ Namespace: `Quasar.Services.Updates`
 | `IncludePrerelease` | `false`; `QUASAR_UPDATES_INCLUDE_PRERELEASE` |
 | `CheckInterval` | 300 seconds minimum 60; `QUASAR_UPDATES_CHECK_INTERVAL_SECONDS` |
 | `LinuxWebAssetName` | `quasar-web-linux-x64.tar.gz`; `QUASAR_UPDATES_LINUX_WEB_ASSET` |
-| `LinuxBootstrapAssetName` | `quasar-bootstrap-linux-x64.tar.gz`; `QUASAR_UPDATES_LINUX_BOOTSTRAP_ASSET` |
+| `LinuxBootstrapAssetName` | `quasar-linux-x64.tar.gz`; `QUASAR_UPDATES_LINUX_BOOTSTRAP_ASSET` |
 
 `Create(IConfiguration)` loads environment variables first, then `Quasar:Updates`, then defaults.
 
 ## Dependencies
 
 - ASP.NET Core `IConfiguration`
-

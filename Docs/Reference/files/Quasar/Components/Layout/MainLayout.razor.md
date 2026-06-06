@@ -12,7 +12,7 @@ Implements: `IDisposable`
 **Injected services:**
 - `ThemePreferenceService ThemePreference` — persists and resolves dark/light/system theme mode; exposes `Theme`, `IsDarkMode`, `InitializeAsync`, `SetModeAsync`, `SyncSystemDarkMode`.
 - `QuasarShutdownService ShutdownService` — orchestrates graceful multi-server shutdown (`StopAllServersAsync`) and worker restart (`RestartWorker`).
-- `WebServiceOptions WebServiceOptions` — read for `LauncherToken` to detect Bootstrap-managed runs.
+- `WebServiceOptions WebServiceOptions` — read for `LauncherToken` to detect launcher-managed runs.
 - `BrandingService BrandingService` — supplies `AppName`, `AppSubtitle`, logo paths.
 - `IJSRuntime JS` — invokes `quasarConfigs.reloadWhenHealthy` during worker restart.
 
@@ -23,7 +23,7 @@ Implements: `IDisposable`
 - `_isShuttingDown` (bool) — drives the blocking overlay; also used during worker restart.
 - `_shutdownStatus` (string) — message shown in the overlay.
 - `_shutdownMessageBox`, `_restartWorkerMessageBox` (MudMessageBox refs)
-- `IsUnderBootstrap` (computed) — true when `WebServiceOptions.LauncherToken` is set (worker was spawned by Quasar Bootstrap).
+- `IsUnderBootstrap` (computed) — true when `WebServiceOptions.LauncherToken` is set (worker was spawned by the Quasar launcher).
 - `LogoSrc` (computed) — picks dark vs light branding logo by `_isDarkMode`.
 
 **MudBlazor providers (top of markup):** `MudThemeProvider` (with `ObserveSystemDarkModeChange` when in System mode), `MudPopoverProvider`, `MudDialogProvider`, `MudSnackbarProvider`. `<BrandingHeadContent />` injects favicon/title head markup.
@@ -48,9 +48,9 @@ Implements: `IDisposable`
 **Error UI:** `#blazor-error-ui` div (styled in `MainLayout.razor.css`).
 
 **Lifecycle:**
-- `OnInitialized` — subscribes to `BrandingService.Changed`.
+- `OnInitialized` — subscribes to `BrandingService.Changed` and `UpdateService.Changed`.
 - `OnAfterRenderAsync(firstRender)` — calls `ThemePreference.InitializeAsync()` to hydrate `_themeMode`/`_isDarkMode` from browser storage.
-- `Dispose` — unsubscribes from `BrandingService.Changed`.
+- `Dispose` — unsubscribes from `BrandingService.Changed` and `UpdateService.Changed`.
 
 ## Dependencies
 - [`Quasar/Components/Layout/BrandingHeadContent.razor`](BrandingHeadContent.razor.md)
@@ -65,4 +65,4 @@ Implements: `IDisposable`
 
 ## Notes
 - Theme initialization happens in `OnAfterRenderAsync` (first render only) to avoid SSR/prerender mismatch — the browser-storage read requires JS interop, unavailable during prerender.
-- The restart-worker button is hidden when not launched by Quasar Bootstrap (`LauncherToken` absent): without a launcher to respawn it, `RestartWorker()` would only stop the worker. The JS `reloadWhenHealthy` poller is invoked *before* `RestartWorker()` so the call reaches the client before the circuit drops.
+- The restart-worker button is hidden when not launched by the Quasar launcher (`LauncherToken` absent): without a launcher to respawn it, `RestartWorker()` would only stop the worker. The JS `reloadWhenHealthy` poller is invoked *before* `RestartWorker()` so the call reaches the client before the circuit drops.

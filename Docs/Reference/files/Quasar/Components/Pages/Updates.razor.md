@@ -4,7 +4,7 @@
 
 ## Summary
 
-Routable MudBlazor page at `/settings/updates` for checking, staging, and activating Quasar Linux release updates. It shows current update status from `QuasarUpdateService`, separates Quasar UI and Bootstrap candidates from separate release streams, exposes manual check/stage/activate actions for the UI worker, shows Bootstrap update availability, and displays configured GitHub release source and asset names.
+Routable MudBlazor page at `/settings/updates` for checking, staging, and activating Quasar Linux release updates. It shows current update status from `QuasarUpdateService`, separates Quasar UI and launcher candidates, exposes manual check/stage/activate actions for the UI worker, shows launcher update availability, and displays configured GitHub release source and asset names.
 
 ## Structure
 

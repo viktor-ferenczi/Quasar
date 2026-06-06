@@ -17,6 +17,7 @@ Default application configuration for the Quasar host. Provides baseline values 
 - `Analytics.RetentionDays`: `30` — retention window for analytics data (only the `Analytics` subsection is present; there is no `AnalyticsStore` section in this file)
 - `AgentOfflineShutdownSeconds`: `3600`
 - `AgentReconnectIntervalSeconds`: `10`, `AgentReconnectJitterSeconds`: `3`
+- `Updates`: enabled GitHub update checks against `viktor-ferenczi/Quasar`, 300 s interval, UI asset `quasar-web-linux-x64.tar.gz`, launcher asset `quasar-linux-x64.tar.gz`, prereleases disabled by default
 
 **`Quasar.ManagedRuntime`** (maps to `ManagedRuntimeOptions`):
 - `MagnetarArchiveUrl`, `MagnetarInstallDirectory`

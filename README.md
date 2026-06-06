@@ -45,14 +45,14 @@ Linux service install:
 Linux release packaging and updates:
 
 - `scripts/package-linux-release.sh` creates two release assets under `artifacts/linux/`:
-  - `quasar-bootstrap-linux-x64.tar.gz` — stable launcher plus Linux install/uninstall scripts.
+  - `quasar-linux-x64.tar.gz` — stable launcher plus Linux install/uninstall scripts.
   - `quasar-web-linux-x64.tar.gz` — replaceable Quasar UI worker plus bundled `Quasar.Agent` DLLs.
 - `SHA256SUMS` is published with those assets and is verified before Bootstrap or Quasar extracts a downloaded web artifact.
 - A Bootstrap-only Linux install can start without a packaged `WebService/` folder; Bootstrap downloads the latest web asset from GitHub on startup and writes the active-release pointer.
 - The Quasar UI checks GitHub releases every 5 minutes by default. New Linux UI assets are downloaded into `~/.config/Quasar/Updates/Staged/<version>` and queued for activation on the Updates page.
 - Activating a staged UI update causes a short web listener disconnect: Bootstrap drains the old worker first, starts the staged worker on the same port, and managed Magnetar servers stay alive because they run detached.
-- Bootstrap update availability is shown in the Updates page from a separate Bootstrap release stream, but installing a new Bootstrap still uses the Linux installer path because service replacement may require root/systemd access.
-- The release workflow is `.github/workflows/release-linux.yml`; tag pushes publish separate Quasar UI and Bootstrap releases (`quasar-ui/v<version>` and `quasar-bootstrap/v<version>`), while pushes to `main` create matching draft prerelease builds named `v0.1.0-main.<run-number>`.
+- Bootstrap checks the primary Quasar release stream every 5 minutes. When `quasar-linux-x64.tar.gz` has a newer version, Bootstrap verifies `SHA256SUMS`, replaces its installed launcher files, drains the UI worker, and exits so systemd restarts the updated launcher.
+- The release workflow is `.github/workflows/release-linux.yml`; tag pushes publish separate Quasar UI and primary Quasar releases (`quasar-ui/v<version>` and `v<version>`), while pushes to `main` create matching draft prerelease builds named `v0.1.0-main.<run-number>`.
 
 Agent workflow note:
 

@@ -105,7 +105,7 @@
             <MudText Typo="Typo.body2">
                 The Quasar web worker restarts and re-adopts the detached servers by process id.
                 The web UI briefly disconnects and reconnects. Requires
-                <strong>Quasar Bootstrap</strong> to bring the worker back; without it the worker
+                <strong>the Quasar launcher</strong> to bring the worker back; without it the worker
                 only stops.
             </MudText>
         </MessageContent>
@@ -163,7 +163,7 @@
     private MudMessageBox? _shutdownMessageBox;
     private MudMessageBox? _restartWorkerMessageBox;
 
-    // The worker is restartable only when it was launched by Quasar Bootstrap, which
+    // The worker is restartable only when it was launched by the Quasar launcher, which
     // injects QUASAR_LAUNCHER_TOKEN (surfaced as WebServiceOptions.LauncherToken).
     // Standalone runs have no launcher to respawn the worker, so hide the button.
     private bool IsUnderBootstrap => !string.IsNullOrWhiteSpace(WebServiceOptions.LauncherToken);
@@ -212,7 +212,7 @@
         }
 
         if (bootstrap is not null)
-            _ = InvokeAsync(() => Snackbar.Add($"Quasar Bootstrap {bootstrap.Version} update available.", Severity.Info));
+            _ = InvokeAsync(() => Snackbar.Add($"Quasar launcher {bootstrap.Version} update available.", Severity.Info));
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

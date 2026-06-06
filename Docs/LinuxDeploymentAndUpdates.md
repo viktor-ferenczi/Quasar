@@ -7,7 +7,7 @@ web UI worker.
 
 `scripts/package-linux-release.sh` produces:
 
-- `quasar-bootstrap-linux-x64.tar.gz`
+- `quasar-linux-x64.tar.gz`
   - root `Quasar` Bootstrap launcher
   - `install.sh`
   - `uninstall.sh`
@@ -61,16 +61,17 @@ them detached with `-daemon`.
 
 ## Bootstrap Updates
 
-Bootstrap update availability is detected from the Bootstrap release stream and
-shown in the Updates page. Installing a new Bootstrap is separate from UI worker
-updates because replacing `/opt/quasar/Quasar` and systemd service files may
-require root privileges.
+Bootstrap checks the primary Quasar release stream every 5 minutes by default.
+When it finds a newer `quasar-linux-x64.tar.gz` asset, it verifies the release's
+`SHA256SUMS` entry, extracts the archive, replaces the installed launcher files,
+drains the UI worker, and exits with a failure code so systemd restarts the
+updated launcher. Existing `appsettings.json` is preserved.
 
-For now, install the newer Bootstrap package through the Linux installer flow:
+The first install still uses the Linux installer flow:
 
 ```bash
-tar -xzf quasar-bootstrap-linux-x64.tar.gz -C /tmp/quasar-bootstrap
-sudo /tmp/quasar-bootstrap/install.sh --start
+tar -xzf quasar-linux-x64.tar.gz -C /tmp/quasar
+sudo /tmp/quasar/install.sh --start
 ```
 
 ## Configuration
@@ -85,7 +86,7 @@ Defaults live in `Quasar:Updates`:
   "IncludePrerelease": false,
   "CheckIntervalSeconds": 300,
   "LinuxWebAssetName": "quasar-web-linux-x64.tar.gz",
-  "LinuxBootstrapAssetName": "quasar-bootstrap-linux-x64.tar.gz"
+  "LinuxBootstrapAssetName": "quasar-linux-x64.tar.gz"
 }
 ```
 

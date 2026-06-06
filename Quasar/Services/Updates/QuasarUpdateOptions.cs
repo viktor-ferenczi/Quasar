@@ -14,7 +14,7 @@ public sealed class QuasarUpdateOptions
 
     public string LinuxWebAssetName { get; init; } = "quasar-web-linux-x64.tar.gz";
 
-    public string LinuxBootstrapAssetName { get; init; } = "quasar-bootstrap-linux-x64.tar.gz";
+    public string LinuxBootstrapAssetName { get; init; } = "quasar-linux-x64.tar.gz";
 
     public static QuasarUpdateOptions Create(IConfiguration configuration)
     {
@@ -53,7 +53,7 @@ public sealed class QuasarUpdateOptions
                                 ?? "quasar-web-linux-x64.tar.gz",
             LinuxBootstrapAssetName = Environment.GetEnvironmentVariable("QUASAR_UPDATES_LINUX_BOOTSTRAP_ASSET")
                                        ?? section["LinuxBootstrapAssetName"]
-                                       ?? "quasar-bootstrap-linux-x64.tar.gz",
+                                       ?? "quasar-linux-x64.tar.gz",
         };
     }
 }

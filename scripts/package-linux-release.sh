@@ -122,11 +122,11 @@ cp -a "$REPO_DIR/install.sh" "$BOOTSTRAP_DIR/install.sh"
 cp -a "$REPO_DIR/uninstall.sh" "$BOOTSTRAP_DIR/uninstall.sh"
 cp -a "$REPO_DIR/README.md" "$BOOTSTRAP_DIR/README.md"
 chmod +x "$BOOTSTRAP_DIR/Quasar" "$BOOTSTRAP_DIR/install.sh" "$BOOTSTRAP_DIR/uninstall.sh"
-tar -C "$BOOTSTRAP_DIR" -czf "$ARTIFACT_DIR/quasar-bootstrap-linux-x64.tar.gz" .
+tar -C "$BOOTSTRAP_DIR" -czf "$ARTIFACT_DIR/quasar-linux-x64.tar.gz" .
 
 (
     cd "$ARTIFACT_DIR"
-    sha256sum quasar-web-linux-x64.tar.gz quasar-bootstrap-linux-x64.tar.gz > SHA256SUMS
+    sha256sum quasar-web-linux-x64.tar.gz quasar-linux-x64.tar.gz > SHA256SUMS
 )
 
 echo "Created Linux release artifacts in $ARTIFACT_DIR"

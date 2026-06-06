@@ -99,6 +99,15 @@ BOOTSTRAP_DIR="$ARTIFACT_DIR/bootstrap"
 rm -rf "$ARTIFACT_DIR"
 mkdir -p "$PUBLISH_DIR" "$WEB_DIR" "$BOOTSTRAP_DIR"
 
+dotnet build "$REPO_DIR/Quasar.Agent/Quasar.Agent.csproj" \
+    -c "$CONFIGURATION" \
+    -p:Platform=x64 \
+    -p:RuntimeIdentifier= \
+    -p:SelfContained= \
+    -p:PublishSingleFile= \
+    -p:CopyToDeployDir=false \
+    -v minimal
+
 dotnet publish "$REPO_DIR/Quasar.Bootstrap/Quasar.Bootstrap.csproj" \
     -c "$CONFIGURATION" \
     -r "$RUNTIME" \

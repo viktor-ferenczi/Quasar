@@ -30,7 +30,7 @@ MSBuild project file for the Quasar Blazor Server host. Targets `net10.0` using 
 
 **Custom MSBuild targets:**
 - `CopyToDeployDir` (AfterTargets=Build, conditional on `CopyToDeployDir != false`) — copies output (excluding `.pdb`, `.xml`, and the main executable) to `$(DeployDir)`.
-- `BuildQuasarAgent` (BeforeTargets=Build;Publish) — builds `../Quasar.Agent/Quasar.Agent.csproj` for `netstandard2.0` / `x64`, explicitly clearing `RuntimeIdentifier`, `SelfContained`, and `PublishSingleFile` to prevent property bleed-in from publish.
+- `BuildQuasarAgent` (BeforeTargets=Build;Publish) — builds `../Quasar.Agent/Quasar.Agent.csproj` for `netstandard2.0` / `x64` only when the staged DLLs are missing. It invokes `dotnet build` directly with RID and single-file publish properties cleared so parent publish globals do not leak into the agent restore/build.
 - `StageQuasarAgent` (AfterTargets=Build) — copies `Quasar.Agent.dll` and `Magnetar.Protocol.dll` from agent output into `$(OutputPath)Agent\`.
 - `StageQuasarAgentForPublish` (AfterTargets=Publish) — same copy but to `$(PublishDir)Agent\`.
 

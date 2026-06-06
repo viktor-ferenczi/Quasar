@@ -48,13 +48,12 @@
     <_QuasarAgentOutputDir>$(MSBuildThisFileDirectory)..\Quasar.Agent\bin\$(Configuration)\netstandard2.0\</_QuasarAgentOutputDir>
   </PropertyGroup>
 
-  <Target Name="BuildQuasarAgent" BeforeTargets="Build;Publish">
-    <!-- Quasar.Agent targets netstandard2.0 and is RID-agnostic. Explicitly clear
-         RuntimeIdentifier / SelfContained / PublishSingleFile so they don't bleed in
-         from a publish-time global property set on the parent build. -->
-    <MSBuild Projects="$(_QuasarAgentProject)"
-             Targets="Build"
-             Properties="Configuration=$(Configuration);Platform=x64;RuntimeIdentifier=;SelfContained=;PublishSingleFile=" />
+  <Target Name="BuildQuasarAgent"
+          BeforeTargets="Build;Publish"
+          Condition="!Exists('$(_QuasarAgentOutputDir)Quasar.Agent.dll') Or !Exists('$(_QuasarAgentOutputDir)Magnetar.Protocol.dll')">
+    <!-- Invoke dotnet directly so publish-time globals from the parent build do
+         not bleed into Quasar.Agent's netstandard2.0 restore/build. -->
+    <Exec Command="dotnet build &quot;$(_QuasarAgentProject)&quot; -c &quot;$(Configuration)&quot; -p:Platform=x64 -p:RuntimeIdentifier= -p:SelfContained= -p:PublishSingleFile= -p:CopyToDeployDir=false -v minimal" />
   </Target>
 
   <Target Name="StageQuasarAgent" AfterTargets="Build" DependsOnTargets="BuildQuasarAgent">

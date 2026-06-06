@@ -1054,8 +1054,8 @@
       "path": "Quasar/Quasar.csproj",
       "name": "Quasar.csproj",
       "ext": ".csproj",
-      "size": 3673,
-      "sha256": "ca9550a6a089e95023228ec8394941a8c25b06c939644d528f0b5b0f8526db1b",
+      "size": 3743,
+      "sha256": "0447be3f218f8001f6877776a4003472a2cc24733bf61dfe2a7c6b32accaa1b5",
       "module": "Quasar.Host",
       "tier": 3,
       "status": "documented"

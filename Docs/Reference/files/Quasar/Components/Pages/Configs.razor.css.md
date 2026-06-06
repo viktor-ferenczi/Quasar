@@ -3,7 +3,7 @@
 **Module:** Quasar.Components  **Kind:** CSS  **Tier:** 3
 
 ## Summary
-Scoped stylesheet for `Configs.razor`. Implements the two-column sticky-sidebar layout, styled template-tile list, option cards with search-highlight states, and Workshop thumbnail sizing.
+Scoped stylesheet for `Configs.razor`. Implements the two-column sticky-sidebar layout, styled template-tile list, one-line plugin-catalog description preview layout, option cards with search-highlight states, and Workshop thumbnail sizing.
 
 ## Structure
 Key rule groups:
@@ -16,6 +16,7 @@ Key rule groups:
 - `.config-secondary` — `opacity: 0.78` for caption/helper text.
 - `.workshop-thumbnail` — 80×80 px `object-fit: cover` image with rounded border.
 - `.configs-search-field` — `flex: 1 1 20rem; min-width: min(22rem, 100%)`.
+- `.plugin-description-cell` / `.plugin-description-line` / `.plugin-description-more` — keeps plugin catalog descriptions on one line with a fixed action button; preview cutoff is character-count based in `Configs.razor`.
 - `.configs-add-button` — fixed 56 px height to align with outlined text fields.
 - `.configs-dev-folder-path-row` / `.configs-dev-folder-path-field` / `.configs-dev-folder-browse` — flex row for path + browse button; collapses to column on mobile.
 - `.configs-expansion-panels` — CSS grid with 0.5 rem gap.

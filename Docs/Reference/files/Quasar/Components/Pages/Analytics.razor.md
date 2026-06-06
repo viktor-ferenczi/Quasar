@@ -23,7 +23,7 @@ Routable page (`/analytics`) that renders rolling, interruptible ApexCharts time
   - `AnalyticsPanelConfig` — per-panel visibility, order, column/row span.
 - **Key methods:**
 - `RefreshViewAsync()` — rebuilds server options, normalises selection, resolves time range and viewport-derived point budget, loads sampled data, down-samples and caches transformed points, and builds summary chips plus chart models.
-  - Chart render keys include a structural refresh version for time-range/layout/theme changes; live data refreshes keep the same key and use ApexCharts dynamic update APIs after render.
+  - Chart render keys include a structural refresh version for time-range/layout/theme changes; live data refreshes keep the same chart/series/list instances, mutate point lists in place, use ApexCharts dynamic update APIs after render, and explicitly slide the visible X-axis with `ZoomXAsync`.
   - `BuildSeriesPoints()` — sorts metric samples by timestamp, inserts null-valued gap points when sample spacing exceeds the disruption threshold, and emits null values for unavailable/non-finite metric samples.
 - `CreateChartOptions()` — configures ApexCharts line rendering, a blue-first series palette, datetime axes fixed to the selected time window (keeps moving scale), tooltip formatting, markers, legends, null-point behaviour, fixed 0..100 ms Y-axis for frame-time, and theme mode from `ThemePreferenceService` (light/dark).
   - `ResolveChartHeight()` — derives an explicit pixel chart height from the panel row span and configured row height so ApexCharts does not collapse inside the flex card.
@@ -46,7 +46,7 @@ Routable page (`/analytics`) that renders rolling, interruptible ApexCharts time
 
 ## Notes
 - Auto-refresh uses an async `PeriodicTimer` loop that marshals back to Blazor's sync context via `InvokeAsync` and calls the same refresh path as the toolbar Refresh button. Source-change refreshes use `Interlocked` flags to coalesce overlapping requests so a post-ingest metrics refresh is not dropped behind an earlier registry refresh.
-- ApexCharts components are keyed by panel plus structural refresh version. Live data and timer refreshes keep chart identity stable and call the wrapper's dynamic update APIs after render to avoid flicker, while time-range/layout/theme changes can still remount with fresh series/options.
+- ApexCharts components are keyed by panel plus structural refresh version. Live data and timer refreshes keep chart identity stable, mutate each existing series' `Points` list, call the wrapper's dynamic update APIs after render, then call `ZoomXAsync` so the time window moves forward without remount flicker. Time-range/layout/theme changes can still remount with fresh series/options.
 - ApexCharts receives nullable decimal Y values and `ShowNullDataPoints = false`; null points create visible interruptions instead of connecting across bad or missing metric data. Gap detection is downsample-aware, so a low point limit alone does not split otherwise continuous data.
 - Frame time is always rendered on a 0..100 ms Y-axis to keep rare outliers from flattening normal samples against the bottom of the chart.
 - Per-chart point budget scales with chart width and visible lines: the same selected time range can be displayed with more detail on wider charts and fewer points when many server lines are visible.

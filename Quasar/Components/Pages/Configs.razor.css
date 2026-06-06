@@ -104,6 +104,22 @@
     min-width: min(22rem, 100%);
 }
 
+.plugin-description-cell {
+    min-width: 0;
+}
+
+.plugin-description-line {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.plugin-description-more {
+    flex: 0 0 auto;
+}
+
 .configs-add-button {
     height: 56px;
 }

@@ -317,7 +317,7 @@
                     <MudTabPanel Text="Plugins">
                         <MudPaper Class="server-card pa-4" Square="true">
                         <MudExpansionPanels MultiExpansion="false" Elevation="0" Outlined="true" Dense="true" Class="configs-expansion-panels mb-4">
-                            <MudExpansionPanel Class="configs-expansion-panel" Expanded="@IsPluginPanelExpanded(PluginListPanelKey)" ExpandedChanged="@(expanded => SetPluginPanelExpanded(PluginListPanelKey, expanded))">
+                            <MudExpansionPanel Class="configs-expansion-panel" Expanded="@IsPluginPanelExpanded(PluginListPanelKey)" ExpandedChanged="@(expanded => SetPluginPanelExpandedAsync(PluginListPanelKey, expanded))">
                                 <TitleContent>
                                     <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
                                         <MudText Typo="Typo.subtitle2">Plugins to load</MudText>
@@ -339,12 +339,15 @@
                                     <MudTable T="QuasarPluginSelection" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Items="FilteredPlugins">
                                         <HeaderContent>
                                             <MudTh>Name</MudTh>
-                                            <MudTh>Plugin ID</MudTh>
                                             <MudTh Style="width:96px;"></MudTh>
                                         </HeaderContent>
                                         <RowTemplate>
-                                            <MudTd DataLabel="Name">@context.DisplayName</MudTd>
-                                            <MudTd DataLabel="Plugin ID" Class="mono">@context.PluginId</MudTd>
+                                            <MudTd DataLabel="Name">
+                                                <MudStack Spacing="0">
+                                                    <MudText Typo="Typo.subtitle2">@context.DisplayName</MudText>
+                                                    <MudText Typo="Typo.caption" Class="config-secondary mono">@context.PluginId</MudText>
+                                                </MudStack>
+                                            </MudTd>
                                             <MudTd>
                                                 <div class="plugin-actions">
                                                     @if (!string.IsNullOrWhiteSpace(GetPluginSourceUrl(context)))
@@ -364,7 +367,7 @@
                                 </ChildContent>
                             </MudExpansionPanel>
 
-                            <MudExpansionPanel Class="configs-expansion-panel" Expanded="@IsPluginPanelExpanded(PluginCatalogPanelKey)" ExpandedChanged="@(expanded => SetPluginPanelExpanded(PluginCatalogPanelKey, expanded))">
+                            <MudExpansionPanel Class="configs-expansion-panel" Expanded="@IsPluginPanelExpanded(PluginCatalogPanelKey)" ExpandedChanged="@(expanded => SetPluginPanelExpandedAsync(PluginCatalogPanelKey, expanded))">
                                 <TitleContent>
                                     <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
                                         <MudText Typo="Typo.subtitle2">Plugin catalog</MudText>
@@ -381,7 +384,7 @@
                                             Adornment="Adornment.Start"
                                             AdornmentIcon="@Icons.Material.Filled.Search"
                                             Class="configs-search-field" />
-                                        <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="RefreshPluginCatalogAsync" Disabled="@_catalogRefreshing">
+                                        <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="@(() => RefreshPluginCatalogAsync())" Disabled="@_catalogRefreshing">
                                             @(_catalogRefreshing ? "Refreshing..." : "Refresh Catalog")
                                         </MudButton>
                                         <MudChip T="string" Variant="Variant.Outlined">Selected @_editor.Plugins.Count</MudChip>
@@ -405,7 +408,6 @@
                                             <HeaderContent>
                                                 <MudTh>Use</MudTh>
                                                 <MudTh>Name</MudTh>
-                                                <MudTh>Plugin Id</MudTh>
                                                 <MudTh>Author</MudTh>
                                                 <MudTh>Description</MudTh>
                                                 <MudTh Style="width:48px;"></MudTh>
@@ -417,6 +419,7 @@
                                                 <MudTd DataLabel="Name">
                                                     <MudStack Spacing="0">
                                                         <MudText Typo="Typo.subtitle2">@context.FriendlyName</MudText>
+                                                        <MudText Typo="Typo.caption" Class="config-secondary mono">@context.PluginId</MudText>
                                                         @if (context.IsLocalDevFolder)
                                                         {
                                                             <MudText Typo="Typo.caption" Class="config-secondary">Local dev folder</MudText>
@@ -427,9 +430,22 @@
                                                         }
                                                     </MudStack>
                                                 </MudTd>
-                                                <MudTd DataLabel="Plugin Id" Class="mono">@context.PluginId</MudTd>
                                                 <MudTd DataLabel="Author">@context.Author</MudTd>
-                                                <MudTd DataLabel="Description">@GetPluginDescription(context)</MudTd>
+                                                <MudTd DataLabel="Description">
+                                                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1" Class="plugin-description-cell">
+                                                        <MudText Typo="Typo.body2" Class="plugin-description-line">@GetPluginDescriptionPreview(context)</MudText>
+                                                        @if (ShouldShowPluginDescriptionDialog(context))
+                                                        {
+                                                            <MudIconButton
+                                                                Icon="@Icons.Material.Filled.MoreHoriz"
+                                                                Color="Color.Default"
+                                                                Size="Size.Small"
+                                                                Class="plugin-description-more"
+                                                                OnClick="@(() => ShowPluginDescriptionAsync(context))"
+                                                                title="Show full description" />
+                                                        }
+                                                    </MudStack>
+                                                </MudTd>
                                                 <MudTd Style="text-align:right;">
                                                     @if (!string.IsNullOrWhiteSpace(GetPluginSourceUrl(context)))
                                                     {
@@ -447,7 +463,7 @@
                                 </ChildContent>
                             </MudExpansionPanel>
 
-                            <MudExpansionPanel Class="configs-expansion-panel" Text="Advanced/manual plugin setup" Expanded="@IsPluginPanelExpanded(AdvancedPluginsPanelKey)" ExpandedChanged="@(expanded => SetPluginPanelExpanded(AdvancedPluginsPanelKey, expanded))">
+                            <MudExpansionPanel Class="configs-expansion-panel" Text="Advanced/manual plugin setup" Expanded="@IsPluginPanelExpanded(AdvancedPluginsPanelKey)" ExpandedChanged="@(expanded => SetPluginPanelExpandedAsync(AdvancedPluginsPanelKey, expanded))">
                                 <ChildContent>
                                     <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.End" Spacing="1" Class="mt-2">
                                         <MudTextField @bind-Value="_customPluginId" Label="Add custom plugin ID" Variant="Variant.Outlined" Immediate="true" />
@@ -709,6 +725,7 @@
     private const string PluginListPanelKey = "plugin-list";
     private const string PluginCatalogPanelKey = "plugin-catalog";
     private const string AdvancedPluginsPanelKey = "advanced-plugins";
+    private const int PluginDescriptionPreviewMaxLength = 280;
     private string _selectedProfileId = string.Empty;
     private QuasarConfigProfile? _editor;
     private string _newProfileName = string.Empty;
@@ -1008,13 +1025,17 @@
         return JsonSerializer.Serialize(clone);
     }
 
-    private async Task RefreshPluginCatalogAsync()
+    private async Task RefreshPluginCatalogAsync(bool showSuccessMessage = true)
     {
+        if (_catalogRefreshing)
+            return;
+
         _catalogRefreshing = true;
         try
         {
             await PluginCatalog.RefreshAsync();
-            Snackbar.Add("Plugin catalog refreshed.", Severity.Success);
+            if (showSuccessMessage)
+                Snackbar.Add("Plugin catalog refreshed.", Severity.Success);
         }
         catch (Exception exception)
         {
@@ -1091,12 +1112,14 @@
     private bool IsPluginPanelExpanded(string panelKey) =>
         string.Equals(_expandedPluginPanelKey, panelKey, StringComparison.OrdinalIgnoreCase);
 
-    private Task SetPluginPanelExpanded(string panelKey, bool expanded)
+    private async Task SetPluginPanelExpandedAsync(string panelKey, bool expanded)
     {
         _expandedPluginPanelKey = expanded
             ? panelKey
             : string.Empty;
-        return Task.CompletedTask;
+
+        if (expanded && string.Equals(panelKey, PluginCatalogPanelKey, StringComparison.OrdinalIgnoreCase))
+            await RefreshPluginCatalogAsync(showSuccessMessage: false);
     }
 
     private string? GetExpandedCategoryKey()
@@ -1813,6 +1836,60 @@
         return string.IsNullOrWhiteSpace(text)
             ? "-"
             : text;
+    }
+
+    private string GetPluginDescriptionPreview(QuasarPluginCatalogEntry entry)
+    {
+        var description = GetPluginDescription(entry);
+        if (description == "-")
+            return description;
+
+        var preview = NormalizePluginDescription(description);
+        if (string.IsNullOrWhiteSpace(preview))
+            return "-";
+
+        return preview.Length <= PluginDescriptionPreviewMaxLength
+            ? preview
+            : TruncatePluginDescriptionPreview(preview);
+    }
+
+    private bool ShouldShowPluginDescriptionDialog(QuasarPluginCatalogEntry entry)
+    {
+        var description = GetPluginDescription(entry);
+        if (description == "-")
+            return false;
+
+        return NormalizePluginDescription(description).Length > PluginDescriptionPreviewMaxLength;
+    }
+
+    private static string NormalizePluginDescription(string description) =>
+        string.Join(' ', description
+            .Split(["\r\n", "\n", "\r"], StringSplitOptions.None)
+            .Select(line => line.Trim())
+            .Where(line => !string.IsNullOrWhiteSpace(line)));
+
+    private static string TruncatePluginDescriptionPreview(string description)
+    {
+        var cutoff = description.LastIndexOf('.', PluginDescriptionPreviewMaxLength - 1);
+        if (cutoff >= 0)
+            return description[..(cutoff + 1)].TrimEnd();
+
+        return $"{description[..PluginDescriptionPreviewMaxLength].TrimEnd()}...";
+    }
+
+    private async Task ShowPluginDescriptionAsync(QuasarPluginCatalogEntry entry)
+    {
+        var parameters = new DialogParameters
+        {
+            [nameof(PluginCatalogDescriptionDialog.DisplayName)] = string.IsNullOrWhiteSpace(entry.FriendlyName) ? entry.PluginId : entry.FriendlyName,
+            [nameof(PluginCatalogDescriptionDialog.PluginId)] = entry.PluginId,
+            [nameof(PluginCatalogDescriptionDialog.Description)] = GetPluginDescription(entry),
+        };
+
+        await DialogService.ShowAsync<PluginCatalogDescriptionDialog>(
+            "Plugin description",
+            parameters,
+            new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Small, FullWidth = true });
     }
 
     private string GetPluginSourceUrl(QuasarPluginSelection plugin)

@@ -8,6 +8,7 @@ CONFIGURATION="${CONFIGURATION:-Release}"
 RUNTIME="${RUNTIME:-linux-x64}"
 VERSION="${VERSION:-}"
 ASSEMBLY_FILE_VERSION="0.1.0.0"
+NUGET_VERSION="$VERSION"
 
 normalize_version_component() {
     local value="${1:-0}"
@@ -19,6 +20,24 @@ normalize_version_component() {
         value=$((value % 10000))
     fi
     echo "$value"
+}
+
+normalize_nuget_version() {
+    local version="${1#v}"
+    version="${version%%-*}"
+    version="${version%%+*}"
+
+    if [[ -z "$version" ]]; then
+        echo "0.1.0"
+        return
+    fi
+
+    if [[ "$version" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
+        echo "$version"
+        return
+    fi
+
+    echo "0.1.0-${version}"
 }
 
 build_assembly_file_version() {
@@ -62,6 +81,7 @@ if [[ -z "$VERSION" ]]; then
     VERSION="$(git -C "$REPO_DIR" rev-parse --short HEAD)"
 fi
 VERSION="${VERSION#v}"
+NUGET_VERSION="$(normalize_nuget_version "$VERSION")"
 ASSEMBLY_FILE_VERSION="$(build_assembly_file_version "$VERSION")"
 
 PUBLISH_DIR="$ARTIFACT_DIR/publish"
@@ -75,7 +95,7 @@ dotnet publish "$REPO_DIR/Quasar.Bootstrap/Quasar.Bootstrap.csproj" \
     -c "$CONFIGURATION" \
     -r "$RUNTIME" \
     -p:CopyToDeployDir=false \
-    -p:Version="$VERSION" \
+    -p:Version="$NUGET_VERSION" \
     -p:AssemblyVersion="$ASSEMBLY_FILE_VERSION" \
     -p:FileVersion="$ASSEMBLY_FILE_VERSION" \
     -o "$PUBLISH_DIR" \

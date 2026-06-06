@@ -24,6 +24,8 @@ tagged GitHub releases.
 `Version` is taken from `scripts/package-linux-release.sh` and can fall back to a git value.
 For assembly/file metadata, the script always emits a valid `major.minor.build.revision`
 version even when the base version is build-number style.
+For NuGet/assembly package metadata, non-tag/short-hash values are mapped to a safe
+`0.1.0-<hash>` semver pre-release form so restore/publish do not fail.
 
 ## First Start
 

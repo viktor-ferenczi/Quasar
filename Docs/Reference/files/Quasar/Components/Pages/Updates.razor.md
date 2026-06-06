@@ -1,0 +1,38 @@
+# Quasar/Components/Pages/Updates.razor
+
+**Module:** Quasar.Components  **Kind:** component  **Tier:** 2
+
+## Summary
+
+Routable MudBlazor page at `/settings/updates` for checking, staging, and activating Quasar Linux release updates. It shows current update status from `QuasarUpdateService`, separates Quasar UI and Bootstrap candidates from separate release streams, exposes manual check/stage/activate actions for the UI worker, shows Bootstrap update availability, and displays configured GitHub release source and asset names.
+
+## Structure
+
+Route: `/settings/updates`  
+Authorization: `QuasarPolicyNames.CanManageSecurity`
+
+**Injected services**
+
+- `QuasarUpdateService` — snapshot source and action API
+- `QuasarUpdateOptions` — configured GitHub owner/repository/assets/check interval
+- `WebServiceOptions` — current UI and Bootstrap versions
+- `ISnackbar` — user feedback for update actions
+
+**Key members**
+
+| Member | Description |
+|---|---|
+| `OnInitialized()` / `Dispose()` | Subscribes/unsubscribes to `UpdateService.Changed` and initializes `_snapshot`. |
+| `CheckNowAsync()` | Runs an immediate release check through `QuasarUpdateService.CheckNowAsync()`. |
+| `StageAsync()` | Downloads and stages the queued Quasar UI update. |
+| `ActivateAsync()` | Writes the active-release pointer so Bootstrap swaps to the staged worker. |
+| `RunBusyAsync(...)` | Shared busy-state/error/snackbar wrapper for the three actions. |
+| `GetStatusSeverity()` | Maps `QuasarUpdateStatus` to MudBlazor alert severity. |
+| `FormatBootstrapVersion()` | Shows the Bootstrap launcher version when the worker was started by Bootstrap, otherwise reports that Bootstrap is not managing this worker. |
+
+## Dependencies
+
+- [`Quasar/Services/Updates/QuasarUpdateService.cs`](../../Services/Updates/QuasarUpdateService.cs.md) — update checks, staging, activation
+- [`Quasar/Services/Updates/QuasarUpdateOptions.cs`](../../Services/Updates/QuasarUpdateOptions.cs.md) — release source and asset names
+- [`Quasar/Services/Updates/QuasarUpdateSnapshot.cs`](../../Services/Updates/QuasarUpdateSnapshot.cs.md) — status/candidate DTOs displayed by the page
+- `Quasar/Services/WebServiceOptions.cs` — current Quasar UI and Bootstrap versions

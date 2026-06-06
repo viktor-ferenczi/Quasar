@@ -18,7 +18,7 @@ Background hosted service that periodically refreshes the Quasar plugin catalog 
 | `RefreshOnceAsync(ct)` (private) | Calls `_pluginCatalog.RefreshAsync`; rethrows `OperationCanceledException`, logs and suppresses any other exception (keeps the cached catalog). |
 
 ## Dependencies
-- `Quasar/Services/QuasarPluginCatalogService.cs` — `RefreshAsync` (refresh target)
+- [`Quasar/Services/QuasarPluginCatalogService.cs`](QuasarPluginCatalogService.cs.md) — `RefreshAsync` (refresh target)
 - `Microsoft.Extensions.Hosting.BackgroundService`
 
 ## Notes

@@ -18,8 +18,8 @@ Namespace `Magnetar.Protocol.Runtime`; `public static class MagnetarPaths`. Pure
 - Private `SanitizePathSegment(value)`: trims, replaces invalid filename chars with `-`, returns `default` for empty input.
 
 ## Dependencies
-- `Magnetar.Protocol/Discovery/WebServiceDiscoveryManifest.cs` — file resolved by `GetWebServiceManifestPath()`.
-- `Magnetar.Protocol/Runtime/QuasarActiveReleasePointer.cs` — file resolved by `GetQuasarActiveReleasePath()`.
+- [`Magnetar.Protocol/Discovery/WebServiceDiscoveryManifest.cs`](../Discovery/WebServiceDiscoveryManifest.cs.md) — file resolved by `GetWebServiceManifestPath()`.
+- [`Magnetar.Protocol/Runtime/QuasarActiveReleasePointer.cs`](QuasarActiveReleasePointer.cs.md) — file resolved by `GetQuasarActiveReleasePath()`.
 - `System`, `System.IO` (BCL only).
 
 ## Notes

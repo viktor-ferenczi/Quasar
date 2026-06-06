@@ -18,7 +18,7 @@ Namespace: `Quasar.Services`
 | `EnsureManagedMagnetarInstallAsync(runtime, ct)` | Dispatcher: routes to the Windows or Linux install method by `OperatingSystem.IsWindows()`. |
 | `EnsureLinuxManagedMagnetarInstallAsync(ct)` | Linux path (byte-for-byte the previous behavior): returns the apphost binary directly under `<install>/Bin/` (never the top-level `MagnetarInterim` wrapper script), downloading/extracting the archive if missing; sets exec bit; locked by `_magnetarInstallLock`. |
 | `EnsureWindowsManagedMagnetarInstallAsync(runtime, ct)` | Windows path: installs both builds together into one folder, then resolves to the requested launcher exe (`GetWindowsMagnetarLauncherFileName`); its containing folder is the working directory (holds the `Libraries` payload). Once either launcher is present the install is complete, so switching runtime per server never re-downloads. Locked by `_magnetarInstallLock`. |
-| `DownloadAndExtractMagnetarArchiveAsync(extractRoot, ct)` | Shared helper used by both OS paths: downloads `MagnetarArchiveUrl` (5-minute timeout) and extracts it into `extractRoot`. |
+| `DownloadAndExtractMagnetarArchiveAsync(extractRoot, ct)` | Shared helper used by both OS paths: resolves a direct `MagnetarArchiveUrl` override or the latest full GitHub release asset matching `MagnetarArchiveAssetPattern`, downloads it (5-minute timeout), and extracts it into `extractRoot`. |
 | `GetWindowsMagnetarLauncherFileName(runtime)` | Maps `NetFramework48` → `MagnetarLegacy.exe`, otherwise `MagnetarInterim.exe`. |
 | `FindWindowsMagnetarSource(extractRoot)` | Locates the archive's `Magnetar/` folder by the `MagnetarInterim.exe` that has a sibling `Libraries/` directory. |
 | `ResolveDedicatedServer64PathAsync(...)` | Priority order: path inferred from a DS executable → `DedicatedServer64OverridePath` option → directory adjacent to the launcher → managed steamcmd install (if `PreferManagedDedicatedServerInstall`) → well-known Steam install locations. Throws if none valid. |
@@ -32,8 +32,8 @@ Namespace: `Quasar.Services`
 
 ## Dependencies
 
-- `Quasar/Services/ManagedRuntimeOptions.cs` — download URLs, install/override directories, preference flags
-- `Quasar/Models/DedicatedServerDefinition.cs` — input definition
+- [`Quasar/Services/ManagedRuntimeOptions.cs`](ManagedRuntimeOptions.cs.md) — download URLs, install/override directories, preference flags
+- [`Quasar/Models/DedicatedServerDefinition.cs`](../Models/DedicatedServerDefinition.cs.md) — input definition
 - `Magnetar.Protocol.Runtime` — `MagnetarPaths` (managed runtime cache dir)
 - SharpCompress — `ArchiveFactory`, `IArchiveEntry`, `ReaderOptions`
 - BCL `System.IO.Compression.ZipArchive`, `System.Diagnostics.Process`

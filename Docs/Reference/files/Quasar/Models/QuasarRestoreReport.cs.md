@@ -20,5 +20,5 @@ Namespace: `Quasar.Models`
 | `Failed(string message, string? backupVersion = null, string? runningVersion = null)` | static — builds a failed report. |
 
 ## Dependencies
-- Produced by `Quasar/Services/Backup/QuasarBackupService.cs`, consumed by `Quasar/Components/Pages/Backup.razor`.
+- Produced by [`Quasar/Services/Backup/QuasarBackupService.cs`](../Services/Backup/QuasarBackupService.cs.md), consumed by [`Quasar/Components/Pages/Backup.razor`](../Components/Pages/Backup.razor.md).
 - No external packages.

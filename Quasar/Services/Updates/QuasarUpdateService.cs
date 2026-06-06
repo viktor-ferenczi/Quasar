@@ -3,12 +3,17 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Magnetar.Protocol.Runtime;
 
 namespace Quasar.Services.Updates;
 
 public sealed class QuasarUpdateService : BackgroundService
 {
+    private static readonly Regex VersionPattern = new(
+        @"\d+(?:\.\d+){1,3}(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
@@ -37,6 +42,7 @@ public sealed class QuasarUpdateService : BackgroundService
             Enabled = options.Enabled,
             SupportedPlatform = OperatingSystem.IsLinux(),
             CurrentVersion = webOptions.Version,
+            CurrentBootstrapVersion = webOptions.BootstrapVersion,
             Status = QuasarUpdateStatus.Idle,
             Message = options.Enabled
                 ? "Update checks pending."
@@ -90,8 +96,9 @@ public sealed class QuasarUpdateService : BackgroundService
                 Message = "Checking GitHub releases.",
             });
 
-            var release = await GetLatestReleaseAsync(cancellationToken).ConfigureAwait(false);
-            if (release is null)
+            var webRelease = await GetLatestReleaseWithAssetAsync(_options.LinuxWebAssetName, cancellationToken).ConfigureAwait(false);
+            var bootstrapRelease = await GetLatestReleaseWithAssetAsync(_options.LinuxBootstrapAssetName, cancellationToken).ConfigureAwait(false);
+            if (webRelease is null && bootstrapRelease is null)
             {
                 SetSnapshot(_snapshot with
                 {
@@ -102,25 +109,26 @@ public sealed class QuasarUpdateService : BackgroundService
                 return;
             }
 
-            var version = NormalizeVersion(release.TagName);
-            var webAsset = FindAsset(release, _options.LinuxWebAssetName);
-            var bootstrapAsset = FindAsset(release, _options.LinuxBootstrapAssetName);
-            var checksums = await GetChecksumsAsync(release, cancellationToken).ConfigureAwait(false);
-            var hasNewVersion = IsNewerVersion(version, _webOptions.Version);
-
-            var web = webAsset is null || !hasNewVersion
+            var web = webRelease is null
                 ? null
-                : BuildCandidate(version, release.PublishedAt, webAsset, GetChecksum(checksums, webAsset.Name), requiresPrivilegedInstall: false);
-            var bootstrap = bootstrapAsset is null || !hasNewVersion
+                : await BuildCandidateAsync(webRelease, _options.LinuxWebAssetName, _webOptions.Version, requiresPrivilegedInstall: false, cancellationToken)
+                    .ConfigureAwait(false);
+            var bootstrap = bootstrapRelease is null
                 ? null
-                : BuildCandidate(version, release.PublishedAt, bootstrapAsset, GetChecksum(checksums, bootstrapAsset.Name), requiresPrivilegedInstall: true);
+                : await BuildCandidateAsync(
+                    bootstrapRelease,
+                    _options.LinuxBootstrapAssetName,
+                    string.IsNullOrWhiteSpace(_webOptions.BootstrapVersion) ? _webOptions.Version : _webOptions.BootstrapVersion,
+                    requiresPrivilegedInstall: true,
+                    cancellationToken)
+                    .ConfigureAwait(false);
 
             SetSnapshot(_snapshot with
             {
                 Status = web is null && bootstrap is null ? QuasarUpdateStatus.Idle : QuasarUpdateStatus.UpdateQueued,
                 Message = web is null && bootstrap is null
-                    ? $"No newer Linux release found. Latest checked: {version}."
-                    : $"Release {version} found.",
+                    ? "No newer Linux release found."
+                    : BuildReleaseFoundMessage(web, bootstrap),
                 LastCheckedUtc = DateTimeOffset.UtcNow,
                 Web = web,
                 Bootstrap = bootstrap,
@@ -249,24 +257,54 @@ public sealed class QuasarUpdateService : BackgroundService
         }
     }
 
-    private async Task<GitHubRelease?> GetLatestReleaseAsync(CancellationToken cancellationToken)
+    private async Task<QuasarUpdateCandidate?> BuildCandidateAsync(
+        GitHubRelease release,
+        string assetName,
+        string currentVersion,
+        bool requiresPrivilegedInstall,
+        CancellationToken cancellationToken)
+    {
+        var version = NormalizeVersion(release.TagName);
+        if (!IsNewerVersion(version, currentVersion))
+            return null;
+
+        var asset = FindAsset(release, assetName);
+        if (asset is null)
+            return null;
+
+        var checksums = await GetChecksumsAsync(release, cancellationToken).ConfigureAwait(false);
+        return BuildCandidate(version, release.PublishedAt, asset, GetChecksum(checksums, asset.Name), requiresPrivilegedInstall);
+    }
+
+    private static string BuildReleaseFoundMessage(QuasarUpdateCandidate? web, QuasarUpdateCandidate? bootstrap)
+    {
+        if (web is not null && bootstrap is not null)
+            return string.Equals(web.Version, bootstrap.Version, StringComparison.OrdinalIgnoreCase)
+                ? $"Release {web.Version} found."
+                : $"UI {web.Version} and Bootstrap {bootstrap.Version} found.";
+
+        if (web is not null)
+            return $"UI {web.Version} found.";
+
+        return bootstrap is null ? "No newer Linux release found." : $"Bootstrap {bootstrap.Version} found.";
+    }
+
+    private async Task<GitHubRelease?> GetLatestReleaseWithAssetAsync(string assetName, CancellationToken cancellationToken)
     {
         using var client = _httpClientFactory.CreateClient();
         client.Timeout = TimeSpan.FromSeconds(30);
         client.DefaultRequestHeaders.UserAgent.ParseAdd("Quasar");
 
-        var url = _options.IncludePrerelease
-            ? $"https://api.github.com/repos/{_options.Owner}/{_options.Repository}/releases"
-            : $"https://api.github.com/repos/{_options.Owner}/{_options.Repository}/releases/latest";
+        var url = $"https://api.github.com/repos/{_options.Owner}/{_options.Repository}/releases?per_page=100";
         using var response = await client.GetAsync(url, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 
-        if (!_options.IncludePrerelease)
-            return await JsonSerializer.DeserializeAsync<GitHubRelease>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
-
         var releases = await JsonSerializer.DeserializeAsync<List<GitHubRelease>>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
-        return releases?.FirstOrDefault(release => !release.Draft);
+        return releases?
+            .Where(release => !release.Draft)
+            .Where(release => _options.IncludePrerelease || !release.Prerelease)
+            .FirstOrDefault(release => FindAsset(release, assetName) is not null);
     }
 
     private static GitHubAsset? FindAsset(GitHubRelease release, string assetName) =>
@@ -348,6 +386,10 @@ public sealed class QuasarUpdateService : BackgroundService
     private static string NormalizeVersion(string value)
     {
         value = value.Trim();
+        var match = VersionPattern.Match(value);
+        if (match.Success)
+            return match.Value;
+
         return value.StartsWith("v", StringComparison.OrdinalIgnoreCase) ? value[1..] : value;
     }
 
@@ -403,6 +445,7 @@ public sealed class QuasarUpdateService : BackgroundService
                 Enabled = _options.Enabled,
                 SupportedPlatform = OperatingSystem.IsLinux(),
                 CurrentVersion = _webOptions.Version,
+                CurrentBootstrapVersion = _webOptions.BootstrapVersion,
                 LastChangedUtc = DateTimeOffset.UtcNow,
             };
         }
@@ -416,6 +459,8 @@ public sealed class QuasarUpdateService : BackgroundService
         public string TagName { get; set; } = string.Empty;
 
         public bool Draft { get; set; }
+
+        public bool Prerelease { get; set; }
 
         [JsonPropertyName("published_at")]
         public DateTimeOffset? PublishedAt { get; set; }

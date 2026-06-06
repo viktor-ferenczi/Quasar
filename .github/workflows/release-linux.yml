@@ -3,6 +3,8 @@ name: release-linux
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
     tags:
       - "v*"
 
@@ -37,10 +39,70 @@ jobs:
             +app_update 298740 validate \
             +quit
 
+      - name: Resolve Quasar release metadata
+        id: release
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            tag="$GITHUB_REF_NAME"
+            version="${tag#v}"
+            ui_tag="quasar-ui/v${version}"
+            bootstrap_tag="quasar-bootstrap/v${version}"
+            ui_name="Quasar UI v${version}"
+            bootstrap_name="Quasar Bootstrap v${version}"
+            draft="false"
+            prerelease="false"
+          elif [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
+            version="0.1.0-main.${GITHUB_RUN_NUMBER}"
+            ui_tag="quasar-ui/v${version}"
+            bootstrap_tag="quasar-bootstrap/v${version}"
+            ui_name="Quasar UI main ${GITHUB_SHA::7}"
+            bootstrap_name="Quasar Bootstrap main ${GITHUB_SHA::7}"
+            draft="true"
+            prerelease="true"
+          else
+            version="$(git rev-parse --short HEAD)"
+            ui_tag="quasar-ui/$version"
+            bootstrap_tag="quasar-bootstrap/$version"
+            ui_name="Quasar UI $version"
+            bootstrap_name="Quasar Bootstrap $version"
+            draft="true"
+            prerelease="true"
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "ui_tag=$ui_tag" >> "$GITHUB_OUTPUT"
+          echo "bootstrap_tag=$bootstrap_tag" >> "$GITHUB_OUTPUT"
+          echo "ui_name=$ui_name" >> "$GITHUB_OUTPUT"
+          echo "bootstrap_name=$bootstrap_name" >> "$GITHUB_OUTPUT"
+          echo "draft=$draft" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+
       - name: Install Magnetar PluginSdk reference
         run: |
           mkdir -p "$HOME/.local/share/Magnetar"
-          curl -L "https://nas.ferenczi.eu/public.php/dav/files/q4godba6fXH6w74/MagnetarForLinux.7z" -o /tmp/magnetar.7z
+          MAGNETAR_URL="$(python3 - <<'PY'
+          import fnmatch
+          import json
+          import urllib.request
+
+          req = urllib.request.Request(
+              "https://api.github.com/repos/viktor-ferenczi/Magnetar/releases/latest",
+              headers={"User-Agent": "Quasar"},
+          )
+          with urllib.request.urlopen(req) as response:
+              release = json.load(response)
+          if release.get("draft") or release.get("prerelease"):
+              raise SystemExit("latest Magnetar release is not a full release")
+          matches = [
+              asset for asset in release.get("assets", [])
+              if fnmatch.fnmatchcase(asset.get("name", ""), "MagnetarForLinux-*.7z")
+          ]
+          if len(matches) != 1:
+              names = ", ".join(asset.get("name", "") for asset in release.get("assets", []))
+              raise SystemExit(f"expected one MagnetarForLinux-*.7z asset, found {len(matches)}: {names}")
+          print(matches[0]["browser_download_url"])
+          PY
+          )"
+          curl -fL "$MAGNETAR_URL" -o /tmp/magnetar.7z
           7z x /tmp/magnetar.7z "-o$HOME/.local/share/Magnetar" -y
           PLUGIN_SDK="$(find "$HOME/.local/share/Magnetar" -path "*/Bin/PluginSdk.dll" -print -quit)"
           if [ -z "$PLUGIN_SDK" ]; then
@@ -61,11 +123,28 @@ jobs:
             artifacts/linux/quasar-bootstrap-linux-x64.tar.gz
             artifacts/linux/SHA256SUMS
 
-      - name: Attach artifacts to GitHub release
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Attach UI artifact to GitHub release
+        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.release.outputs.ui_tag }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ steps.release.outputs.ui_name }}
+          draft: ${{ steps.release.outputs.draft }}
+          prerelease: ${{ steps.release.outputs.prerelease }}
           files: |
             artifacts/linux/quasar-web-linux-x64.tar.gz
+            artifacts/linux/SHA256SUMS
+
+      - name: Attach Bootstrap artifact to GitHub release
+        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release.outputs.bootstrap_tag }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ steps.release.outputs.bootstrap_name }}
+          draft: ${{ steps.release.outputs.draft }}
+          prerelease: ${{ steps.release.outputs.prerelease }}
+          files: |
             artifacts/linux/quasar-bootstrap-linux-x64.tar.gz
             artifacts/linux/SHA256SUMS

@@ -25,5 +25,5 @@ Namespace: `Quasar.Models`
 | `Normalize(QuasarBackupSettings?)` | static — clamps `RetentionCount` to `[Min, Max]`. |
 
 ## Dependencies
-- Used by `Quasar/Services/Backup/QuasarBackupSettingsService.cs` and `Quasar/Services/Backup/AutomaticBackupService.cs`.
+- Used by [`Quasar/Services/Backup/QuasarBackupSettingsService.cs`](../Services/Backup/QuasarBackupSettingsService.cs.md) and [`Quasar/Services/Backup/AutomaticBackupService.cs`](../Services/Backup/AutomaticBackupService.cs.md).
 - No external packages.

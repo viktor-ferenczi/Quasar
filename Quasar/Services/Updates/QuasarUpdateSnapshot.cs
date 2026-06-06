@@ -8,6 +8,8 @@ public sealed record QuasarUpdateSnapshot
 
     public string CurrentVersion { get; init; } = string.Empty;
 
+    public string CurrentBootstrapVersion { get; init; } = string.Empty;
+
     public QuasarUpdateStatus Status { get; init; } = QuasarUpdateStatus.Idle;
 
     public string Message { get; init; } = string.Empty;

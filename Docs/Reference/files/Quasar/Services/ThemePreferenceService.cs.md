@@ -24,7 +24,7 @@ Per-circuit (scoped) service that manages the user's theme preference (System / 
 | `GetSystemDarkModeAsync()` (private) | Calls JS `quasarConfigs.getSystemDarkMode`; returns `true` on error. |
 
 ## Dependencies
-- `Quasar/Services/BrandingService.cs` — theme construction
+- [`Quasar/Services/BrandingService.cs`](BrandingService.cs.md) — theme construction
 - `ILocalStorageService` (Blazored.LocalStorage)
 - `Microsoft.JSInterop.IJSRuntime`
 - MudBlazor — `MudTheme`

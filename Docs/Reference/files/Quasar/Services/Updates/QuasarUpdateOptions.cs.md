@@ -1,0 +1,30 @@
+# Quasar/Services/Updates/QuasarUpdateOptions.cs
+
+**Module:** Quasar.Services.Core  **Kind:** class  **Tier:** 2
+
+## Summary
+
+Configuration record for Quasar's GitHub-release update checker. It controls whether checks run, which repository is queried, whether prereleases are eligible, how often automatic checks run, and which Linux release asset names represent the web worker and Bootstrap packages.
+
+## Structure
+
+Namespace: `Quasar.Services.Updates`
+
+**`QuasarUpdateOptions`** — sealed class with init-only properties.
+
+| Property | Default / env var override |
+|---|---|
+| `Enabled` | `true`; `QUASAR_UPDATES_ENABLED` |
+| `Owner` | `viktor-ferenczi`; `QUASAR_UPDATES_OWNER` |
+| `Repository` | `Quasar`; `QUASAR_UPDATES_REPOSITORY` |
+| `IncludePrerelease` | `false`; `QUASAR_UPDATES_INCLUDE_PRERELEASE` |
+| `CheckInterval` | 300 seconds minimum 60; `QUASAR_UPDATES_CHECK_INTERVAL_SECONDS` |
+| `LinuxWebAssetName` | `quasar-web-linux-x64.tar.gz`; `QUASAR_UPDATES_LINUX_WEB_ASSET` |
+| `LinuxBootstrapAssetName` | `quasar-bootstrap-linux-x64.tar.gz`; `QUASAR_UPDATES_LINUX_BOOTSTRAP_ASSET` |
+
+`Create(IConfiguration)` loads environment variables first, then `Quasar:Updates`, then defaults.
+
+## Dependencies
+
+- ASP.NET Core `IConfiguration`
+

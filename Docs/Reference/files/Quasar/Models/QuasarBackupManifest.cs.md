@@ -17,5 +17,5 @@ Namespace: `Quasar.Models`
 | `CreatedByHost` | `string?` — host that created the backup. |
 
 ## Dependencies
-- Produced/consumed by `Quasar/Services/Backup/QuasarBackupService.cs`.
+- Produced/consumed by [`Quasar/Services/Backup/QuasarBackupService.cs`](../Services/Backup/QuasarBackupService.cs.md).
 - No external packages.

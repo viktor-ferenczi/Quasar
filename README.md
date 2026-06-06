@@ -31,8 +31,8 @@ Build notes:
 
 Managed runtime notes:
 
-- On Windows, managed servers can run on either Magnetar build — .NET 10 (the "Interim" build, default) or .NET Framework 4.8 (the "Legacy" build). Pick the build per server with the `.NET runtime` field in the server editor; Quasar downloads both builds together from `MagnetarForWindows.7z` so switching never re-downloads.
-- On Linux only the .NET 10 (Interim) build ships (`MagnetarForLinux.7z`); a `NetFramework48` selection carried over from a Windows `server.json` is silently downgraded to .NET 10.
+- On Windows, managed servers can run on either Magnetar build — .NET 10 (the "Interim" build, default) or .NET Framework 4.8 (the "Legacy" build). Pick the build per server with the `.NET runtime` field in the server editor; Quasar downloads both builds together from the latest full GitHub Magnetar release asset matching `MagnetarForWindows-*.7z` so switching never re-downloads.
+- On Linux only the .NET 10 (Interim) build ships in the latest full GitHub Magnetar release asset matching `MagnetarForLinux-*.7z`; a `NetFramework48` selection carried over from a Windows `server.json` is silently downgraded to .NET 10.
 
 Linux service install:
 
@@ -51,8 +51,8 @@ Linux release packaging and updates:
 - A Bootstrap-only Linux install can start without a packaged `WebService/` folder; Bootstrap downloads the latest web asset from GitHub on startup and writes the active-release pointer.
 - The Quasar UI checks GitHub releases every 5 minutes by default. New Linux UI assets are downloaded into `~/.config/Quasar/Updates/Staged/<version>` and queued for activation on the Updates page.
 - Activating a staged UI update causes a short web listener disconnect: Bootstrap drains the old worker first, starts the staged worker on the same port, and managed Magnetar servers stay alive because they run detached.
-- Bootstrap update availability is shown in the Updates page, but installing a new Bootstrap still uses the Linux installer path because service replacement may require root/systemd access.
-- The release workflow is `.github/workflows/release-linux.yml`; tag pushes attach the Linux assets and `SHA256SUMS` to the GitHub release.
+- Bootstrap update availability is shown in the Updates page from a separate Bootstrap release stream, but installing a new Bootstrap still uses the Linux installer path because service replacement may require root/systemd access.
+- The release workflow is `.github/workflows/release-linux.yml`; tag pushes publish separate Quasar UI and Bootstrap releases (`quasar-ui/v<version>` and `quasar-bootstrap/v<version>`), while pushes to `main` create matching draft prerelease builds named `v0.1.0-main.<run-number>`.
 
 Agent workflow note:
 

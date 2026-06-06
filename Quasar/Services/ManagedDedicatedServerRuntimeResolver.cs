@@ -1,5 +1,8 @@
 using System.Diagnostics;
 using System.IO.Compression;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Magnetar.Protocol.Runtime;
 using Quasar.Models;
 using SharpCompress.Archives;
@@ -9,6 +12,7 @@ namespace Quasar.Services;
 
 public sealed class ManagedDedicatedServerRuntimeResolver
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private const string MagnetarLauncherName = "MagnetarInterim";
     private const string DedicatedServerAppId = "298740";
     private const string DedicatedServerExecutableName = "SpaceEngineersDedicated";
@@ -230,13 +234,15 @@ public sealed class ManagedDedicatedServerRuntimeResolver
     {
         using var client = _httpClientFactory.CreateClient();
         client.Timeout = TimeSpan.FromMinutes(5);
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("Quasar");
 
-        var archivePath = Path.Combine(extractRoot, "magnetar-download" + InferArchiveExtension(_options.MagnetarArchiveUrl));
-        using var response = await client.GetAsync(_options.MagnetarArchiveUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        var archiveUrl = await ResolveMagnetarArchiveUrlAsync(client, cancellationToken);
+        var archivePath = Path.Combine(extractRoot, "magnetar-download" + InferArchiveExtension(archiveUrl));
+        using var response = await client.GetAsync(archiveUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException(
-                $"Failed downloading Magnetar archive from {_options.MagnetarArchiveUrl}. Status={(int)response.StatusCode} {response.ReasonPhrase}.");
+                $"Failed downloading Magnetar archive from {archiveUrl}. Status={(int)response.StatusCode} {response.ReasonPhrase}.");
         }
 
         await using (var archiveFile = File.Create(archivePath))
@@ -245,6 +251,55 @@ public sealed class ManagedDedicatedServerRuntimeResolver
         }
 
         ExtractArchive(archivePath, extractRoot);
+    }
+
+    private async Task<string> ResolveMagnetarArchiveUrlAsync(HttpClient client, CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(_options.MagnetarArchiveUrl))
+            return _options.MagnetarArchiveUrl;
+
+        using var response = await client.GetAsync(_options.MagnetarReleaseApiUrl, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"Failed resolving latest Magnetar release from {_options.MagnetarReleaseApiUrl}. Status={(int)response.StatusCode} {response.ReasonPhrase}.");
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        var release = await JsonSerializer.DeserializeAsync<GitHubRelease>(stream, JsonOptions, cancellationToken)
+                      ?? throw new InvalidOperationException("GitHub latest Magnetar release response was empty.");
+
+        if (release.Draft || release.Prerelease)
+            throw new InvalidOperationException("GitHub latest Magnetar release is not a full release.");
+
+        var matches = release.Assets
+            .Where(asset => MatchesAssetPattern(asset.Name, _options.MagnetarArchiveAssetPattern))
+            .ToList();
+
+        if (matches.Count != 1)
+        {
+            var names = string.Join(", ", release.Assets.Select(asset => asset.Name));
+            throw new InvalidOperationException(
+                $"Expected one Magnetar archive asset matching '{_options.MagnetarArchiveAssetPattern}' in latest release {release.TagName}, found {matches.Count}. Assets: {names}");
+        }
+
+        var archiveUrl = matches[0].BrowserDownloadUrl;
+        if (string.IsNullOrWhiteSpace(archiveUrl))
+            throw new InvalidOperationException($"Magnetar archive asset '{matches[0].Name}' has no browser_download_url.");
+
+        return archiveUrl;
+    }
+
+    private static bool MatchesAssetPattern(string assetName, string pattern)
+    {
+        if (string.IsNullOrWhiteSpace(pattern))
+            return false;
+
+        if (!pattern.Contains('*', StringComparison.Ordinal))
+            return string.Equals(assetName, pattern, StringComparison.OrdinalIgnoreCase);
+
+        var regex = "^" + Regex.Escape(pattern).Replace("\\*", ".*") + "$";
+        return Regex.IsMatch(assetName, regex, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
 
     private static string GetWindowsMagnetarLauncherFileName(ManagedServerRuntime runtime) => runtime switch
@@ -904,6 +959,26 @@ public sealed class ManagedDedicatedServerRuntimeResolver
         return value.Length <= maxLength
             ? value
             : value[..maxLength] + "...";
+    }
+
+    private sealed class GitHubRelease
+    {
+        [JsonPropertyName("tag_name")]
+        public string TagName { get; set; } = string.Empty;
+
+        public bool Draft { get; set; }
+
+        public bool Prerelease { get; set; }
+
+        public IReadOnlyList<GitHubAsset> Assets { get; set; } = [];
+    }
+
+    private sealed class GitHubAsset
+    {
+        public string Name { get; set; } = string.Empty;
+
+        [JsonPropertyName("browser_download_url")]
+        public string BrowserDownloadUrl { get; set; } = string.Empty;
     }
 }
 

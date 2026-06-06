@@ -23,8 +23,8 @@ Manages the persistent catalog of Quasar world templates — pre-configured worl
 Private: `LoadTemplates` / `LoadTemplate` (reads `template.json`, also legacy `profile.json`; id is authoritative from the directory name); `SaveTemplateAsync` / `ArchiveAndDeleteTemplateAsync` (atomic write + timestamped history); `MigrateLegacyStorage` / `RenameLegacyTemplateDefinitions` / `RewriteLegacyTemplateDefinitions`; `StartWatching` / `ScheduleReload` / `ReloadFromDisk` (250 ms debounced reload on `template.json` changes).
 
 ## Dependencies
-- `Quasar/Models/QuasarWorldTemplate.cs` — the model
-- `Quasar/Services/AtomicFileWriter.cs` — atomic saves and history writes
+- [`Quasar/Models/QuasarWorldTemplate.cs`](../Models/QuasarWorldTemplate.cs.md) — the model
+- [`Quasar/Services/AtomicFileWriter.cs`](AtomicFileWriter.cs.md) — atomic saves and history writes
 - `Magnetar.Protocol.Runtime.MagnetarPaths` — all template/world/history path resolution
 - `System.Text.Json`
 

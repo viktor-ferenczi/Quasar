@@ -4,12 +4,17 @@ namespace Quasar.Services;
 
 public sealed class ManagedRuntimeOptions
 {
-    private const string DefaultLinuxMagnetarArchiveUrl = "https://nas.ferenczi.eu/public.php/dav/files/q4godba6fXH6w74/MagnetarForLinux.7z";
-    private const string DefaultWindowsMagnetarArchiveUrl = "https://nas.ferenczi.eu/public.php/dav/files/q4godba6fXH6w74/MagnetarForWindows.7z";
+    private const string DefaultMagnetarReleaseApiUrl = "https://api.github.com/repos/viktor-ferenczi/Magnetar/releases/latest";
+    private const string DefaultLinuxMagnetarArchiveAssetPattern = "MagnetarForLinux-*.7z";
+    private const string DefaultWindowsMagnetarArchiveAssetPattern = "MagnetarForWindows-*.7z";
     private const string DefaultLinuxSteamCmdArchiveUrl = "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz";
     private const string DefaultWindowsSteamCmdArchiveUrl = "https://steamcdn-a.akamaihd.net/client/installer/steamcmd.zip";
 
-    public string MagnetarArchiveUrl { get; init; } = GetDefaultMagnetarArchiveUrl();
+    public string MagnetarArchiveUrl { get; init; } = string.Empty;
+
+    public string MagnetarReleaseApiUrl { get; init; } = DefaultMagnetarReleaseApiUrl;
+
+    public string MagnetarArchiveAssetPattern { get; init; } = GetDefaultMagnetarArchiveAssetPattern();
 
     public string MagnetarInstallDirectory { get; init; } = MagnetarPaths.GetQuasarManagedMagnetarInstallDirectory();
 
@@ -30,9 +35,18 @@ public sealed class ManagedRuntimeOptions
         var section = configuration.GetSection("Quasar").GetSection("ManagedRuntime");
 
         var magnetarArchiveUrl = Environment.GetEnvironmentVariable("QUASAR_MAGNETAR_ARCHIVE_URL")
-                                 ?? section["MagnetarArchiveUrl"];
-        if (string.IsNullOrWhiteSpace(magnetarArchiveUrl))
-            magnetarArchiveUrl = GetDefaultMagnetarArchiveUrl();
+                                 ?? section["MagnetarArchiveUrl"]
+                                 ?? string.Empty;
+
+        var magnetarReleaseApiUrl = Environment.GetEnvironmentVariable("QUASAR_MAGNETAR_RELEASE_API_URL")
+                                    ?? section["MagnetarReleaseApiUrl"];
+        if (string.IsNullOrWhiteSpace(magnetarReleaseApiUrl))
+            magnetarReleaseApiUrl = DefaultMagnetarReleaseApiUrl;
+
+        var magnetarArchiveAssetPattern = Environment.GetEnvironmentVariable("QUASAR_MAGNETAR_ARCHIVE_ASSET_PATTERN")
+                                          ?? section["MagnetarArchiveAssetPattern"];
+        if (string.IsNullOrWhiteSpace(magnetarArchiveAssetPattern))
+            magnetarArchiveAssetPattern = GetDefaultMagnetarArchiveAssetPattern();
 
         var magnetarInstallDirectory = Environment.GetEnvironmentVariable("QUASAR_MAGNETAR_INSTALL_DIR")
                                        ?? section["MagnetarInstallDirectory"];
@@ -72,6 +86,8 @@ public sealed class ManagedRuntimeOptions
         return new ManagedRuntimeOptions
         {
             MagnetarArchiveUrl = magnetarArchiveUrl.Trim(),
+            MagnetarReleaseApiUrl = magnetarReleaseApiUrl.Trim(),
+            MagnetarArchiveAssetPattern = magnetarArchiveAssetPattern.Trim(),
             MagnetarInstallDirectory = magnetarInstallDirectory.Trim(),
             SteamCmdArchiveUrl = steamCmdArchiveUrl.Trim(),
             SteamCmdInstallDirectory = steamCmdInstallDirectory.Trim(),
@@ -82,10 +98,10 @@ public sealed class ManagedRuntimeOptions
         };
     }
 
-    private static string GetDefaultMagnetarArchiveUrl() =>
+    private static string GetDefaultMagnetarArchiveAssetPattern() =>
         OperatingSystem.IsWindows()
-            ? DefaultWindowsMagnetarArchiveUrl
-            : DefaultLinuxMagnetarArchiveUrl;
+            ? DefaultWindowsMagnetarArchiveAssetPattern
+            : DefaultLinuxMagnetarArchiveAssetPattern;
 
     private static string GetDefaultSteamCmdArchiveUrl() =>
         OperatingSystem.IsWindows()

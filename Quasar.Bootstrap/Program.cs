@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Magnetar.Protocol.Discovery;
 using Magnetar.Protocol.Runtime;
 using Microsoft.Extensions.Configuration;
@@ -584,6 +585,8 @@ internal sealed class BootstrapOptions
 
     public string LinuxWebAssetName { get; init; } = "quasar-web-linux-x64.tar.gz";
 
+    public string Version { get; init; } = Assembly.GetEntryAssembly()?.GetName().Version?.ToString() ?? "0.0.0";
+
     public static BootstrapOptions Create()
     {
         var configuration = BuildConfiguration();
@@ -686,6 +689,9 @@ internal sealed class LauncherCoordinator : IHostedService, IDisposable
     {
         WriteIndented = true,
     };
+    private static readonly Regex VersionPattern = new(
+        @"\d+(?:\.\d+){1,3}(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private readonly BootstrapOptions _options;
     private readonly LauncherForegroundOptions _foregroundOptions;
@@ -826,7 +832,7 @@ internal sealed class LauncherCoordinator : IHostedService, IDisposable
 
         try
         {
-            var release = await GetLatestReleaseAsync(cancellationToken).ConfigureAwait(false);
+            var release = await GetLatestReleaseWithAssetAsync(_options.LinuxWebAssetName, cancellationToken).ConfigureAwait(false);
             var asset = release?.Assets.FirstOrDefault(asset =>
                 string.Equals(asset.Name, _options.LinuxWebAssetName, StringComparison.OrdinalIgnoreCase));
             var checksums = release is null
@@ -885,20 +891,19 @@ internal sealed class LauncherCoordinator : IHostedService, IDisposable
         }
     }
 
-    private async Task<GitHubRelease?> GetLatestReleaseAsync(CancellationToken cancellationToken)
+    private async Task<GitHubRelease?> GetLatestReleaseWithAssetAsync(string assetName, CancellationToken cancellationToken)
     {
-        var url = _options.UpdatesIncludePrerelease
-            ? $"https://api.github.com/repos/{_options.UpdatesOwner}/{_options.UpdatesRepository}/releases"
-            : $"https://api.github.com/repos/{_options.UpdatesOwner}/{_options.UpdatesRepository}/releases/latest";
+        var url = $"https://api.github.com/repos/{_options.UpdatesOwner}/{_options.UpdatesRepository}/releases?per_page=100";
         using var response = await _downloadClient.GetAsync(url, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 
-        if (!_options.UpdatesIncludePrerelease)
-            return await JsonSerializer.DeserializeAsync<GitHubRelease>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
-
         var releases = await JsonSerializer.DeserializeAsync<List<GitHubRelease>>(stream, JsonOptions, cancellationToken).ConfigureAwait(false);
-        return releases?.FirstOrDefault(release => !release.Draft);
+        return releases?
+            .Where(release => !release.Draft)
+            .Where(release => _options.UpdatesIncludePrerelease || !release.Prerelease)
+            .FirstOrDefault(release => release.Assets.Any(asset =>
+                string.Equals(asset.Name, assetName, StringComparison.OrdinalIgnoreCase)));
     }
 
     private async Task<IReadOnlyDictionary<string, string>> GetChecksumsAsync(GitHubRelease release, CancellationToken cancellationToken)
@@ -942,6 +947,10 @@ internal sealed class LauncherCoordinator : IHostedService, IDisposable
     private static string NormalizeVersion(string value)
     {
         value = value.Trim();
+        var match = VersionPattern.Match(value);
+        if (match.Success)
+            return match.Value;
+
         return value.StartsWith("v", StringComparison.OrdinalIgnoreCase) ? value[1..] : value;
     }
 
@@ -1164,6 +1173,7 @@ internal sealed class LauncherCoordinator : IHostedService, IDisposable
         startInfo.Environment["QUASAR_OPEN_BROWSER_ON_START"] = "false";
         startInfo.Environment["QUASAR_MODE"] = "service";
         startInfo.Environment["QUASAR_LAUNCHER_TOKEN"] = _launcherToken;
+        startInfo.Environment["QUASAR_BOOTSTRAP_VERSION"] = _options.Version;
         startInfo.Environment["QUASAR_PRESERVE_SERVERS_ON_SHUTDOWN"] = _options.PreserveServersOnShutdown ? "true" : "false";
         if (_foregroundOptions.IsForeground)
             startInfo.Environment["QUASAR_CONSOLE_LOGGING"] = "true";
@@ -1574,6 +1584,8 @@ internal sealed class LauncherCoordinator : IHostedService, IDisposable
         public string TagName { get; set; } = string.Empty;
 
         public bool Draft { get; set; }
+
+        public bool Prerelease { get; set; }
 
         public IReadOnlyList<GitHubAsset> Assets { get; set; } = [];
     }

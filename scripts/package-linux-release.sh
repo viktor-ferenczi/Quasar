@@ -24,7 +24,6 @@ normalize_version_component() {
 
 normalize_nuget_version() {
     local version="${1#v}"
-    version="${version%%-*}"
     version="${version%%+*}"
 
     if [[ -z "$version" ]]; then
@@ -32,12 +31,24 @@ normalize_nuget_version() {
         return
     fi
 
-    if [[ "$version" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
+    if [[ "$version" =~ ^[0-9]+(\.[0-9]+){0,2}(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
         echo "$version"
         return
     fi
 
-    echo "0.1.0-${version}"
+    if [[ "$version" =~ ^[0-9]+(\.[0-9]+){3}$ ]]; then
+        IFS='.' read -r -a version_parts <<< "$version"
+        echo "${version_parts[0]}.${version_parts[1]}.${version_parts[2]}-${version_parts[3]}"
+        return
+    fi
+
+    local suffix="${version//[^0-9A-Za-z.-]/-}"
+    suffix="${suffix#.}"
+    suffix="${suffix#-}"
+    if [[ -z "$suffix" ]]; then
+        suffix="local"
+    fi
+    echo "0.1.0-${suffix}"
 }
 
 build_assembly_file_version() {

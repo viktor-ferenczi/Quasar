@@ -61,8 +61,8 @@ them detached with `-daemon`.
 
 ## Bootstrap Updates
 
-Bootstrap update availability is detected from the same GitHub release and shown
-in the Updates page. Installing a new Bootstrap is separate from UI worker
+Bootstrap update availability is detected from the Bootstrap release stream and
+shown in the Updates page. Installing a new Bootstrap is separate from UI worker
 updates because replacing `/opt/quasar/Quasar` and systemd service files may
 require root privileges.
 

@@ -23,6 +23,8 @@ public sealed class WebServiceOptions
 
     public string Version { get; init; } = Assembly.GetEntryAssembly()?.GetName().Version?.ToString() ?? "0.0.0";
 
+    public string BootstrapVersion { get; init; } = string.Empty;
+
     public string Mode { get; init; } = "Console";
 
     public bool OpenBrowserOnStart { get; init; } = true;
@@ -164,6 +166,7 @@ public sealed class WebServiceOptions
             avoidSimultaneousScheduledRestarts = true;
 
         var launcherToken = Environment.GetEnvironmentVariable("QUASAR_LAUNCHER_TOKEN") ?? string.Empty;
+        var bootstrapVersion = Environment.GetEnvironmentVariable("QUASAR_BOOTSTRAP_VERSION") ?? string.Empty;
 
         return new WebServiceOptions
         {
@@ -187,6 +190,7 @@ public sealed class WebServiceOptions
             AgentReconnectIntervalSeconds = agentReconnectIntervalSeconds,
             AgentReconnectJitterSeconds = agentReconnectJitterSeconds,
             LauncherToken = launcherToken,
+            BootstrapVersion = bootstrapVersion,
         };
     }
 }

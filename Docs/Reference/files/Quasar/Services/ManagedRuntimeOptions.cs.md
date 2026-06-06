@@ -3,7 +3,7 @@
 **Module:** Quasar.Services.Core  **Kind:** class  **Tier:** 1
 
 ## Summary
-`ManagedRuntimeOptions` is the configuration record for all managed-runtime paths and download URLs. It is populated from environment variables (highest priority), then the `Quasar:ManagedRuntime` config section, then sensible defaults. The defaults point to the Magnetar NAS for the launcher archive and to Valve's CDN for SteamCMD, with OS-appropriate variants.
+`ManagedRuntimeOptions` is the configuration record for all managed-runtime paths and download URLs. It is populated from environment variables (highest priority), then the `Quasar:ManagedRuntime` config section, then sensible defaults. The defaults resolve the latest full Magnetar GitHub release asset by OS-specific wildcard and point SteamCMD to Valve's CDN.
 
 ## Structure
 Namespace: `Quasar.Services`
@@ -12,7 +12,9 @@ Namespace: `Quasar.Services`
 
 | Property | Default / env var override |
 |----------|---------------------------|
-| `MagnetarArchiveUrl` | Windows: `MagnetarForWindows.7z` from NAS; Linux/other: `MagnetarForLinux.7z` from NAS; `QUASAR_MAGNETAR_ARCHIVE_URL` |
+| `MagnetarArchiveUrl` | Empty by default; direct URL override via `QUASAR_MAGNETAR_ARCHIVE_URL` |
+| `MagnetarReleaseApiUrl` | `https://api.github.com/repos/viktor-ferenczi/Magnetar/releases/latest`; `QUASAR_MAGNETAR_RELEASE_API_URL` |
+| `MagnetarArchiveAssetPattern` | Windows: `MagnetarForWindows-*.7z`; Linux/other: `MagnetarForLinux-*.7z`; `QUASAR_MAGNETAR_ARCHIVE_ASSET_PATTERN` |
 | `MagnetarInstallDirectory` | `MagnetarPaths.GetQuasarManagedMagnetarInstallDirectory()`; `QUASAR_MAGNETAR_INSTALL_DIR` |
 | `SteamCmdArchiveUrl` | Windows: ZIP from Valve; Linux: `.tar.gz` from Valve; `QUASAR_STEAMCMD_ARCHIVE_URL` |
 | `SteamCmdInstallDirectory` | `MagnetarPaths.GetQuasarManagedSteamCmdInstallDirectory()`; `QUASAR_STEAMCMD_INSTALL_DIR` |

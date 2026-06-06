@@ -32,6 +32,9 @@ on:
 permissions:
   contents: write
 
+env:
+  SE_DS_APPID: "298740"
+
 jobs:
   build-linux:
     runs-on: ubuntu-latest
@@ -49,33 +52,77 @@ jobs:
           sudo dpkg --add-architecture i386
           sudo add-apt-repository multiverse
           sudo apt-get update
-          echo steam steam/question select "I AGREE" | sudo debconf-set-selections
-          echo steam steam/license note "" | sudo debconf-set-selections
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y p7zip-full steamcmd
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl lib32gcc-s1 p7zip-full
+
+      - name: Probe Dedicated Server build id
+        id: dsbuild
+        run: |
+          set -euo pipefail
+          mkdir -p steamcmd
+          curl -fsSL https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz \
+            | tar -xz -C steamcmd
+
+          buildid=""
+          for attempt in 1 2 3 4 5; do
+            out="$(./steamcmd/steamcmd.sh +login anonymous +app_info_update 1 \
+                     +app_info_print "$SE_DS_APPID" +quit 2>/dev/null || true)"
+            buildid="$(printf '%s' "$out" | tr -d '\r' | awk '
+              /"branches"/              { in_branches = 1 }
+              in_branches && /"public"/ { in_public = 1 }
+              in_public && /"buildid"/  { gsub(/[^0-9]/, "", $2); print $2; exit }
+            ')"
+            [ -n "$buildid" ] && break
+            echo "Dedicated Server build id probe attempt $attempt empty; retrying..."
+            sleep 5
+          done
+
+          if [ -z "$buildid" ]; then
+            echo "WARNING: could not determine DS build id; DS cache will miss this run." >&2
+            buildid="norev-${{ github.run_id }}"
+          fi
+          echo "Dedicated Server public build id: $buildid"
+          echo "buildid=$buildid" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Dedicated Server libraries
+        id: dscache
+        uses: actions/cache@v4
+        with:
+          path: ds64
+          key: ds64-linux-${{ steps.dsbuild.outputs.buildid }}
 
       - name: Install Space Engineers Dedicated Server references
+        if: steps.dscache.outputs.cache-hit != 'true'
         run: |
-          install_dir="$HOME/.steam/steam/steamapps/common/SpaceEngineersDedicatedServer"
-          mkdir -p "$install_dir"
-          steam_ok=false
-          for attempt in 1 2 3; do
-            echo "SteamCMD install attempt $attempt/3"
-            if /usr/games/steamcmd \
+          set -euo pipefail
+          mkdir -p dsfull
+
+          ./steamcmd/steamcmd.sh +quit || true
+
+          ok=0
+          for attempt in 1 2 3 4 5; do
+            echo "SteamCMD install attempt $attempt/5"
+            ./steamcmd/steamcmd.sh \
               +@sSteamCmdForcePlatformType windows \
-              +@sSteamCmdForcePlatformBitness 64 \
-              +force_install_dir "$install_dir" \
+              +force_install_dir "$PWD/dsfull" \
               +login anonymous \
-              +app_update 298740 validate \
-              +quit; then
-              steam_ok=true
+              +app_update "$SE_DS_APPID" validate \
+              +quit || true
+            if [ -f "$PWD/dsfull/DedicatedServer64/SpaceEngineersDedicated.exe" ]; then
+              ok=1
               break
             fi
-            sleep 20
+            echo "SteamCMD attempt $attempt did not complete the DS install; retrying..."
+            sleep 5
           done
-          if [[ "$steam_ok" != "true" || ! -d "$install_dir/DedicatedServer64" ]]; then
-            echo "Failed installing Space Engineers Dedicated Server references." >&2
+          if [ "$ok" != 1 ]; then
+            echo "ERROR: SteamCMD failed to install Space Engineers Dedicated Server references." >&2
             exit 1
           fi
+
+          mkdir -p ds64
+          cp -a "$PWD/dsfull/DedicatedServer64/." ds64/
+          rm -rf dsfull
+          echo "Cached DS library set:"; du -sh ds64
 
       - name: Resolve Quasar release metadata
         id: release
@@ -214,6 +261,8 @@ jobs:
           echo "MagnetarBin=$(dirname "$PLUGIN_SDK")" >> "$GITHUB_ENV"
 
       - name: Package Linux release
+        env:
+          DS64: ${{ github.workspace }}/ds64
         run: scripts/package-linux-release.sh
 
       - name: Upload workflow artifacts

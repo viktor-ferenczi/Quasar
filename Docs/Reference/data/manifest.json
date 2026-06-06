@@ -345,7 +345,7 @@
       "name": "Program.cs",
       "ext": ".cs",
       "size": 67151,
-      "sha256": "d5b206f8dd3630cbc589b28e61528ffe0243f49b325184d04cae2b08c790adbb",
+      "sha256": "1ed35a66b7d3ae1ba8e1f8e854f9939f9f10bfab8d15681bb9ed33643476aacc",
       "module": "Quasar.Bootstrap",
       "tier": 1,
       "status": "documented"
@@ -1715,7 +1715,7 @@
       "name": "QuasarUpdateService.cs",
       "ext": ".cs",
       "size": 18909,
-      "sha256": "13f6fb542d5f57f22eb47ca6962cd598bd8f7e541be876b8c500962762cc3e72",
+      "sha256": "dd4e26490b8d354ddc9ac2493526f04171cb28e40bb1cc471497f566169df44b",
       "module": "Quasar.Services.Core",
       "tier": 2,
       "status": "documented"

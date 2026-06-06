@@ -11,7 +11,7 @@ namespace Quasar.Services.Updates;
 public sealed class QuasarUpdateService : BackgroundService
 {
     private static readonly Regex VersionPattern = new(
-        @"\d+(?:\.\d+){1,3}(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?",
+        @"\d+(?:\.\d+){1,2}(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)

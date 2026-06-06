@@ -7,7 +7,7 @@ ARTIFACT_DIR="$REPO_DIR/artifacts/linux"
 CONFIGURATION="${CONFIGURATION:-Release}"
 RUNTIME="${RUNTIME:-linux-x64}"
 VERSION="${VERSION:-}"
-ASSEMBLY_FILE_VERSION="0.1.0.0"
+ASSEMBLY_FILE_VERSION="0.1.0"
 NUGET_VERSION="$VERSION"
 
 normalize_version_component() {
@@ -31,7 +31,7 @@ normalize_nuget_version() {
         return
     fi
 
-    if [[ "$version" =~ ^[0-9]+(\.[0-9]+){0,2}(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+    if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
         echo "$version"
         return
     fi
@@ -60,13 +60,12 @@ build_assembly_file_version() {
         local numeric="$raw_version"
         local major=0
         local minor=0
-        local build=$(( (numeric / 10000) % 10000 ))
-        local revision=$(( numeric % 10000 ))
-        echo "${major}.${minor}.${build}.${revision}"
+        local build=$(( numeric % 10000 ))
+        echo "${major}.${minor}.${build}"
         return
     fi
 
-    if [[ ! "$raw_version" =~ ^[0-9]+(\.[0-9]+){0,3}$ ]]; then
+    if [[ ! "$raw_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
         echo "$ASSEMBLY_FILE_VERSION"
         return
     fi
@@ -75,14 +74,12 @@ build_assembly_file_version() {
     local major
     local minor
     local build
-    local revision
 
     major="$(normalize_version_component "${version_parts[0]}")"
     minor="$(normalize_version_component "${version_parts[1]}")"
     build="$(normalize_version_component "${version_parts[2]}")"
-    revision="$(normalize_version_component "${version_parts[3]}")"
 
-    echo "${major}.${minor}.${build}.${revision}"
+    echo "${major}.${minor}.${build}"
 }
 
 if [[ -z "$VERSION" ]]; then

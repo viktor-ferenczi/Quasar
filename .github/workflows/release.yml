@@ -18,6 +18,8 @@ on:
       - "scripts/install.ps1"
       - "scripts/package-linux-release.sh"
       - "scripts/package-windows-release.ps1"
+      - "scripts/readme-install-linux.md"
+      - "scripts/readme-install-windows.md"
       - "scripts/uninstall.ps1"
     tags:
       - "v*"
@@ -37,6 +39,8 @@ on:
       - "scripts/install.ps1"
       - "scripts/package-linux-release.sh"
       - "scripts/package-windows-release.ps1"
+      - "scripts/readme-install-linux.md"
+      - "scripts/readme-install-windows.md"
       - "scripts/uninstall.ps1"
 
 permissions:
@@ -49,6 +53,11 @@ jobs:
   # Resolve the release identity once so the Linux and Windows builds stamp the
   # same version and all archives land under a single GitHub release/tag.
   metadata:
+    # Draft PRs do not need release artifacts; skipping here cascades to every
+    # downstream job via `needs`, so no build infra is spent until the PR is
+    # marked ready for review. Non-PR events (push, tag, workflow_dispatch)
+    # always run.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.release.outputs.version }}

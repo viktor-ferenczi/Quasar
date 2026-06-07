@@ -44,4 +44,27 @@ public static class IdentifierSlug
 
         return builder.ToString().Trim('-');
     }
+
+    /// <summary>
+    /// Creates a slug from <paramref name="source"/> (falling back to
+    /// <paramref name="fallback"/> when the source yields no usable characters) and
+    /// disambiguates it against existing slugs by appending a "-N" suffix incrementing
+    /// from 1 until <paramref name="exists"/> reports the candidate is free.
+    /// </summary>
+    public static string CreateUnique(string? source, string fallback, Func<string, bool> exists)
+    {
+        var baseSlug = Create(source);
+        if (string.IsNullOrEmpty(baseSlug))
+            baseSlug = fallback;
+
+        var candidate = baseSlug;
+        var counter = 0;
+        while (exists(candidate))
+        {
+            counter++;
+            candidate = $"{baseSlug}-{counter}";
+        }
+
+        return candidate;
+    }
 }

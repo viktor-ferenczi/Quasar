@@ -444,7 +444,7 @@
         if (_isEditing || _identifierManuallyEdited)
             return;
 
-        _editor.UniqueName = IdentifierSlug.Create(_editor.DisplayName);
+        _editor.UniqueName = ServerCatalog.GenerateUniqueServerName(_editor.DisplayName);
     }
 
     private void HandleIdentifierChanged(string value)

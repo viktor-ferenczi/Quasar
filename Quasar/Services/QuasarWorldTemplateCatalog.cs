@@ -252,22 +252,8 @@ public sealed class QuasarWorldTemplateCatalog : IDisposable
     /// Derives a folder/identifier slug from the template name, appending a
     /// "-N" suffix when needed so it does not collide with an existing template.
     /// </summary>
-    private string GenerateUniqueTemplateId(string name)
-    {
-        var baseId = IdentifierSlug.Create(name);
-        if (string.IsNullOrEmpty(baseId))
-            baseId = "world";
-
-        var candidate = baseId;
-        var counter = 1;
-        while (TemplateIdExists(candidate))
-        {
-            counter++;
-            candidate = $"{baseId}-{counter}";
-        }
-
-        return candidate;
-    }
+    private string GenerateUniqueTemplateId(string name) =>
+        IdentifierSlug.CreateUnique(name, "world", TemplateIdExists);
 
     private bool TemplateIdExists(string candidate)
     {

@@ -104,15 +104,16 @@ public sealed class WebServiceOptions
         if (string.IsNullOrWhiteSpace(loggingFormat))
             loggingFormat = "text";
 
-        var loggingMinimumLevel = Environment.GetEnvironmentVariable("QUASAR_LOG_MIN_LEVEL")
-                                  ?? loggingSection["MinimumLevel"];
-        if (string.IsNullOrWhiteSpace(loggingMinimumLevel))
-            loggingMinimumLevel = "Info";
-
         var environmentName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
                               ?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT")
                               ?? "Production";
         var isDevelopment = string.Equals(environmentName, "Development", StringComparison.OrdinalIgnoreCase);
+
+        var loggingMinimumLevel = Environment.GetEnvironmentVariable("QUASAR_LOG_MIN_LEVEL")
+                                  ?? loggingSection["MinimumLevel"];
+        // Deployments stay quiet at Warn by default; development keeps the more verbose Info.
+        if (string.IsNullOrWhiteSpace(loggingMinimumLevel))
+            loggingMinimumLevel = isDevelopment ? "Info" : "Warn";
 
         var disableServerHealthMonitoringValue = Environment.GetEnvironmentVariable("QUASAR_DISABLE_SERVER_HEALTH_MONITORING")
                                                   ?? section["DisableServerHealthMonitoring"];

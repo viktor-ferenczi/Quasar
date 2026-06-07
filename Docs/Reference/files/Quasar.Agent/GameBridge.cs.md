@@ -3,7 +3,7 @@
 **Module:** Quasar.Agent  **Kind:** class  **Tier:** 1
 
 ## Summary
-`GameBridge` is the central game-thread façade for `AgentConnection`. It collects session telemetry (metrics, players, kicked players, chat, deaths, plugins), builds `AgentHello` / `AgentSnapshot` wire messages, and executes server commands (chat, save, stop, kick, ban, promote, clear-kick-cooldown, entity list/delete) by marshalling work onto the game thread via `MySandboxGame.Invoke`. It also enumerates all loaded plugins and exposes their configuration through `IQuasarConfigProvider` or Magnetar PluginSdk `PluginConfig` reflection.
+`GameBridge` is the central game-thread façade for `AgentConnection`. It collects session telemetry (metrics, profiler snapshot, players, kicked players, chat, deaths, plugins), builds `AgentHello` / `AgentSnapshot` wire messages, and executes server commands (chat, save, stop, kick, ban, promote, clear-kick-cooldown, entity list/delete) by marshalling work onto the game thread via `MySandboxGame.Invoke`. Metrics include process CPU derived from `Process.TotalProcessorTime`, simspeed/sim CPU from `Sync`, memory, PCU, active entities/grids, total blocks, and floating objects. It also enumerates all loaded plugins and exposes their configuration through `IQuasarConfigProvider` or Magnetar PluginSdk `PluginConfig` reflection.
 
 ## Structure
 **Namespace:** `Quasar.Agent`  
@@ -15,7 +15,7 @@
 |---|---|
 | `QuasarRequestedStop` (property) | True once a `StopServer` command was received from Quasar |
 | `GameBridge(object gameServer)` | Reads `MAGNETAR_HOST_ID` and `QUASAR_UNIQUE_NAME` env vars; captures plugin version |
-| `Update()` | Called each game tick; throttles snapshot refresh to ≤1 Hz via `_lastSnapshotUtc` |
+| `Update()` | Called each game tick; marks the game thread for profiler attribution, advances the profiler sampler, and throttles snapshot refresh to ≤1 Hz via `_lastSnapshotUtc` |
 | `GetHello()` | Returns a cached `AgentHello`; thread-safe via `_sync` lock |
 | `GetSnapshot()` | Returns a cached `AgentSnapshot`; thread-safe via `_sync` lock |
 | `ExecuteCommandAsync(ServerCommandEnvelope, CancellationToken)` | Marshals `ExecuteCommandOnGameThread` via `game.Invoke`; handles `StopServer` without a live session |
@@ -38,12 +38,13 @@
 - [`Quasar.Agent/EntityInspector.cs`](EntityInspector.cs.md)
 - `Magnetar.Protocol.Bridge` — `IQuasarConfigProvider`
 - `Magnetar.Protocol.Model` — `AgentHello`, `AgentSnapshot`, `ServerMetrics`, `PlayerSnapshot`, `ChatMessageSnapshot`, `DeathEventSnapshot`, `PluginConfigSnapshot`, `PluginConfigData`, `PluginRuntimeInfo`, `ServerCommandEnvelope`, `ServerCommandResult`, `ServerCommandType`
+- [`Quasar.Agent/AgentProfiler.cs`](AgentProfiler.cs.md)
 - `Magnetar.Protocol.Transport` — wire transport types
 - `PluginSdk.Config` — `PluginConfig`, `ConfigStorage`, `ConfigOptionAttribute`
 - `VRage.Plugins` — `IPlugin`, `MyPlugins`
 - `Sandbox` — `MySandboxGame`
 - `Sandbox.Engine.Multiplayer` — `MyMultiplayer`, `MyDedicatedServer`
-- `Sandbox.Game.Entities` — `MyCubeGrid`, `MyEntities`
+- `Sandbox.Game.Entities` — `MyCubeGrid`, `MyFloatingObject`, `MyEntities`
 - `Sandbox.Game.Gui` — chat channel types
 - `Sandbox.Game.Multiplayer` — `Sync`
 - `Sandbox.Game.World` — `MySession`, `MyAsyncSaving`

@@ -24,6 +24,8 @@ Class `ServerMetrics` (concrete, no base type):
 | `MemoryWorkingSetMb` | `long?` | Process working set in MB; `null` if unavailable. |
 | `ActiveGridCount` | `int?` | Live grid count; `null` if unavailable. |
 | `ActiveEntityCount` | `int?` | Total live entity count; `null` if unavailable. |
+| `TotalBlockCount` | `int?` | Total blocks across active grids; `null` if unavailable. |
+| `FloatingObjectCount` | `int?` | Floating object count; `null` if unavailable. |
 | `UptimeSeconds` | `int` | Server uptime in seconds since last start. |
 | `ModsLoaded` | `int` | Number of mods loaded. |
 | `PluginsLoaded` | `int` | Number of plugins loaded. |

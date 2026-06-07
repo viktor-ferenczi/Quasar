@@ -63,7 +63,7 @@ public sealed class DedicatedServerRuntimePreparer
         Directory.CreateDirectory(Path.Combine(dedicatedServerAppDataPath, "Saves"));
 
         await PrepareRuntimeConfigAsync(definition, configProfile, runtimeConfigPath, cancellationToken);
-        await PrepareMagnetarConfigAsync(configProfile, magnetarAppDataPath, cancellationToken);
+        await PrepareMagnetarConfigAsync(definition, configProfile, magnetarAppDataPath, cancellationToken);
         await PrepareWorldModListAsync(definition, configProfile, worldPath, cancellationToken);
         await WriteLastSessionAsync(definition, worldPath, dedicatedServerAppDataPath, lastSessionPath, cancellationToken);
 
@@ -173,6 +173,7 @@ public sealed class DedicatedServerRuntimePreparer
     }
 
     private async Task PrepareMagnetarConfigAsync(
+        DedicatedServerDefinition definition,
         QuasarConfigProfile configProfile,
         string magnetarAppDataPath,
         CancellationToken cancellationToken)
@@ -184,7 +185,7 @@ public sealed class DedicatedServerRuntimePreparer
         Directory.CreateDirectory(profilesDirectory);
         Directory.CreateDirectory(localDirectory);
 
-        var agentLocalFileNames = await DeployQuasarAgentAsync(localDirectory, cancellationToken);
+        var agentLocalFileNames = await DeployQuasarAgentAsync(definition, localDirectory, cancellationToken);
 
         var currentTemplateName = string.IsNullOrWhiteSpace(configProfile.Name)
             ? "Quasar Current"
@@ -393,6 +394,7 @@ public sealed class DedicatedServerRuntimePreparer
             new XElement("Trusted", "true"));
 
     private async Task<IReadOnlyList<string>> DeployQuasarAgentAsync(
+        DedicatedServerDefinition definition,
         string localPluginDirectory,
         CancellationToken cancellationToken)
     {
@@ -417,10 +419,34 @@ public sealed class DedicatedServerRuntimePreparer
                 enabledNames.Add(fileName);
         }
 
+        await DeployHarmonyAsync(definition.ManagedRuntime, sourceDirectory, localPluginDirectory, cancellationToken);
+
         if (enabledNames.Count == 0)
             _logger.LogWarning("Quasar.Agent.dll was not found in {SourceDirectory}; the agent plugin will not be enabled.", sourceDirectory);
 
         return enabledNames;
+    }
+
+    private async Task DeployHarmonyAsync(
+        ManagedServerRuntime runtime,
+        string sourceDirectory,
+        string localPluginDirectory,
+        CancellationToken cancellationToken)
+    {
+        var effectiveRuntime = OperatingSystem.IsWindows() ? runtime : ManagedServerRuntime.DotNet10;
+        var runtimeFolder = effectiveRuntime == ManagedServerRuntime.NetFramework48 ? "NetFramework48" : "DotNet10";
+        var sourcePath = Path.Combine(sourceDirectory, runtimeFolder, HarmonyFileName);
+        if (!File.Exists(sourcePath))
+        {
+            _logger.LogWarning(
+                "{HarmonyFileName} for runtime {Runtime} was not found under {SourceDirectory}; profiler telemetry will not be available.",
+                HarmonyFileName,
+                effectiveRuntime,
+                sourceDirectory);
+            return;
+        }
+
+        await CopyFileIfChangedAsync(sourcePath, Path.Combine(localPluginDirectory, HarmonyFileName), cancellationToken);
     }
 
     private static async Task CopyFileIfChangedAsync(string sourcePath, string destinationPath, CancellationToken cancellationToken)
@@ -471,6 +497,7 @@ public sealed class DedicatedServerRuntimePreparer
     }
 
     private const string AgentPluginFileName = "Quasar.Agent.dll";
+    private const string HarmonyFileName = "0Harmony.dll";
 
     private static readonly string[] AgentDeploymentFiles =
     [

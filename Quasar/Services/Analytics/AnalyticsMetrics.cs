@@ -31,6 +31,8 @@ public static class AnalyticsMetrics
         new("pcu", "PCU Used", "Used PCU", static s => s.UsedPcu, static _ => true, RequiresZero: true, Decimals: 0, Kilo: true, FixedMax: null, DynamicMaxStep5: false),
         new("grids", "Active Grids", "Entity grids", static s => s.ActiveGridCount, static s => s.ActiveGridCount >= 0, RequiresZero: true, Decimals: 0, Kilo: false, FixedMax: null, DynamicMaxStep5: false),
         new("entities", "Active Entities", "Entity count", static s => s.ActiveEntityCount, static s => s.ActiveEntityCount >= 0, RequiresZero: true, Decimals: 0, Kilo: false, FixedMax: null, DynamicMaxStep5: false),
+        new("blocks", "Block Count", "Grid blocks", static s => s.TotalBlockCount, static s => s.TotalBlockCount >= 0, RequiresZero: true, Decimals: 0, Kilo: true, FixedMax: null, DynamicMaxStep5: false),
+        new("floating", "Floating Objects", "Loose items", static s => s.FloatingObjectCount, static s => s.FloatingObjectCount >= 0, RequiresZero: true, Decimals: 0, Kilo: false, FixedMax: null, DynamicMaxStep5: false),
     ];
 
     private static readonly Dictionary<string, AnalyticsMetric> Map =

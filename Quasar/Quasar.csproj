@@ -45,6 +45,7 @@
   <PropertyGroup>
     <_QuasarAgentProject>$(MSBuildThisFileDirectory)..\Quasar.Agent\Quasar.Agent.csproj</_QuasarAgentProject>
     <_QuasarAgentOutputDir>$(MSBuildThisFileDirectory)..\Quasar.Agent\bin\$(Configuration)\netstandard2.0\</_QuasarAgentOutputDir>
+    <_HarmonyPackageDir>$(NuGetPackageRoot)lib.harmony/2.4.2/lib/</_HarmonyPackageDir>
   </PropertyGroup>
 
   <Target Name="BuildQuasarAgent"
@@ -62,6 +63,12 @@
     <Copy SourceFiles="@(_QuasarAgentStageFiles)"
           DestinationFolder="$(OutputPath)Agent\"
           SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(_HarmonyPackageDir)net10.0/0Harmony.dll"
+          DestinationFiles="$(OutputPath)Agent\DotNet10\0Harmony.dll"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(_HarmonyPackageDir)net48/0Harmony.dll"
+          DestinationFiles="$(OutputPath)Agent\NetFramework48\0Harmony.dll"
+          SkipUnchangedFiles="true" />
   </Target>
 
   <Target Name="StageQuasarAgentForPublish" AfterTargets="Publish" DependsOnTargets="BuildQuasarAgent">
@@ -70,6 +77,12 @@
     </ItemGroup>
     <Copy SourceFiles="@(_QuasarAgentPublishFiles)"
           DestinationFolder="$(PublishDir)Agent\"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(_HarmonyPackageDir)net10.0/0Harmony.dll"
+          DestinationFiles="$(PublishDir)Agent\DotNet10\0Harmony.dll"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(_HarmonyPackageDir)net48/0Harmony.dll"
+          DestinationFiles="$(PublishDir)Agent\NetFramework48\0Harmony.dll"
           SkipUnchangedFiles="true" />
   </Target>
 

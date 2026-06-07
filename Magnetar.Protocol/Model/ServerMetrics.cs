@@ -26,6 +26,10 @@ public class ServerMetrics
 
     public int? ActiveEntityCount { get; set; }
 
+    public int? TotalBlockCount { get; set; }
+
+    public int? FloatingObjectCount { get; set; }
+
     public int UptimeSeconds { get; set; }
 
     public int ModsLoaded { get; set; }

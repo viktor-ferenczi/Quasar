@@ -11,6 +11,8 @@ public readonly struct MetricSample
     public readonly int UsedPcu;
     public readonly int ActiveGridCount;
     public readonly int ActiveEntityCount;
+    public readonly int TotalBlockCount;
+    public readonly int FloatingObjectCount;
 
     public MetricSample(
         long timestampUnixSeconds,
@@ -21,7 +23,9 @@ public readonly struct MetricSample
         int playersOnline,
         int usedPcu,
         int activeGridCount,
-        int activeEntityCount)
+        int activeEntityCount,
+        int totalBlockCount = -1,
+        int floatingObjectCount = -1)
     {
         TimestampUnixSeconds = timestampUnixSeconds;
         SimSpeed = simSpeed;
@@ -32,5 +36,7 @@ public readonly struct MetricSample
         UsedPcu = usedPcu;
         ActiveGridCount = activeGridCount;
         ActiveEntityCount = activeEntityCount;
+        TotalBlockCount = totalBlockCount;
+        FloatingObjectCount = floatingObjectCount;
     }
 }

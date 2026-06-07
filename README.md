@@ -58,6 +58,7 @@ Linux release packaging and updates:
 Agent workflow note:
 
 - Do not launch the Quasar web service process (`dotnet run --project Quasar/Quasar.csproj`) unless the user explicitly asks for a smoketest.
+- Managed agents collect default low-duty profiler telemetry for Analytics: per-grid, per-script, per-entity, physics, network/replication/session, and game-loop timing buckets.
 
 Utilities:
 

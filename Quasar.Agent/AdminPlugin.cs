@@ -15,6 +15,7 @@ namespace Quasar.Agent
 
         public void Init(object gameServer)
         {
+            AgentProfilerPatches.Apply();
             _bridge = new GameBridge(gameServer);
 
             // Start capturing plugin log lines before the connection loop so any
@@ -42,6 +43,7 @@ namespace Quasar.Agent
             _outbox?.Dispose();
             _outbox = null;
             _bridge = null;
+            AgentProfilerPatches.Dispose();
         }
 
         // The Magnetar host is tearing the server down. When the intent is a

@@ -3,7 +3,7 @@
 **Module:** Magnetar.Protocol  **Kind:** class  **Tier:** 1
 
 ## Summary
-Periodic snapshot pushed by `Quasar.Agent` to the Quasar supervisor containing the full observable state of one running SE dedicated server: identity fields, runtime status, performance metrics, online players, kicked players (serving a kick cooldown), recent chat, recent deaths, and loaded plugin list.
+Periodic snapshot pushed by `Quasar.Agent` to the Quasar supervisor containing the full observable state of one running SE dedicated server: identity fields, runtime status, scalar performance metrics, optional profiler timing data, online players, kicked players (serving a kick cooldown), recent chat, recent deaths, and loaded plugin list.
 
 ## Structure
 Namespace: `Magnetar.Protocol.Model`
@@ -19,6 +19,7 @@ Class `AgentSnapshot` (concrete, no base type):
 | `IsRunning` | `bool` | Whether the simulation loop is active. |
 | `CapturedAtUtc` | `DateTimeOffset` | Snapshot capture time (defaults to `UtcNow`). |
 | `Metrics` | `ServerMetrics` | CPU, sim-speed, PCU, uptime, etc. |
+| `Profiler` | `ProfilerSnapshot?` | Latest completed profiler sample window, if available. |
 | `Players` | `List<PlayerSnapshot>` | All currently connected players. |
 | `KickedPlayers` | `List<KickedPlayerSnapshot>` | Offline players currently serving a server-side kick cooldown (separate from `Players`). |
 | `RecentChat` | `List<ChatMessageSnapshot>` | Chat messages since last snapshot. |
@@ -27,6 +28,7 @@ Class `AgentSnapshot` (concrete, no base type):
 
 ## Dependencies
 - [`Magnetar.Protocol/Model/ServerMetrics.cs`](ServerMetrics.cs.md)
+- [`Magnetar.Protocol/Model/ProfilerSnapshot.cs`](ProfilerSnapshot.cs.md)
 - [`Magnetar.Protocol/Model/PlayerSnapshot.cs`](PlayerSnapshot.cs.md)
 - [`Magnetar.Protocol/Model/KickedPlayerSnapshot.cs`](KickedPlayerSnapshot.cs.md)
 - [`Magnetar.Protocol/Model/ChatMessageSnapshot.cs`](ChatMessageSnapshot.cs.md)

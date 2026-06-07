@@ -55,6 +55,9 @@ namespace Quasar.Agent
         private readonly string _pluginVersion;
         private readonly ConcurrentQueue<DeathEventSnapshot> _deathQueue = new ConcurrentQueue<DeathEventSnapshot>();
         private long _lastWorkingSetBytes;
+        private TimeSpan _lastProcessCpuTime;
+        private DateTime _lastProcessCpuSampleUtc = DateTime.MinValue;
+        private float _lastProcessCpuLoadPercent;
         private DateTime _lastSnapshotUtc = DateTime.MinValue;
         private AgentHello _latestHello;
         private AgentSnapshot _latestSnapshot;
@@ -81,6 +84,9 @@ namespace Quasar.Agent
 
         public void Update()
         {
+            AgentProfiler.MarkGameThread();
+            AgentProfiler.Update();
+
             if ((DateTime.UtcNow - _lastSnapshotUtc) < SnapshotInterval)
                 return;
 
@@ -194,6 +200,7 @@ namespace Quasar.Agent
                 IsRunning = session != null && session.Ready,
                 CapturedAtUtc = DateTimeOffset.UtcNow,
                 Metrics = BuildMetrics(session),
+                Profiler = AgentProfiler.GetLatestSnapshot(),
                 Players = GetPlayers(session),
                 KickedPlayers = GetKickedPlayers(session),
                 RecentChat = GetRecentChat(),
@@ -532,12 +539,14 @@ namespace Quasar.Agent
         private ServerMetrics BuildMetrics(MySession session)
         {
             var process = Process.GetCurrentProcess();
+            var processCpuLoadPercent = GetProcessCpuLoadPercent(process);
             _lastWorkingSetBytes = process.WorkingSet64;
 
             if (session == null)
             {
                 return new ServerMetrics
                 {
+                    ServerCpuLoadPercent = processCpuLoadPercent,
                     MemoryWorkingSetMb = _lastWorkingSetBytes >> 20,
                     UptimeSeconds = (int)_uptime.Elapsed.TotalSeconds,
                     PluginsLoaded = GetPlugins().Count,
@@ -552,6 +561,8 @@ namespace Quasar.Agent
 
             int? activeGridCount = null;
             int? activeEntityCount = null;
+            int? totalBlockCount = null;
+            int? floatingObjectCount = null;
             var gridPcu = 0;
 
             if (session.Ready)
@@ -564,17 +575,23 @@ namespace Quasar.Agent
                     {
                         var grids = entities.OfType<MyCubeGrid>().ToList();
                         activeGridCount = grids.Count;
+                        totalBlockCount = grids.Sum(grid => Math.Max(0, grid.BlocksCount));
                         gridPcu = grids.Sum(grid => Math.Max(0, grid.BlocksPCU));
+                        floatingObjectCount = entities.OfType<MyFloatingObject>().Count();
                     }
                     else
                     {
                         activeGridCount = 0;
+                        totalBlockCount = 0;
+                        floatingObjectCount = 0;
                     }
                 }
                 catch
                 {
                     activeGridCount = null;
                     activeEntityCount = null;
+                    totalBlockCount = null;
+                    floatingObjectCount = null;
                 }
             }
 
@@ -585,17 +602,47 @@ namespace Quasar.Agent
                 SimulationFrameCounter = MySandboxGame.Static?.SimulationFrameCounter ?? 0,
                 SimSpeed = Sync.ServerSimulationRatio,
                 SimCpuLoadPercent = (float)Math.Round(Sync.ServerCPULoad, 1),
-                ServerCpuLoadPercent = (float)Math.Round(Sync.ServerCPULoad, 1),
+                ServerCpuLoadPercent = processCpuLoadPercent,
                 IsSaveInProgress = session.IsSaveInProgress || MyAsyncSaving.InProgress,
                 UsedPcu = usedPcu > 0 ? usedPcu : gridPcu,
                 TotalPcu = session.Settings.TotalPCU,
                 MemoryWorkingSetMb = _lastWorkingSetBytes >> 20,
                 ActiveGridCount = activeGridCount,
                 ActiveEntityCount = activeEntityCount,
+                TotalBlockCount = totalBlockCount,
+                FloatingObjectCount = floatingObjectCount,
                 UptimeSeconds = (int)_uptime.Elapsed.TotalSeconds,
                 ModsLoaded = session.Mods?.Count ?? 0,
                 PluginsLoaded = GetPlugins().Count,
             };
+        }
+
+        private float GetProcessCpuLoadPercent(Process process)
+        {
+            var now = DateTime.UtcNow;
+            var processCpuTime = process.TotalProcessorTime;
+
+            if (_lastProcessCpuSampleUtc == DateTime.MinValue)
+            {
+                _lastProcessCpuSampleUtc = now;
+                _lastProcessCpuTime = processCpuTime;
+                return _lastProcessCpuLoadPercent;
+            }
+
+            var elapsedMs = (now - _lastProcessCpuSampleUtc).TotalMilliseconds;
+            var cpuMs = (processCpuTime - _lastProcessCpuTime).TotalMilliseconds;
+            _lastProcessCpuSampleUtc = now;
+            _lastProcessCpuTime = processCpuTime;
+
+            if (elapsedMs <= 0 || cpuMs < 0)
+                return _lastProcessCpuLoadPercent;
+
+            var cpuPercent = cpuMs / elapsedMs * 100d;
+            if (double.IsNaN(cpuPercent) || double.IsInfinity(cpuPercent))
+                return _lastProcessCpuLoadPercent;
+
+            _lastProcessCpuLoadPercent = (float)Math.Round(Math.Max(0d, cpuPercent), 1);
+            return _lastProcessCpuLoadPercent;
         }
 
         private List<PlayerSnapshot> GetPlayers(MySession session)

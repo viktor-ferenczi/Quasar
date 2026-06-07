@@ -58,7 +58,7 @@ window.quasarCharts = (function () {
         };
     }
 
-    function buildOptions(chart, width, height, dark, colors, spanSeconds) {
+    function buildOptions(chart, width, height, dark, colors, spanSeconds, xMin, xMax) {
         const colorsArr = colors && colors.length ? colors : ["#3b82f6", "#7dd3fc", "#a7f3d0", "#fde68a", "#f0abfc", "#c4b5fd"];
         const c = axisColors(dark);
         const valueFmt = makeValueFormatter(chart.axis);
@@ -100,7 +100,7 @@ window.quasarCharts = (function () {
                 ],
             },
             scales: {
-                x: { time: true },
+                x: { time: true, min: xMin, max: xMax },
                 y: { range: buildYRange(chart.axis) },
             },
             axes: [
@@ -121,6 +121,11 @@ window.quasarCharts = (function () {
             ],
             series: series,
         };
+    }
+
+    function applyXScale(u, xMin, xMax) {
+        if (Number.isFinite(xMin) && Number.isFinite(xMax) && xMax > xMin)
+            u.setScale("x", { min: xMin, max: xMax });
     }
 
     // Height held back from the canvas so uPlot's legend (rendered as a sibling below the plot) sits
@@ -160,7 +165,7 @@ window.quasarCharts = (function () {
             dotNet.invokeMethodAsync("OnChartRangeSelected", from, to);
     }
 
-    function renderChart(containerId, chart, dark, colors, spanSeconds, fallbackHeight) {
+    function renderChart(containerId, chart, dark, colors, spanSeconds, fallbackHeight, xMin, xMax) {
         const el = document.getElementById(containerId);
         if (!el) return;
 
@@ -174,14 +179,16 @@ window.quasarCharts = (function () {
         if (existing && existing.seriesCount === chart.series.length) {
             existing.chart.setData(data);
             existing.chart.setSize(plotSize(el, fallbackHeight, reserve));
+            applyXScale(existing.chart, xMin, xMax);
             return;
         }
 
         if (existing) destroy(containerId);
 
         const size = plotSize(el, fallbackHeight, reserve);
-        const opts = buildOptions(chart, size.width, size.height, dark, colors, spanSeconds);
+        const opts = buildOptions(chart, size.width, size.height, dark, colors, spanSeconds, xMin, xMax);
         const chartInstance = new uPlot(opts, data, el);
+        applyXScale(chartInstance, xMin, xMax);
 
         if (chartInstance.over) {
             // Pause real-time refreshes during a drag; finalize the selected range on release.
@@ -256,7 +263,14 @@ window.quasarCharts = (function () {
         let payload;
         try { payload = JSON.parse(text); } catch (e) { return { ok: false, status: -2, charts: 0, bytes: 0 }; }
 
-        const spanSeconds = Math.max(1, (payload.to || request.to) - (payload.from || request.from));
+        const requestFrom = Number(request.from);
+        const requestTo = Number(request.to);
+        const payloadFrom = Number(payload.from);
+        const payloadTo = Number(payload.to);
+        const xMin = Number.isFinite(payloadFrom) ? payloadFrom : (Number.isFinite(requestFrom) ? requestFrom : 0);
+        const xMaxRaw = Number.isFinite(payloadTo) ? payloadTo : (Number.isFinite(requestTo) ? requestTo : xMin + 1);
+        const spanSeconds = Math.max(1, xMaxRaw - xMin);
+        const xMax = Number.isFinite(xMaxRaw) && xMaxRaw > xMin ? xMaxRaw : xMin + spanSeconds;
         const containerByMetric = new Map(metrics.map((m) => [m.key, m]));
         const heightByMetric = new Map(metrics.map((m) => [m.key, m.height]));
         const names = request.names || {};
@@ -268,7 +282,7 @@ window.quasarCharts = (function () {
             if (!panel) continue;
             // Attach human-readable series labels from the request's name map (kept server-agnostic).
             chart.series.forEach((s) => { s.label = names[s.uniqueName] || s.uniqueName; });
-            renderChart(panel.containerId, chart, !!request.dark, request.colors, spanSeconds, heightByMetric.get(chart.metric));
+            renderChart(panel.containerId, chart, !!request.dark, request.colors, spanSeconds, heightByMetric.get(chart.metric), xMin, xMax);
             present.add(panel.containerId);
             rendered++;
         }

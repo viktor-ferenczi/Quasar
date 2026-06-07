@@ -4,6 +4,7 @@
 @inject MetricsStoreService MetricsStore
 @inject DedicatedServerCatalog ServerCatalog
 @inject AgentRegistry Registry
+@inject ProfilerStoreService ProfilerStore
 @inject ISnackbar Snackbar
 @inject ILocalStorageService LocalStorage
 @inject IDialogService DialogService
@@ -675,8 +676,11 @@ else
                 samplesByServer[uniqueName] = samples;
         }
 
+        var hasScalarData = samplesByServer.Count > 0;
+        var hasProfilerData = !hasScalarData && ProfilerStore.HasSamples(fromUnix, toUnix, effectiveServers);
+
         BuildSummary(selectedServers, samplesByServer, effectiveServers.Count);
-        BuildChartCards(samplesByServer.Count > 0);
+        BuildChartCards(hasScalarData || hasProfilerData);
     }
 
     private void BuildChartCards(bool hasData)

@@ -196,6 +196,7 @@
     "Quasar/Services/AgentRegistry.cs",
     "Quasar/Services/Analytics/AnalyticsSeriesService.cs",
     "Quasar/Services/Analytics/MetricsStoreService.cs",
+    "Quasar/Services/Analytics/ProfilerStoreService.cs",
     "Quasar/Services/DedicatedServerCatalog.cs",
     "Quasar/Services/ThemePreferenceService.cs"
   ],

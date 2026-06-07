@@ -334,8 +334,8 @@
       "path": "Quasar.Agent/AgentProfilerPatches.cs",
       "name": "AgentProfilerPatches.cs",
       "ext": ".cs",
-      "size": 6837,
-      "sha256": "35669b4c6c04ac30e8ba55900245c92b554ce31d4f2e90949f8efcb117f77785",
+      "size": 7800,
+      "sha256": "ead7366e249319bbf369171885f7d33af10649dc21610f5257b97bc6c03602e5",
       "module": "Quasar.Agent",
       "tier": 1,
       "status": "pending"
@@ -534,8 +534,8 @@
       "path": "Quasar/Components/Pages/Analytics.razor",
       "name": "Analytics.razor",
       "ext": ".razor",
-      "size": 38041,
-      "sha256": "5f62772b2db55eea3fab7cb72045dd33989c4c7179f472384264ff2f55fc6a2a",
+      "size": 38257,
+      "sha256": "94e1614c87dd76768589df82e249f684f4a31d46dd7199ba8cfefeffbae2e7ce",
       "module": "Quasar.Components",
       "tier": 2,
       "status": "pending"
@@ -1224,8 +1224,8 @@
       "path": "Quasar/Services/Analytics/ProfilerStoreService.cs",
       "name": "ProfilerStoreService.cs",
       "ext": ".cs",
-      "size": 2873,
-      "sha256": "c81ee420977411044c547049feaed076d1c430b7f278e7d423b3ae2866ffb504",
+      "size": 3579,
+      "sha256": "99f4a11d86fb0f5fefe7c15ef54deb28447573d006ec915b582ab8b8f0a2ae19",
       "module": "Quasar.Services.Analytics",
       "tier": 2,
       "status": "pending"
@@ -1964,8 +1964,8 @@
       "path": "Quasar/wwwroot/quasar-charts.js",
       "name": "quasar-charts.js",
       "ext": ".js",
-      "size": 13152,
-      "sha256": "882e42f9246c39fa7bb3f72817a3780061be1edb9404c66447c293dc910dc83f",
+      "size": 13824,
+      "sha256": "516e49db21e19f32eedb0420a83fa54c3200628cd718b26778024471c5d8d3e2",
       "module": "Quasar.Host",
       "tier": 3,
       "status": "pending"

@@ -834,7 +834,7 @@
       "name": "quasar-charts.js",
       "kind": "JS",
       "tier": 3,
-      "summary": "Browser-side analytics chart interop module registered as `window.quasarCharts`. It fetches chart series data over same-origin HTTP, renders responsive uPlot charts, keeps chart refreshes off the Blazor Server SignalR circuit, and reports drag-selected time ranges back to Blazor through a stored .NET object reference."
+      "summary": "Browser-side analytics chart interop module registered as `window.quasarCharts`. It fetches chart series data over same-origin HTTP, renders responsive uPlot charts, pins each chart's X axis to the requested Analytics range on every sync, keeps chart refreshes off the Blazor Server SignalR circuit, and reports drag-selected time ranges back to Blazor through a stored .NET object reference."
     },
     {
       "path": "Quasar/wwwroot/quasar-configs.js",
@@ -1195,7 +1195,7 @@
       "name": "ProfilerStoreService.cs",
       "kind": "class + records",
       "tier": 2,
-      "summary": "Bounded in-memory store for recent profiler snapshots per server. `AgentRegistry` enqueues validated profiler windows as agent snapshots arrive; `AnalyticsSeriesService` reads those windows when profiler metric panels are requested through the existing `/api/analytics/series` endpoint."
+      "summary": "Bounded in-memory store for recent profiler snapshots per server. `AgentRegistry` enqueues validated profiler windows as agent snapshots arrive; `AnalyticsSeriesService` reads those windows when profiler metric panels are requested through the existing `/api/analytics/series` endpoint, and the Analytics page can probe it for profiler-only chart visibility."
     },
     {
       "path": "Quasar/Services/Analytics/RrdCircularBuffer.cs",

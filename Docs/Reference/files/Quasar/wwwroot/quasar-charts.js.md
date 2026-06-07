@@ -3,7 +3,7 @@
 **Module:** Quasar.Host  **Kind:** JS  **Tier:** 3
 
 ## Summary
-Browser-side analytics chart interop module registered as `window.quasarCharts`. It fetches chart series data over same-origin HTTP, renders responsive uPlot charts, keeps chart refreshes off the Blazor Server SignalR circuit, and reports drag-selected time ranges back to Blazor through a stored .NET object reference.
+Browser-side analytics chart interop module registered as `window.quasarCharts`. It fetches chart series data over same-origin HTTP, renders responsive uPlot charts, pins each chart's X axis to the requested Analytics range on every sync, keeps chart refreshes off the Blazor Server SignalR circuit, and reports drag-selected time ranges back to Blazor through a stored .NET object reference.
 
 ## Structure
 
@@ -19,6 +19,7 @@ Browser-side analytics chart interop module registered as `window.quasarCharts`.
 **Internal behavior:**
 - Holds a `Map` of chart instances by container id.
 - Uses uPlot cursor sync key `quasar-analytics` so related charts share cursor movement.
+- Applies the response/request `from` and `to` bounds to uPlot's X scale during both chart creation and incremental refresh, so sparse profiler panels use the same moving time window as scalar panels.
 - Suspends periodic refresh while the user is dragging a time selection.
 - Uses `ResizeObserver` and `requestAnimationFrame` to resize charts without layout feedback loops.
 - Converts server chart payloads into uPlot columnar data arrays.

@@ -67,6 +67,26 @@ public sealed class ProfilerStoreService
         return new ProfilerSeriesResponse(fromUnix, toUnix, result);
     }
 
+    public bool HasSamples(long fromUnix, long toUnix, IReadOnlyList<string> servers)
+    {
+        if (toUnix <= fromUnix || servers.Count == 0)
+            return false;
+
+        var from = DateTimeOffset.FromUnixTimeSeconds(fromUnix);
+        var to = DateTimeOffset.FromUnixTimeSeconds(toUnix);
+
+        foreach (var uniqueName in servers.Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (!_samples.TryGetValue(uniqueName, out var queue))
+                continue;
+
+            if (queue.Any(sample => sample.CapturedAtUtc >= from && sample.CapturedAtUtc <= to))
+                return true;
+        }
+
+        return false;
+    }
+
     internal static int ClampTopCount(int count) => Math.Clamp(count, 0, MaxTopEntries);
 }
 

@@ -40,6 +40,16 @@ The workflow caches only the `DedicatedServer64/` reference library set by the
 Space Engineers Dedicated Server public build id, so unchanged DS builds restore
 without re-downloading the multi-GB depot content.
 
+## Release Tags
+
+The release workflow is `.github/workflows/release-linux.yml`. Tag pushes publish
+both streams as full releases (`quasar-ui/v<version>` and `v<version>`); pushes to
+`main` publish them as full releases tagged `quasar-ui/v0.1.0-main.<run-number>`
+and `v0.1.0-main.<run-number>`; pull requests publish them as draft prereleases
+tagged `quasar-ui/pr-<number>/v0.1.0-pr.<number>.<run-number>` and
+`pr-<number>/v0.1.0-pr.<number>.<run-number>`. Manual runs can target `all`,
+`ui`, or `bootstrap`. Assembly/file metadata is normalized to `major.minor.build`.
+
 ## First Start
 
 The systemd service runs Bootstrap from `/opt/quasar/Quasar serve --quiet`.
@@ -87,11 +97,26 @@ restarts the updated launcher. Existing `appsettings.json` is preserved.
 Bootstrap must not drain the worker for a release whose normalized version is
 the same as the running launcher.
 
-The first install still uses the Linux installer flow:
+## Install
+
+The first install uses the Linux installer flow from an extracted
+`quasar-linux-x64.tar.gz`:
 
 ```bash
 tar -xzf quasar-linux-x64.tar.gz -C /tmp/quasar
-sudo /tmp/quasar/install.sh --start
+sudo /tmp/quasar/install.sh          # publish to /opt/quasar and install quasar.service
+sudo /tmp/quasar/install.sh --start  # also start the service immediately
+```
+
+`install.sh` publishes Quasar to `/opt/quasar` and installs `quasar.service`. The
+service grants `CAP_SYS_NICE` through systemd ambient capabilities so Quasar can
+raise managed server priority via `renice`. The installer enables the service but
+does not start or restart it unless `--start` is passed; start it later with
+`sudo systemctl restart quasar.service`.
+
+```bash
+sudo ./uninstall.sh           # remove the systemd service
+sudo ./uninstall.sh --purge   # also remove /opt/quasar
 ```
 
 ## Configuration

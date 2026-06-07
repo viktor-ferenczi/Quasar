@@ -53,18 +53,18 @@ namespace Quasar.Agent
         private static int PatchKnownMethods()
         {
             var count = 0;
-            count += Patch(AccessTools.Method(typeof(MySandboxGame), "RunSingleFrame"), "frame") ? 1 : 0;
-            count += Patch(AccessTools.Method(typeof(MySandboxGame), "UpdateInternal"), "update") ? 1 : 0;
+            count += PatchDeclared(typeof(MySandboxGame), "RunSingleFrame", "frame") ? 1 : 0;
+            count += PatchDeclared(typeof(MySandboxGame), "UpdateInternal", "update") ? 1 : 0;
             count += Patch(AccessTools.Method(typeof(MyProgrammableBlock), "RunSandboxedProgramAction"), "script") ? 1 : 0;
 
-            count += PatchByTypeName("Sandbox.Engine.Physics.MyPhysics", "Simulate", "physics") ? 1 : 0;
-            count += PatchByTypeName("Sandbox.Engine.Physics.MyPhysics", "StepWorldsInternal", "physics") ? 1 : 0;
-            count += PatchByTypeName("Sandbox.Game.Replication.MyReplicationServer", "UpdateBefore", "replication") ? 1 : 0;
-            count += PatchByTypeName("Sandbox.Game.Replication.MyReplicationServer", "UpdateAfter", "replication") ? 1 : 0;
-            count += PatchByTypeName("Sandbox.Game.Replication.MyReplicationServer", "SendUpdate", "replication") ? 1 : 0;
-            count += PatchByTypeName("VRage.Network.MyTransportLayer", "Tick", "network") ? 1 : 0;
-            count += PatchByTypeName("VRage.Network.MyNetworkReader", "Process", "network") ? 1 : 0;
-            count += PatchByTypeName("Sandbox.Game.World.MySession", "UpdateComponents", "session") ? 1 : 0;
+            count += PatchDeclaredByTypeName("Sandbox.Engine.Physics.MyPhysics", "Simulate", "physics") ? 1 : 0;
+            count += PatchDeclaredByTypeName("Sandbox.Engine.Physics.MyPhysics", "StepWorldsInternal", "physics") ? 1 : 0;
+            count += PatchDeclaredByTypeName("Sandbox.Game.Replication.MyReplicationServer", "UpdateBefore", "replication") ? 1 : 0;
+            count += PatchDeclaredByTypeName("Sandbox.Game.Replication.MyReplicationServer", "UpdateAfter", "replication") ? 1 : 0;
+            count += PatchDeclaredByTypeName("Sandbox.Game.Replication.MyReplicationServer", "SendUpdate", "replication") ? 1 : 0;
+            count += PatchDeclaredByTypeName("VRage.Network.MyTransportLayer", "Tick", "network") ? 1 : 0;
+            count += PatchDeclaredByTypeName("VRage.Network.MyNetworkReader", "Process", "network") ? 1 : 0;
+            count += PatchDeclaredByTypeName("Sandbox.Game.World.MySession", "UpdateComponents", "session") ? 1 : 0;
             return count;
         }
 
@@ -114,13 +114,38 @@ namespace Quasar.Agent
             }
         }
 
-        private static bool PatchByTypeName(string typeName, string methodName, string category)
+        private static bool PatchDeclaredByTypeName(string typeName, string methodName, string category)
         {
             var type = AccessTools.TypeByName(typeName);
             if (type == null)
                 return false;
 
-            return Patch(AccessTools.Method(type, methodName), category);
+            return PatchDeclared(type, methodName, category);
+        }
+
+        private static bool PatchDeclared(Type type, string methodName, string category)
+        {
+            return Patch(FindDeclaredMethod(type, methodName), category);
+        }
+
+        private static MethodInfo FindDeclaredMethod(Type type, string methodName)
+        {
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+            for (var current = type; current != null; current = current.BaseType)
+            {
+                try
+                {
+                    var method = current.GetMethods(flags).FirstOrDefault(candidate => candidate.Name == methodName);
+                    if (method != null)
+                        return method;
+                }
+                catch
+                {
+                    return null;
+                }
+            }
+
+            return null;
         }
 
         private static bool Patch(MethodBase method, string category)

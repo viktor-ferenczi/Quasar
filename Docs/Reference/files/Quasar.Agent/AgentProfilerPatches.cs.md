@@ -15,9 +15,9 @@ Namespace: `Quasar.Agent`
 Key members:
 - `Apply()` — creates the Harmony instance, applies all profiler patches, and logs the number of successfully patched targets.
 - `Dispose()` — unpatches Quasar profiler patches by Harmony id.
-- `PatchKnownMethods()` — patches named game/server methods found by type/name and returns the success count.
+- `PatchKnownMethods()` — patches named game/server methods found by type/name and returns the success count; inherited methods are resolved to the actual declaring type before Harmony sees them.
 - `PatchEntityUpdateMethods()` — patches update methods declared by entity-derived types and returns the success count.
-- `Patch(...)` / `PatchByTypeName(...)` — isolate individual Harmony failures, log skipped targets, and keep patching the rest.
+- `Patch(...)` / `PatchDeclared(...)` / `PatchDeclaredByTypeName(...)` — isolate individual Harmony failures, log skipped targets, and keep patching the rest.
 - `Prefix` / `InstancePostfix` / `StaticPostfix` — call `AgentProfiler.Begin/End`.
 
 ## Dependencies
@@ -28,4 +28,4 @@ Key members:
 
 ## Notes
 
-Static and instance postfixes are separate so Harmony does not request `__instance` for static targets. Missing target methods and individual patch failures are ignored after logging, allowing the agent to survive minor game-build differences while still profiling any targets that patched successfully.
+Static and instance postfixes are separate so Harmony does not request `__instance` for static targets. Known-method lookup walks base types with `DeclaredOnly` binding flags so inherited API moves, such as `RunSingleFrame` living on `Sandbox.Engine.Platform.Game` instead of `MySandboxGame`, do not produce Harmony's "patch the declared method" failure. Missing target methods and individual patch failures are ignored after logging, allowing the agent to survive minor game-build differences while still profiling any targets that patched successfully.

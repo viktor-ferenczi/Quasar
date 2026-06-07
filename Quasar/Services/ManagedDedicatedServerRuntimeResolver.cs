@@ -238,6 +238,7 @@ public sealed class ManagedDedicatedServerRuntimeResolver
 
         var archiveUrl = await ResolveMagnetarArchiveUrlAsync(client, cancellationToken);
         var archivePath = Path.Combine(extractRoot, "magnetar-download" + InferArchiveExtension(archiveUrl));
+        _logger.LogInformation("Downloading Magnetar runtime...");
         using var response = await client.GetAsync(archiveUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
@@ -368,6 +369,7 @@ public sealed class ManagedDedicatedServerRuntimeResolver
 
             Directory.CreateDirectory(_options.DedicatedServerInstallDirectory);
 
+            _logger.LogInformation("{Action} Space Engineers Dedicated Server via SteamCMD...", hadValidInstall ? "Updating" : "Downloading");
             var process = new Process
             {
                 StartInfo = CreateSteamCmdStartInfo(
@@ -478,6 +480,7 @@ public sealed class ManagedDedicatedServerRuntimeResolver
                 client.Timeout = TimeSpan.FromMinutes(5);
 
                 var archivePath = Path.Combine(extractRoot, "steamcmd-download" + InferArchiveExtension(_options.SteamCmdArchiveUrl));
+                _logger.LogInformation("Downloading SteamCMD...");
                 using var response = await client.GetAsync(_options.SteamCmdArchiveUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
                 if (!response.IsSuccessStatusCode)
                 {

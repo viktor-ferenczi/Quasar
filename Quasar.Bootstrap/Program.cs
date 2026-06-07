@@ -805,6 +805,7 @@ internal sealed class LauncherCoordinator : IHostedService, IDisposable
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        _logger.LogInformation("Starting Quasar...");
         Directory.CreateDirectory(MagnetarPaths.GetWebServiceDirectory());
         Directory.CreateDirectory(MagnetarPaths.GetQuasarUpdatesDirectory());
         await EnsureInitialWebReleaseAvailableAsync(cancellationToken).ConfigureAwait(false);
@@ -1065,6 +1066,7 @@ internal sealed class LauncherCoordinator : IHostedService, IDisposable
                 var archivePath = Path.Combine(MagnetarPaths.GetQuasarManagedRuntimeCacheDirectory(), asset.Name);
                 Directory.CreateDirectory(Path.GetDirectoryName(archivePath)!);
 
+                _logger.LogInformation("Downloading Quasar web release {Version}...", version);
                 using (var response = await _downloadClient.GetAsync(asset.BrowserDownloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false))
                 {
                     response.EnsureSuccessStatusCode();

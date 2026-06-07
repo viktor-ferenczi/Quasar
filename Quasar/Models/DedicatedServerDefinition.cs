@@ -66,7 +66,7 @@ public sealed class DedicatedServerDefinition
 
     public string DailyRestartTimeLocal { get; set; } = string.Empty;
 
-    public string MaximumUptime { get; set; } = string.Empty;
+    public string MaximumUptime { get; set; } = "08:00";
 
     public bool AvoidSimultaneousScheduledRestarts { get; set; } = true;
 

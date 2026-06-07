@@ -121,7 +121,10 @@ sudo ./uninstall.sh --purge   # also remove /opt/quasar
 
 ## Configuration
 
-Defaults live in `Quasar:Updates`. Packaged defaults come from the install
+For the web UI host/port (including how to change the listening port, default
+`8080`) and browser auto-open behavior, see [Configuration](Configuration.md).
+
+Update defaults live in `Quasar:Updates`. Packaged defaults come from the install
 directory, and operator overrides can live in the Quasar data directory
 (`~/.config/Quasar/appsettings.json`, or `QUASAR_DATA_DIR/appsettings.json` when
 overridden). The worker and Bootstrap both read that data-directory file on

@@ -112,7 +112,10 @@ specific service account.
 
 ## Configuration
 
-Defaults live in `Quasar:Updates`:
+For the web UI host/port (including how to change the listening port, default
+`8080`) and browser auto-open behavior, see [Configuration](Configuration.md).
+
+Update defaults live in `Quasar:Updates`:
 
 ```json
 {

@@ -21,6 +21,7 @@ You can register new plugins by making PRs to the [MagnetarHub](https://github.c
 | Page | What it covers |
 | --- | --- |
 | [Architecture](Docs/QuasarArchitecture.md) | Supervisor design, runtime ownership, process supervision, configuration model, and self-update. |
+| [Configuration](Docs/Configuration.md) | Web UI host/port (how to change the listening port) and browser auto-open behavior. |
 | [Building & Development](Docs/BuildingAndDevelopment.md) | Project layout, build setup, managed-runtime selection, and developer utilities. |
 | [Linux Deployment & Updates](Docs/LinuxDeploymentAndUpdates.md) | systemd install, release assets, and the auto-updater flow. |
 | [Windows Deployment & Updates](Docs/WindowsDeploymentAndUpdates.md) | Scheduled Task install, release assets, and the auto-updater flow. |

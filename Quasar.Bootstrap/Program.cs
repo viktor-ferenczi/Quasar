@@ -563,7 +563,7 @@ internal sealed class BootstrapOptions
 
     public string AdvertisedHost { get; init; } = "127.0.0.1";
 
-    public int Port { get; init; } = 58631;
+    public int Port { get; init; } = 8080;
 
     // When true (the default), Quasar leaves managed Magnetar servers running on its
     // own shutdown — they are detached (Magnetar -daemon / setsid) and re-adopted on
@@ -611,10 +611,10 @@ internal sealed class BootstrapOptions
         if (string.IsNullOrWhiteSpace(host))
             host = "127.0.0.1";
 
-        var portValue = section["Port"] ?? "58631";
+        var portValue = section["Port"] ?? "8080";
 
         if (!int.TryParse(portValue, out var port) || port <= 0)
-            port = 58631;
+            port = 8080;
 
         var advertisedHost = host switch
         {

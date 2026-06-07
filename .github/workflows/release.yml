@@ -65,26 +65,22 @@ jobs:
         id: release
         env:
           PR_NUMBER: ${{ github.event.pull_request.number || '' }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
         run: |
           set -euo pipefail
 
           if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
             version="${GITHUB_REF_NAME#v}"
             tag="v${version}"
-            name="Quasar v${version}"
             draft="false"
             prerelease="false"
           elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
             version="0.1.0-manual.${GITHUB_RUN_NUMBER}"
             tag="v${version}"
-            name="Quasar manual ${GITHUB_SHA::7}"
             draft="true"
             prerelease="true"
           elif [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
             version="0.1.0-main.${GITHUB_RUN_NUMBER}"
             tag="v${version}"
-            name="Quasar main ${GITHUB_SHA::7}"
             draft="false"
             prerelease="false"
           elif [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
@@ -92,19 +88,19 @@ jobs:
               echo "Pull request number is not available." >&2
               exit 1
             fi
-            pr_sha="${PR_HEAD_SHA:-$GITHUB_SHA}"
             version="0.1.0-pr.${PR_NUMBER}.${GITHUB_RUN_NUMBER}"
             tag="pr-${PR_NUMBER}/v${version}"
-            name="Quasar PR #${PR_NUMBER} ${pr_sha::7}"
             draft="true"
             prerelease="true"
           else
             version="$(git rev-parse --short HEAD)"
             tag="$version"
-            name="Quasar $version"
             draft="true"
             prerelease="true"
           fi
+
+          # The release is always named "Quasar v<version>" with no extra suffix.
+          name="Quasar v${version}"
 
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
@@ -437,6 +433,42 @@ jobs:
           name: ${{ needs.metadata.outputs.name }}
           draft: ${{ needs.metadata.outputs.draft }}
           prerelease: ${{ needs.metadata.outputs.prerelease }}
+          body: |
+            ## Install Quasar
+
+            Download the single archive for your operating system:
+
+            | Operating system | Download |
+            | --- | --- |
+            | **Linux** (x64) | **`quasar-linux-x64.tar.gz`** |
+            | **Windows** (x64) | **`quasar-win-x64.zip`** |
+
+            That archive is the installer: it contains the Quasar **Bootstrap launcher**, the
+            install/uninstall scripts, and a default `appsettings.json`. Follow the
+            [Linux](https://github.com/viktor-ferenczi/Quasar/blob/main/Docs/LinuxDeploymentAndUpdates.md)
+            or [Windows](https://github.com/viktor-ferenczi/Quasar/blob/main/Docs/WindowsDeploymentAndUpdates.md)
+            deployment guide to install it. The web UI listens on port **8080** by default.
+
+            ## What is every file in this release?
+
+            | File | What it is |
+            | --- | --- |
+            | `quasar-linux-x64.tar.gz` | **Linux installer** — download this to install Quasar on Linux. |
+            | `quasar-win-x64.zip` | **Windows installer** — download this to install Quasar on Windows. |
+            | `quasar-web-linux-x64.tar.gz` | Linux **web UI worker**. You do not download this by hand — the launcher fetches and updates it automatically. |
+            | `quasar-web-win-x64.zip` | Windows **web UI worker**. You do not download this by hand — the launcher fetches and updates it automatically. |
+            | `SHA256SUMS` | SHA-256 checksums for the four archives above, used to verify downloads (the auto-updater checks these before installing an update). |
+
+            ### Why are there two archives per operating system?
+
+            Quasar runs as two layers: a small, stable **Bootstrap launcher** and a larger,
+            frequently-updated **web UI worker**. They ship as separate archives so the
+            launcher can update the web UI — and itself — in place, with no manual reinstall.
+
+            A fresh install only needs the installer archive (`quasar-<os>-x64`). On first
+            start the launcher downloads the matching `quasar-web-<os>-x64` worker, and from
+            then on keeps both up to date from later releases. That is why each release
+            carries four archives: an installer and a web UI worker for each operating system.
           files: |
             release/quasar-linux-x64.tar.gz
             release/quasar-web-linux-x64.tar.gz

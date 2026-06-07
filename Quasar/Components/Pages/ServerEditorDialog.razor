@@ -243,7 +243,65 @@
                             <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="w-100">
                                 <MudStack Spacing="0">
                                     <MudText Typo="Typo.subtitle2">Runtime</MudText>
-                                    <MudText Typo="Typo.caption">Advanced overrides for Quasar-managed paths and launch behavior.</MudText>
+                                    <MudText Typo="Typo.caption">Process priority, CPU affinity, and additional launch arguments.</MudText>
+                                </MudStack>
+                                <MudChip T="string" Color="Color.Warning" Variant="Variant.Outlined" Size="Size.Small">Advanced</MudChip>
+                            </MudStack>
+                        </TitleContent>
+                        <ChildContent>
+                            <MudGrid>
+                                <MudItem xs="12" md="6">
+                                    <MudSelect T="DedicatedServerProcessPriority"
+                                               @bind-Value="_editor.StartupProcessPriority"
+                                               Label="Startup process priority"
+                                               Variant="Variant.Outlined"
+                                               HelperText="Applied after process start. Linux uses nice level.">
+                                        @foreach (var priority in ProcessPriorities)
+                                        {
+                                            <MudSelectItem T="DedicatedServerProcessPriority" Value="@priority">@FormatPriority(priority)</MudSelectItem>
+                                        }
+                                    </MudSelect>
+                                </MudItem>
+                                <MudItem xs="12" md="6">
+                                    <MudSelect T="DedicatedServerProcessPriority"
+                                               @bind-Value="_editor.ReadyProcessPriority"
+                                               Label="Ready process priority"
+                                               Variant="Variant.Outlined"
+                                               HelperText="Applied when agent snapshot confirms the server is open.">
+                                        @foreach (var priority in ProcessPriorities)
+                                        {
+                                            <MudSelectItem T="DedicatedServerProcessPriority" Value="@priority">@FormatPriority(priority)</MudSelectItem>
+                                        }
+                                    </MudSelect>
+                                </MudItem>
+                                <MudItem xs="12" md="6">
+                                    <MudTextField
+                                        @bind-Value="_editor.CpuAffinity"
+                                        Label="@($"CPU affinity (this host has {Environment.ProcessorCount} logical cores: 0-{Environment.ProcessorCount - 1})")"
+                                        Placeholder="e.g. 0-7 or 0-7,16-23"
+                                        Variant="Variant.Outlined"
+                                        Validation="@(new Func<string, string?>(ValidateCpuAffinityField))"
+                                        HelperTextOnFocus="false"
+                                        HelperText="@($"Comma-separated core numbers and ranges. Empty = all cores. Minimum {CpuAffinitySpec.MinimumCores} cores.")" />
+                                </MudItem>
+                                <MudItem xs="12">
+                                    <MudTextField
+                                        @bind-Value="_editor.LaunchArguments"
+                                        Label="Launch arguments"
+                                        Variant="Variant.Outlined"
+                                        Lines="3"
+                                        HelperText="Tokens: {uniqueName} {configPath} {quasarBaseUrl} {hostId} {dsAppDataPath} {magnetarAppDataPath} {ds64Path} {worldPath}. Quasar enforces -noconsole, -path, -config, and -ds64 for managed servers." />
+                                </MudItem>
+                            </MudGrid>
+                        </ChildContent>
+                    </MudExpansionPanel>
+
+                    <MudExpansionPanel Expanded="@_pathsExpanded" ExpandedChanged="HandlePathsExpandedChanged">
+                        <TitleContent>
+                            <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Class="w-100">
+                                <MudStack Spacing="0">
+                                    <MudText Typo="Typo.subtitle2">Paths</MudText>
+                                    <MudText Typo="Typo.caption">Advanced overrides for Quasar-managed executable and data paths.</MudText>
                                 </MudStack>
                                 <MudChip T="string" Color="Color.Warning" Variant="Variant.Outlined" Size="Size.Small">Advanced</MudChip>
                             </MudStack>
@@ -294,48 +352,6 @@
                                         Label="Rendered DS config path"
                                         Variant="Variant.Outlined"
                                         HelperText="@($"Quasar writes the rendered SpaceEngineers-Dedicated.cfg here. Default: {GetDefaultConfigFilePath()}")" />
-                                </MudItem>
-                                <MudItem xs="12" md="6">
-                                    <MudSelect T="DedicatedServerProcessPriority"
-                                               @bind-Value="_editor.StartupProcessPriority"
-                                               Label="Startup process priority"
-                                               Variant="Variant.Outlined"
-                                               HelperText="Applied after process start. Linux uses nice level.">
-                                        @foreach (var priority in ProcessPriorities)
-                                        {
-                                            <MudSelectItem T="DedicatedServerProcessPriority" Value="@priority">@FormatPriority(priority)</MudSelectItem>
-                                        }
-                                    </MudSelect>
-                                </MudItem>
-                                <MudItem xs="12" md="6">
-                                    <MudSelect T="DedicatedServerProcessPriority"
-                                               @bind-Value="_editor.ReadyProcessPriority"
-                                               Label="Ready process priority"
-                                               Variant="Variant.Outlined"
-                                               HelperText="Applied when agent snapshot confirms the server is open.">
-                                        @foreach (var priority in ProcessPriorities)
-                                        {
-                                            <MudSelectItem T="DedicatedServerProcessPriority" Value="@priority">@FormatPriority(priority)</MudSelectItem>
-                                        }
-                                    </MudSelect>
-                                </MudItem>
-                                <MudItem xs="12" md="6">
-                                    <MudTextField
-                                        @bind-Value="_editor.CpuAffinity"
-                                        Label="@($"CPU affinity (this host has {Environment.ProcessorCount} logical cores: 0-{Environment.ProcessorCount - 1})")"
-                                        Placeholder="e.g. 0-7 or 0-7,16-23"
-                                        Variant="Variant.Outlined"
-                                        Validation="@(new Func<string, string?>(ValidateCpuAffinityField))"
-                                        HelperTextOnFocus="false"
-                                        HelperText="@($"Comma-separated core numbers and ranges. Empty = all cores. Minimum {CpuAffinitySpec.MinimumCores} cores.")" />
-                                </MudItem>
-                                <MudItem xs="12">
-                                    <MudTextField
-                                        @bind-Value="_editor.LaunchArguments"
-                                        Label="Launch arguments"
-                                        Variant="Variant.Outlined"
-                                        Lines="3"
-                                        HelperText="Tokens: {uniqueName} {configPath} {quasarBaseUrl} {hostId} {dsAppDataPath} {magnetarAppDataPath} {ds64Path} {worldPath}. Quasar enforces -noconsole, -path, -config, and -ds64 for managed servers." />
                                 </MudItem>
                             </MudGrid>
                         </ChildContent>
@@ -389,6 +405,7 @@
     private bool _restartPolicyExpanded;
     private bool _healthPolicyExpanded;
     private bool _runtimeExpanded;
+    private bool _pathsExpanded;
     private static readonly DedicatedServerProcessPriority[] ProcessPriorities =
     [
         DedicatedServerProcessPriority.Low,
@@ -407,6 +424,7 @@
         _restartPolicyExpanded = _isEditing;
         _healthPolicyExpanded = _isEditing;
         _runtimeExpanded = _isEditing;
+        _pathsExpanded = _isEditing;
 
         // Only Windows offers the .NET Framework 4.8 (Legacy) build; everywhere else .NET 10
         // is the sole runtime, so pin the selection to keep the disabled selector coherent.
@@ -608,6 +626,12 @@
     private Task HandleRuntimeExpandedChanged(bool expanded)
     {
         _runtimeExpanded = expanded;
+        return Task.CompletedTask;
+    }
+
+    private Task HandlePathsExpandedChanged(bool expanded)
+    {
+        _pathsExpanded = expanded;
         return Task.CompletedTask;
     }
 

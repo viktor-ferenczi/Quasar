@@ -10,7 +10,7 @@ public sealed class QuasarUpdateOptions
 
     public bool IncludePrerelease { get; set; }
 
-    public TimeSpan CheckInterval { get; init; } = TimeSpan.FromMinutes(5);
+    public TimeSpan CheckInterval { get; init; } = TimeSpan.FromMinutes(15);
 
     public string LinuxWebAssetName { get; init; } = "quasar-web-linux-x64.tar.gz";
 
@@ -45,7 +45,7 @@ public sealed class QuasarUpdateOptions
         var intervalValue = Environment.GetEnvironmentVariable("QUASAR_UPDATES_CHECK_INTERVAL_SECONDS")
                             ?? section["CheckIntervalSeconds"];
         if (!int.TryParse(intervalValue, out var intervalSeconds) || intervalSeconds < 60)
-            intervalSeconds = 300;
+            intervalSeconds = 900;
 
         return new QuasarUpdateOptions
         {

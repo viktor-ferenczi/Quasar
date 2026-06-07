@@ -1,5 +1,6 @@
 @inject AgentRegistry Registry
 @inject QuasarConfigProfileCatalog ConfigProfiles
+@inject QuasarPluginCatalogService PluginCatalog
 @inject ISnackbar Snackbar
 
 @if (Agent?.Snapshot is null)
@@ -23,6 +24,24 @@
             <MudChip T="string" Variant="Variant.Outlined" Icon="@Icons.Material.Filled.Memory">Affinity @Server.CpuAffinity</MudChip>
         }
     </MudStack>
+
+    @if (PluginRows.Count > 0)
+    {
+        <MudDivider Class="my-3" />
+        <MudText Typo="Typo.subtitle2" Class="mb-2">Plugins</MudText>
+        <MudTable T="PluginDisplayRow" Dense="true" Items="PluginRows">
+            <HeaderContent>
+                <MudTh>Plugin</MudTh>
+                <MudTh>Version</MudTh>
+                <MudTh>Status</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Plugin">@context.DisplayName</MudTd>
+                <MudTd DataLabel="Version">@context.Version</MudTd>
+                <MudTd DataLabel="Status">@context.Status</MudTd>
+            </RowTemplate>
+        </MudTable>
+    }
 }
 else
 {
@@ -133,7 +152,7 @@ else
     <MudDivider Class="my-3" />
 
     <MudText Typo="Typo.subtitle2" Class="mb-2">Plugins</MudText>
-    <MudTable T="PluginRuntimeInfo" Dense="true" Items="Agent.Snapshot.Plugins">
+    <MudTable T="PluginDisplayRow" Dense="true" Items="PluginRows">
         <HeaderContent>
             <MudTh>Plugin</MudTh>
             <MudTh>Version</MudTh>
@@ -142,7 +161,7 @@ else
         <RowTemplate>
             <MudTd DataLabel="Plugin">@context.DisplayName</MudTd>
             <MudTd DataLabel="Version">@context.Version</MudTd>
-            <MudTd DataLabel="Status">@(context.IsLoaded ? "loaded" : "declared")</MudTd>
+            <MudTd DataLabel="Status">@context.Status</MudTd>
         </RowTemplate>
     </MudTable>
 
@@ -171,6 +190,8 @@ else
 
     [Parameter]
     public AgentRuntimeState? Agent { get; set; }
+
+    private IReadOnlyList<PluginDisplayRow> PluginRows => BuildPluginRows();
 
     private string _chatText = string.Empty;
 
@@ -261,6 +282,62 @@ else
         return Agent?.Snapshot?.Metrics.MaxPlayers ?? 0;
     }
 
+    private IReadOnlyList<PluginDisplayRow> BuildPluginRows()
+    {
+        var rows = new Dictionary<string, PluginDisplayRow>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var plugin in GetConfiguredPlugins())
+        {
+            rows[plugin.PluginId] = new PluginDisplayRow(
+                plugin.PluginId,
+                plugin.DisplayName,
+                plugin.SelectedVersion,
+                "configured");
+        }
+
+        foreach (var plugin in Agent?.Snapshot?.Plugins ?? [])
+        {
+            var pluginId = string.IsNullOrWhiteSpace(plugin.PluginId)
+                ? plugin.DisplayName
+                : plugin.PluginId;
+            if (string.IsNullOrWhiteSpace(pluginId))
+                continue;
+
+            rows[pluginId] = new PluginDisplayRow(
+                pluginId.Trim(),
+                ResolvePluginDisplayName(pluginId, plugin.DisplayName),
+                plugin.Version,
+                plugin.IsLoaded ? "loaded" : "declared");
+        }
+
+        return rows.Values
+            .OrderBy(row => row.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(row => row.PluginId, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private IReadOnlyList<QuasarPluginSelection> GetConfiguredPlugins()
+    {
+        if (string.IsNullOrWhiteSpace(Server?.ConfigProfileId))
+            return [];
+
+        return ConfigProfiles.GetProfile(Server.ConfigProfileId)?.Plugins ?? [];
+    }
+
+    private string ResolvePluginDisplayName(string pluginId, string displayName)
+    {
+        if (!string.IsNullOrWhiteSpace(displayName))
+            return displayName.Trim();
+
+        var catalogName = PluginCatalog.GetEntries()
+            .FirstOrDefault(entry => string.Equals(entry.PluginId, pluginId, StringComparison.OrdinalIgnoreCase))
+            ?.FriendlyName;
+        if (!string.IsNullOrWhiteSpace(catalogName))
+            return catalogName.Trim();
+
+        return pluginId.Trim();
+    }
+
     private static string FormatTimestamp(long ticksUtc)
     {
         if (ticksUtc <= 0)
@@ -317,4 +394,6 @@ else
         string.Equals(GetRoleLabel(player), promoteLevel, StringComparison.OrdinalIgnoreCase) ||
         (string.Equals(promoteLevel, "None", StringComparison.OrdinalIgnoreCase) &&
          string.Equals(GetRoleLabel(player), "Player", StringComparison.OrdinalIgnoreCase));
+
+    private sealed record PluginDisplayRow(string PluginId, string DisplayName, string Version, string Status);
 }

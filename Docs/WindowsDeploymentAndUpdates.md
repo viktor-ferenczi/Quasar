@@ -74,7 +74,7 @@ downloaded archive must match the release's `SHA256SUMS` entry before extraction
 
 ## UI Worker Updates
 
-Identical to Linux: the running UI checks GitHub releases every 5 minutes by
+Identical to Linux: the running UI checks GitHub releases every 15 minutes by
 default, downloads and stages a newer `quasar-web-win-x64.zip` (after verifying its
 `SHA256SUMS` entry), and surfaces it on `/settings/updates`. Activation is
 explicit; Bootstrap drains the old worker, starts the staged `Quasar.exe` on the
@@ -82,10 +82,13 @@ same port, and leaves managed Magnetar servers running.
 
 ## Bootstrap Updates
 
-Bootstrap checks the primary Quasar release stream every 5 minutes. When it finds a
+Bootstrap checks the primary Quasar release stream every 15 minutes. When it finds a
 genuinely newer `quasar-win-x64.zip`, it verifies the `SHA256SUMS` entry, extracts
 the archive, and replaces the installed launcher files (renaming a running `.exe`
 is permitted on Windows). Existing `appsettings.json` is preserved.
+If the downloaded launcher is byte-identical to the installed launcher, Bootstrap
+skips the worker drain and launcher restart even if the running process reports
+stale version metadata.
 
 Because there is no systemd on Windows, the launcher restarts itself: after
 applying the update it spawns a detached `Quasar.exe serve --quiet` and exits `0`.
@@ -126,7 +129,7 @@ Update defaults live in `Quasar:Updates`:
   "Owner": "viktor-ferenczi",
   "Repository": "Quasar",
   "IncludePrerelease": false,
-  "CheckIntervalSeconds": 300,
+  "CheckIntervalSeconds": 900,
   "LinuxWebAssetName": "quasar-web-linux-x64.tar.gz",
   "LinuxBootstrapAssetName": "quasar-linux-x64.tar.gz",
   "WindowsWebAssetName": "quasar-web-win-x64.zip",

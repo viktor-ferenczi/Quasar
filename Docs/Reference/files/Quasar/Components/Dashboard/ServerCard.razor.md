@@ -22,7 +22,7 @@ No `@page` route — used as a child component.
 
 **Private helpers:**
 - `ProcessState` — derives `DedicatedServerProcessState` from `Runtime?.State`.
-- `IsProcessActive`, `CanStart`, `CanStop`, `CanRestart` — button visibility logic.
+- `IsProcessActive`, `CanStart`, `CanStop`, `CanRestart` — button visibility logic. Restart is shown for every active process state (`Starting`, `Running`, `Restarting`, `Stopping`), not only the fully running state.
 - `GetDisplayName()` — prefers `Server.DisplayName`, falls back to `Agent.ServerDisplayName`, then `UniqueName`.
 - `GetHostLabel()` — shows `Agent.HostDisplayName` or "Local host".
 - `GetWorldLabel()` — shows `Agent.WorldDisplayName`, else last path segment of `Server.WorldPath`, else "World pending".

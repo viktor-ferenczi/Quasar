@@ -18,7 +18,7 @@ Namespace: `Quasar.Services.Updates`
 | `Owner` | `viktor-ferenczi`; `QUASAR_UPDATES_OWNER` |
 | `Repository` | `Quasar`; `QUASAR_UPDATES_REPOSITORY` |
 | `IncludePrerelease` | `false`; `QUASAR_UPDATES_INCLUDE_PRERELEASE` |
-| `CheckInterval` | 300 seconds minimum 60; `QUASAR_UPDATES_CHECK_INTERVAL_SECONDS` |
+| `CheckInterval` | 900 seconds minimum 60; `QUASAR_UPDATES_CHECK_INTERVAL_SECONDS` |
 | `LinuxWebAssetName` | `quasar-web-linux-x64.tar.gz`; `QUASAR_UPDATES_LINUX_WEB_ASSET` |
 | `LinuxBootstrapAssetName` | `quasar-linux-x64.tar.gz`; `QUASAR_UPDATES_LINUX_BOOTSTRAP_ASSET` |
 | `WindowsWebAssetName` | `quasar-web-win-x64.zip`; `QUASAR_UPDATES_WINDOWS_WEB_ASSET` |

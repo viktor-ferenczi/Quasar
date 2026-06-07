@@ -167,7 +167,8 @@
   ],
   "Quasar/Components/Dashboard/ServerDetailPanel.razor": [
     "Quasar/Services/AgentRegistry.cs",
-    "Quasar/Services/QuasarConfigProfileCatalog.cs"
+    "Quasar/Services/QuasarConfigProfileCatalog.cs",
+    "Quasar/Services/QuasarPluginCatalogService.cs"
   ],
   "Quasar/Components/Layout/BrandingHeadContent.razor": [
     "Quasar/Services/BrandingService.cs"

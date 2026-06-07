@@ -50,6 +50,12 @@ The solution file is `Quasar.sln`.
 
 ## Utilities
 
+`deploy.sh` publishes the Bootstrap launcher and packaged web worker to
+`~/Documents/Quasar` for local launcher testing. It stamps the build from
+`VERSION`, an exact git tag, or a short commit-derived prerelease identity so the
+Bootstrap update monitor can compare source deployments against GitHub releases
+without treating every check as an upgrade from `0.1.0`.
+
 Generate synthetic analytics data for local testing:
 
 ```bash

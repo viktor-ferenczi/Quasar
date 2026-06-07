@@ -19,6 +19,66 @@ for arg in "$@"; do
     esac
 done
 
+normalize_version_component() {
+    local value="${1:-0}"
+    if [[ ! "$value" =~ ^[0-9]+$ ]]; then
+        echo 0
+        return
+    fi
+    if (( value > 65534 )); then
+        value=$((value % 10000))
+    fi
+    echo "$value"
+}
+
+normalize_nuget_version() {
+    local version="${1#v}"
+    version="${version%%+*}"
+
+    if [[ -z "$version" ]]; then
+        echo "0.1.0"
+        return
+    fi
+
+    if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+        echo "$version"
+        return
+    fi
+
+    local suffix="${version//[^0-9A-Za-z.-]/-}"
+    suffix="${suffix#.}"
+    suffix="${suffix#-}"
+    if [[ -z "$suffix" ]]; then
+        suffix="local"
+    fi
+    echo "0.1.0-${suffix}"
+}
+
+build_assembly_file_version() {
+    local raw_version="${1#v}"
+    raw_version="${raw_version%%-*}"
+    raw_version="${raw_version%%+*}"
+
+    if [[ ! "$raw_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+        echo "0.1.0"
+        return
+    fi
+
+    IFS='.' read -r -a version_parts <<< "$raw_version"
+    echo "$(normalize_version_component "${version_parts[0]}").$(normalize_version_component "${version_parts[1]}").$(normalize_version_component "${version_parts[2]}")"
+}
+
+resolve_build_version() {
+    if [[ -n "${VERSION:-}" ]]; then
+        echo "$VERSION"
+        return
+    fi
+
+    git -C "$SCRIPT_DIR" describe --tags --exact-match 2>/dev/null \
+        || git -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null \
+        || echo "0.1.0-local"
+}
+
 # -----------------------------------------------------------------------------
 # Stop any Quasar instance still running from a previous deploy.
 #
@@ -77,7 +137,11 @@ purge_stale_state() {
 stop_running_quasar
 purge_stale_state
 
-echo "Deploying Quasar ($CONFIGURATION) → $DEPLOY_DIR"
+BUILD_VERSION="$(resolve_build_version)"
+NUGET_VERSION="$(normalize_nuget_version "$BUILD_VERSION")"
+ASSEMBLY_FILE_VERSION="$(build_assembly_file_version "$BUILD_VERSION")"
+
+echo "Deploying Quasar ($CONFIGURATION, version $NUGET_VERSION) → $DEPLOY_DIR"
 rm -rf "$DEPLOY_DIR"
 mkdir -p "$DEPLOY_DIR"
 
@@ -85,6 +149,10 @@ dotnet publish "$SCRIPT_DIR/Quasar.Bootstrap/Quasar.Bootstrap.csproj" \
     -c "$CONFIGURATION" \
     -r linux-x64 \
     -p:CopyToDeployDir=false \
+    -p:Version="$NUGET_VERSION" \
+    -p:AssemblyVersion="$ASSEMBLY_FILE_VERSION" \
+    -p:FileVersion="$ASSEMBLY_FILE_VERSION" \
+    -p:InformationalVersion="$NUGET_VERSION" \
     -o "$DEPLOY_DIR" \
     -v minimal
 

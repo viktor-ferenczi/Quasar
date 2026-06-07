@@ -19,6 +19,9 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
     private static readonly TimeSpan RestartCounterResetWindow = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan ReconcileInterval = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan DefaultGracefulStopTimeout = TimeSpan.FromSeconds(30);
+    private const string StandardOutputLogName = "stdout";
+    private const string StandardErrorLogName = "stderr";
+    private const string ActiveLogExtension = ".log";
     private static readonly Regex PrefixedLogLinePattern = new(
         @"^(?<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,7})?)\s*[:\-]\s*(?<message>.*)$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -540,11 +543,18 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
             return;
         }
 
-        var logDirectory = MagnetarPaths.GetQuasarServerLogDirectory(state.UniqueName);
-        Directory.CreateDirectory(logDirectory);
-
-        var stdoutPath = Path.Combine(logDirectory, "stdout.log");
-        var stderrPath = Path.Combine(logDirectory, "stderr.log");
+        string stdoutPath;
+        string stderrPath;
+        try
+        {
+            (stdoutPath, stderrPath) = PrepareServerLogSlot(state.UniqueName, definition.DsLogFilesToKeep);
+        }
+        catch (Exception exception)
+        {
+            SetFaulted(state.UniqueName, $"Failed preparing DS log files: {exception.Message}");
+            _logger.LogWarning(exception, "Failed preparing DS log files for server {UniqueName}.", state.UniqueName);
+            return;
+        }
 
         var process = new Process
         {
@@ -997,6 +1007,7 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
 
         NotifyChanged();
         _logger.LogInformation("Server {UniqueName} exited with code {ExitCode}.", uniqueName, exitCode);
+        PruneServerLogFiles(uniqueName, definition.DsLogFilesToKeep);
 
         if (!shouldRestart)
             return;
@@ -1209,9 +1220,116 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
 
     private const string MagnetarLogSource = "Magnetar";
 
+    private (string StandardOutputPath, string StandardErrorPath) PrepareServerLogSlot(string uniqueName, int dsLogFilesToKeep)
+    {
+        var logDirectory = MagnetarPaths.GetQuasarServerLogDirectory(uniqueName);
+        Directory.CreateDirectory(logDirectory);
+
+        var timestamp = DateTimeOffset.UtcNow.ToString("yyyyMMddHHmmssfff", CultureInfo.InvariantCulture);
+        RotateActiveLogIfPresent(uniqueName, logDirectory, StandardOutputLogName, timestamp);
+        RotateActiveLogIfPresent(uniqueName, logDirectory, StandardErrorLogName, timestamp);
+        PruneServerLogFiles(uniqueName, dsLogFilesToKeep);
+
+        return (
+            Path.Combine(logDirectory, StandardOutputLogName + ActiveLogExtension),
+            Path.Combine(logDirectory, StandardErrorLogName + ActiveLogExtension));
+    }
+
+    private void RotateActiveLogIfPresent(string uniqueName, string logDirectory, string logName, string timestamp)
+    {
+        var activePath = Path.Combine(logDirectory, logName + ActiveLogExtension);
+        try
+        {
+            if (!File.Exists(activePath))
+                return;
+
+            var activeLog = new FileInfo(activePath);
+            if (activeLog.Length == 0)
+            {
+                activeLog.Delete();
+                return;
+            }
+
+            var archivePath = ResolveArchivePath(logDirectory, logName, timestamp);
+            activeLog.MoveTo(archivePath);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "Failed rotating {LogName} log for server {UniqueName}; new output will append to the existing active log.",
+                logName,
+                uniqueName);
+        }
+    }
+
+    private static string ResolveArchivePath(string logDirectory, string logName, string timestamp)
+    {
+        var path = Path.Combine(logDirectory, $"{logName}-{timestamp}{ActiveLogExtension}");
+        if (!File.Exists(path))
+            return path;
+
+        for (var suffix = 1; suffix < 1000; suffix++)
+        {
+            path = Path.Combine(logDirectory, $"{logName}-{timestamp}-{suffix}{ActiveLogExtension}");
+            if (!File.Exists(path))
+                return path;
+        }
+
+        return Path.Combine(logDirectory, $"{logName}-{timestamp}-{Guid.NewGuid():N}{ActiveLogExtension}");
+    }
+
+    private void PruneServerLogFiles(string uniqueName, int dsLogFilesToKeep)
+    {
+        var logDirectory = MagnetarPaths.GetQuasarServerLogDirectory(uniqueName);
+        if (!Directory.Exists(logDirectory))
+            return;
+
+        var keepCount = NormalizeDsLogFilesToKeep(dsLogFilesToKeep);
+        var archivedToKeep = Math.Max(0, keepCount - 1);
+        PruneRotatedLogFiles(uniqueName, logDirectory, StandardOutputLogName, archivedToKeep);
+        PruneRotatedLogFiles(uniqueName, logDirectory, StandardErrorLogName, archivedToKeep);
+    }
+
+    private void PruneRotatedLogFiles(string uniqueName, string logDirectory, string logName, int archivedToKeep)
+    {
+        var directory = new DirectoryInfo(logDirectory);
+        var staleArchives = directory
+            .EnumerateFiles($"{logName}-*{ActiveLogExtension}", SearchOption.TopDirectoryOnly)
+            .OrderByDescending(file => file.LastWriteTimeUtc)
+            .ThenByDescending(file => file.Name, StringComparer.OrdinalIgnoreCase)
+            .Skip(archivedToKeep)
+            .ToList();
+
+        foreach (var archive in staleArchives)
+        {
+            try
+            {
+                archive.Delete();
+            }
+            catch (Exception exception)
+            {
+                _logger.LogWarning(
+                    exception,
+                    "Failed deleting old {LogName} log {Path} for server {UniqueName}.",
+                    logName,
+                    archive.FullName,
+                    uniqueName);
+            }
+        }
+    }
+
+    private static int NormalizeDsLogFilesToKeep(int dsLogFilesToKeep)
+    {
+        if (dsLogFilesToKeep < DedicatedServerDefinition.MinimumDsLogFilesToKeep)
+            return DedicatedServerDefinition.DefaultDsLogFilesToKeep;
+
+        return Math.Min(dsLogFilesToKeep, DedicatedServerDefinition.MaximumDsLogFilesToKeep);
+    }
+
     private async Task PumpStandardOutputAsync(StreamReader reader, string path, string uniqueName, CancellationToken cancellationToken)
     {
-        await using var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+        await using var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
         await using var writer = new StreamWriter(stream)
         {
             AutoFlush = true,
@@ -1244,7 +1362,7 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
 
     private async Task PumpStandardErrorAsync(StreamReader reader, string path, string uniqueName, CancellationToken cancellationToken)
     {
-        await using var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+        await using var stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete);
         await using var writer = new StreamWriter(stream)
         {
             AutoFlush = true,

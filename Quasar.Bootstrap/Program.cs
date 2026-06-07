@@ -597,7 +597,7 @@ internal sealed class BootstrapOptions
 
     public string BootstrapAssetName => OperatingSystem.IsWindows() ? WindowsBootstrapAssetName : LinuxBootstrapAssetName;
 
-    public TimeSpan UpdatesCheckInterval { get; init; } = TimeSpan.FromMinutes(5);
+    public TimeSpan UpdatesCheckInterval { get; init; } = TimeSpan.FromMinutes(15);
 
     public string Version { get; init; } = QuasarReleaseVersion.GetEntryAssemblyVersion();
 
@@ -649,7 +649,7 @@ internal sealed class BootstrapOptions
         var intervalValue = Environment.GetEnvironmentVariable("QUASAR_UPDATES_CHECK_INTERVAL_SECONDS")
                             ?? updatesSection["CheckIntervalSeconds"];
         if (!int.TryParse(intervalValue, out var intervalSeconds) || intervalSeconds < 60)
-            intervalSeconds = 300;
+            intervalSeconds = 900;
 
         return new BootstrapOptions
         {
@@ -944,6 +944,16 @@ internal sealed class LauncherCoordinator : IHostedService, IDisposable
         if (!File.Exists(replacement))
             throw new InvalidOperationException($"Bootstrap update archive did not contain executable '{replacement}'.");
 
+        var installedLauncher = Path.Combine(AppContext.BaseDirectory, LauncherExecutableFileName);
+        if (await FilesHaveSameSha256Async(replacement, installedLauncher, cancellationToken).ConfigureAwait(false))
+        {
+            _logger.LogInformation(
+                "Bootstrap release {Version} is already installed at {Path}; skipping worker drain and launcher restart.",
+                version,
+                installedLauncher);
+            return;
+        }
+
         ApplyBootstrapUpdate(extractDirectory, AppContext.BaseDirectory);
         _logger.LogInformation("Installed Bootstrap update {Version}; restarting Bootstrap.", version);
         _isRestartingForBootstrapUpdate = true;
@@ -1022,6 +1032,27 @@ internal sealed class LauncherCoordinator : IHostedService, IDisposable
                 EnsureExecutableBit(destinationPath);
             }
         }
+    }
+
+    private static async Task<bool> FilesHaveSameSha256Async(string leftPath, string rightPath, CancellationToken cancellationToken)
+    {
+        if (!File.Exists(leftPath) || !File.Exists(rightPath))
+            return false;
+
+        var leftInfo = new FileInfo(leftPath);
+        var rightInfo = new FileInfo(rightPath);
+        if (leftInfo.Length != rightInfo.Length)
+            return false;
+
+        var leftHash = await ComputeSha256Async(leftPath, cancellationToken).ConfigureAwait(false);
+        var rightHash = await ComputeSha256Async(rightPath, cancellationToken).ConfigureAwait(false);
+        return leftHash.SequenceEqual(rightHash);
+    }
+
+    private static async Task<byte[]> ComputeSha256Async(string path, CancellationToken cancellationToken)
+    {
+        await using var stream = File.OpenRead(path);
+        return await SHA256.HashDataAsync(stream, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task EnsureInitialWebReleaseAvailableAsync(CancellationToken cancellationToken)

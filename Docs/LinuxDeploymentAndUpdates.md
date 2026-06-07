@@ -78,7 +78,7 @@ pointer that targets a random external build directory. Only packaged
 
 ## UI Worker Updates
 
-The running Quasar UI checks GitHub releases every 5 minutes by default. When a
+The running Quasar UI checks GitHub releases every 15 minutes by default. When a
 new Linux web asset exists, Quasar downloads and stages it automatically, then
 shows an in-app notification and the `/settings/updates` page marks it ready.
 Staging requires a matching `SHA256SUMS` entry for the downloaded asset.
@@ -94,14 +94,16 @@ them detached with `-daemon`.
 
 ## Bootstrap Updates
 
-Bootstrap checks the primary Quasar release stream every 5 minutes by default.
+Bootstrap checks the primary Quasar release stream every 15 minutes by default.
 When it finds an actually newer `quasar-linux-x64.tar.gz` asset (semver core and
 prerelease compared against the running launcher's release identity), it verifies
 the release's `SHA256SUMS` entry, extracts the archive, replaces the installed
 launcher files, drains the UI worker, and exits with a failure code so systemd
 restarts the updated launcher. Existing `appsettings.json` is preserved.
 Bootstrap must not drain the worker for a release whose normalized version is
-the same as the running launcher.
+the same as the running launcher; it also skips drain/restart if the downloaded
+launcher is byte-identical to the installed launcher, which prevents a repeated
+self-update loop when a source-built launcher reports stale version metadata.
 
 ## Install
 
@@ -118,7 +120,10 @@ sudo /tmp/quasar/install.sh --start  # also start the service immediately
 service grants `CAP_SYS_NICE` through systemd ambient capabilities so Quasar can
 raise managed server priority via `renice`. The installer enables the service but
 does not start or restart it unless `--start` is passed; start it later with
-`sudo systemctl restart quasar.service`.
+`sudo systemctl restart quasar.service`. When installing from source instead of
+an extracted release archive, the installer stamps the launcher with `VERSION`,
+an exact git tag, or a short commit-derived prerelease identity so Bootstrap
+update comparisons do not fall back to plain `0.1.0`.
 
 ```bash
 sudo ./uninstall.sh           # remove the systemd service
@@ -142,7 +147,7 @@ startup.
   "Owner": "viktor-ferenczi",
   "Repository": "Quasar",
   "IncludePrerelease": false,
-  "CheckIntervalSeconds": 300,
+  "CheckIntervalSeconds": 900,
   "LinuxWebAssetName": "quasar-web-linux-x64.tar.gz",
   "LinuxBootstrapAssetName": "quasar-linux-x64.tar.gz"
 }

@@ -3,14 +3,15 @@
 **Module:** Quasar.Components  **Kind:** Blazor component  **Tier:** 2
 
 ## Summary
-Detail panel embedded inside `ServerCard`. When the agent snapshot is absent it shows a waiting/error message and basic process state chips. When a snapshot is present it renders live metrics chips, Refresh/Save buttons, a chat broadcast field, a players table with per-player action menus (kick/ban/set role), a recent-chat list, a plugins table, and recent command results. In both the snapshot-present and snapshot-absent states, an outlined "Affinity <value>" chip (Memory icon) is shown in the metrics chip rows when `Server.CpuAffinity` is set.
+Detail panel embedded inside `ServerCard`. When the agent snapshot is absent it shows a waiting/error message and basic process state chips. When a snapshot is present it renders live metrics chips, Refresh/Save buttons, a chat broadcast field, a players table with per-player action menus (kick/ban/set role), a recent-chat list, a plugins table, and recent command results. The plugin table merges live agent-reported plugins with plugins configured on the server's assigned config profile, so Magnetar-managed plugin selections still show on the landing-page card even when the DS runtime does not report them through `ConfigDedicated.Plugins`. In both the snapshot-present and snapshot-absent states, an outlined "Affinity <value>" chip (Memory icon) is shown in the metrics chip rows when `Server.CpuAffinity` is set.
 
 ## Structure
 No `@page` route — used as a child component.
 
 **Injected services:**
 - `AgentRegistry Registry` — dispatches `ServerCommandEnvelope` messages to the agent.
-- `QuasarConfigProfileCatalog ConfigProfiles` — resolves configured `MaxPlayers` from the linked config profile.
+- `QuasarConfigProfileCatalog ConfigProfiles` — resolves configured `MaxPlayers` and configured plugins from the linked config profile.
+- `QuasarPluginCatalogService PluginCatalog` — resolves friendly names for configured plugin IDs.
 - `ISnackbar Snackbar` — success/error toast notifications.
 
 **Parameters:**
@@ -30,6 +31,7 @@ No `@page` route — used as a child component.
 - `HandleChatKeyDownAsync` — triggers send on Enter key.
 - `FormatDuration(int)` / `FormatTimestamp(long)` — display helpers.
 - `GetMaxPlayers()` — checks config profile first, falls back to snapshot metrics.
+- `BuildPluginRows()` — merges configured profile plugins (`configured`) and live agent plugins (`loaded`/`declared`) by plugin id for the card table.
 - `GetWaitingText()` — state-dependent placeholder message. For a `Running` process with no snapshot yet (agent reconnecting) it reads "Connecting. Waiting for Quasar.Agent to reconnect."; for `Starting`/`Restarting` it reads "Starting. Waiting for Quasar.Agent and first game snapshot.".
 - `GetPlatformName` / `GetRoleLabel` / `IsCurrentPromoteLevel` / `GetServiceLabel` — player table helpers.
 
@@ -39,7 +41,8 @@ No `@page` route — used as a child component.
 
 ## Dependencies
 - [`Quasar/Services/AgentRegistry.cs`](../../Services/AgentRegistry.cs.md) — command dispatch and agent lookup
-- `Quasar/Services/QuasarConfigProfileCatalog.cs` — max-player resolution
+- `Quasar/Services/QuasarConfigProfileCatalog.cs` — max-player and configured-plugin resolution
+- `Quasar/Services/QuasarPluginCatalogService.cs` — plugin display-name resolution
 - `Magnetar.Protocol.Model.ServerCommandEnvelope`, `ServerCommandType`
 - `Magnetar.Protocol.Model.DedicatedServerDefinition`
 - `Magnetar.Protocol.Model.DedicatedServerRuntimeSnapshot`, `DedicatedServerProcessState`

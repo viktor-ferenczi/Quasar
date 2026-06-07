@@ -486,7 +486,7 @@ Practical guarantee:
 ### Linux update flow
 
 1. Bootstrap downloads the latest web asset on startup if no usable worker exists
-2. Quasar checks GitHub releases every 5 minutes while running
+2. Quasar checks GitHub releases every 15 minutes while running
 3. new Linux web assets are downloaded into a staged version directory
 4. UI notifies admins that the update is queued/staged
 5. admin activates the staged UI update from `/settings/updates`

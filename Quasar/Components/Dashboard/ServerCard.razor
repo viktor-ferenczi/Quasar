@@ -94,7 +94,7 @@
         or DedicatedServerProcessState.Running
         or DedicatedServerProcessState.Restarting;
 
-    private bool CanRestart => ProcessState == DedicatedServerProcessState.Running;
+    private bool CanRestart => IsProcessActive;
 
     private Task StartAsync() => StartRequested.InvokeAsync(Server.UniqueName);
 

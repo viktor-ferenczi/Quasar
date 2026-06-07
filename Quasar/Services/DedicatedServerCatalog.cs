@@ -268,6 +268,9 @@ public sealed class DedicatedServerCatalog : IDisposable
         server.ConfigProfileId = server.ConfigProfileId?.Trim() ?? string.Empty;
         server.WorldTemplateId = server.WorldTemplateId?.Trim() ?? string.Empty;
         server.LaunchArguments = server.LaunchArguments?.Trim() ?? string.Empty;
+        server.DsLogFilesToKeep = server.DsLogFilesToKeep < DedicatedServerDefinition.MinimumDsLogFilesToKeep
+            ? DedicatedServerDefinition.DefaultDsLogFilesToKeep
+            : Math.Min(server.DsLogFilesToKeep, DedicatedServerDefinition.MaximumDsLogFilesToKeep);
         server.AutoStart = server.GoalState == DedicatedServerGoalState.On || server.AutoStart;
         server.GoalState = server.AutoStart ? DedicatedServerGoalState.On : DedicatedServerGoalState.Off;
         if (server.AgentStartupGraceSeconds < 0)
@@ -335,6 +338,7 @@ public sealed class DedicatedServerCatalog : IDisposable
             ConfigProfileId = server.ConfigProfileId,
             WorldTemplateId = server.WorldTemplateId,
             LaunchArguments = server.LaunchArguments,
+            DsLogFilesToKeep = server.DsLogFilesToKeep,
             ServerPort = server.ServerPort,
             ServerIP = server.ServerIP,
             AutoStart = server.AutoStart,

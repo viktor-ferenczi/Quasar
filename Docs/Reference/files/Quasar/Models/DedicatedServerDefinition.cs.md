@@ -3,7 +3,7 @@
 **Module:** Quasar.Models  **Kind:** class  **Tier:** 1
 
 ## Summary
-Persistent configuration record for a single managed Space Engineers dedicated server. Contains all fields needed to launch, supervise, health-monitor, and schedule restarts for a server, as well as process-priority, CPU-affinity, and managed-runtime settings. Serialized to disk as part of the server catalog.
+Persistent configuration record for a single managed Space Engineers dedicated server. Contains all fields needed to launch, supervise, health-monitor, rotate retained DS logs, and schedule restarts for a server, as well as process-priority, CPU-affinity, and managed-runtime settings. Serialized to disk as part of the server catalog.
 
 ## Structure
 Namespace: `Quasar.Models`  
@@ -11,6 +11,7 @@ Namespace: `Quasar.Models`
 
 | Member | Description |
 |---|---|
+| `DefaultDsLogFilesToKeep` / `MinimumDsLogFilesToKeep` / `MaximumDsLogFilesToKeep` | Retention bounds for Quasar-managed DS stdout/stderr logs (default 10, range 1-1000). |
 | `UniqueName` | Stable machine key for the server (filename-safe slug). |
 | `DisplayName` | Human-readable label shown in the UI. |
 | `OriginalUniqueName` | Pre-rename value used during rename operations; `[JsonIgnore]`, never persisted. |
@@ -25,6 +26,7 @@ Namespace: `Quasar.Models`
 | `ConfigProfileId` | Reference to a `QuasarConfigProfile` by ID. |
 | `WorldTemplateId` | Reference to a `QuasarWorldTemplate` by ID. |
 | `LaunchArguments` | Extra CLI arguments appended at launch. |
+| `DsLogFilesToKeep` | Number of Quasar-managed DS log slots to retain, including the current `stdout.log` / `stderr.log` slot (default 10). |
 | `ServerPort` | UDP game port (default 27016). |
 | `ServerIP` | Bind IP (default "0.0.0.0"). |
 | `AutoStart` | Whether Quasar starts this server on its own startup. |
@@ -46,7 +48,7 @@ Namespace: `Quasar.Models`
 | `ReadyProcessPriority` | OS process priority once the server is running. |
 | `CpuAffinity` | Canonical cpuset string (e.g. "0-7" or "0-7,16-23") pinning the server process to a fixed set of logical cores; empty = no affinity (all cores); when set must contain >=2 cores; applied locally by the supervisor each time the process starts (see `CpuAffinitySpec`). Default empty. |
 | `UpdatedAtUtc` | Timestamp of the last configuration save. |
-| `Clone()` | Shallow copy of all fields (including `ManagedRuntime` and `CpuAffinity`, used before mutations). |
+| `Clone()` | Shallow copy of all fields (including `ManagedRuntime`, `CpuAffinity`, and `DsLogFilesToKeep`, used before mutations). |
 
 ## Dependencies
 - [`Quasar/Models/DedicatedServerGoalState.cs`](DedicatedServerGoalState.cs.md)

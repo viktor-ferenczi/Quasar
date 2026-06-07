@@ -4,6 +4,10 @@ namespace Quasar.Models;
 
 public sealed class DedicatedServerDefinition
 {
+    public const int DefaultDsLogFilesToKeep = 10;
+    public const int MinimumDsLogFilesToKeep = 1;
+    public const int MaximumDsLogFilesToKeep = 1000;
+
     public string UniqueName { get; set; } = string.Empty;
 
     public string DisplayName { get; set; } = string.Empty;
@@ -35,6 +39,8 @@ public sealed class DedicatedServerDefinition
     public string WorldTemplateId { get; set; } = string.Empty;
 
     public string LaunchArguments { get; set; } = string.Empty;
+
+    public int DsLogFilesToKeep { get; set; } = DefaultDsLogFilesToKeep;
 
     public int ServerPort { get; set; } = 27016;
 
@@ -100,6 +106,7 @@ public sealed class DedicatedServerDefinition
             ConfigProfileId = ConfigProfileId,
             WorldTemplateId = WorldTemplateId,
             LaunchArguments = LaunchArguments,
+            DsLogFilesToKeep = DsLogFilesToKeep,
             ServerPort = ServerPort,
             ServerIP = ServerIP,
             AutoStart = AutoStart,

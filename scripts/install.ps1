@@ -44,6 +44,75 @@ if (-not $skipBuild -and (Test-Path -LiteralPath $localExe) -and -not (Test-Path
     $skipBuild = $true
 }
 
+function Normalize-VersionComponent {
+    param([string]$Value)
+    if ([string]::IsNullOrEmpty($Value) -or $Value -notmatch '^[0-9]+$') { return '0' }
+    $number = [int64]$Value
+    if ($number -gt 65534) { $number = $number % 10000 }
+    return "$number"
+}
+
+function Normalize-NugetVersion {
+    param([string]$Raw)
+    $version = $Raw -replace '^v', ''
+    $plus = $version.IndexOf('+')
+    if ($plus -ge 0) { $version = $version.Substring(0, $plus) }
+    if ([string]::IsNullOrWhiteSpace($version)) { return '0.1.0' }
+    if ($version -match '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$') { return $version }
+
+    $suffix = $version -replace '[^0-9A-Za-z.-]', '-'
+    $suffix = $suffix -replace '^\.', ''
+    $suffix = $suffix -replace '^-', ''
+    if ([string]::IsNullOrWhiteSpace($suffix)) { $suffix = 'local' }
+    return "0.1.0-$suffix"
+}
+
+function Build-AssemblyFileVersion {
+    param([string]$Raw)
+    $rawVersion = $Raw -replace '^v', ''
+    $dash = $rawVersion.IndexOf('-')
+    if ($dash -ge 0) { $rawVersion = $rawVersion.Substring(0, $dash) }
+    $plus = $rawVersion.IndexOf('+')
+    if ($plus -ge 0) { $rawVersion = $rawVersion.Substring(0, $plus) }
+    if ($rawVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$') { return '0.1.0' }
+
+    $parts = $rawVersion.Split('.')
+    return "$(Normalize-VersionComponent $parts[0]).$(Normalize-VersionComponent $parts[1]).$(Normalize-VersionComponent $parts[2])"
+}
+
+function Invoke-GitProbe {
+    param([Parameter(ValueFromRemainingArguments)][string[]]$Arguments)
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'SilentlyContinue'
+    try {
+        $output = (& git @Arguments 2>$null)
+        $code = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previous
+    }
+    return [pscustomobject]@{
+        Output = (($output -join "`n").Trim())
+        ExitCode = $code
+    }
+}
+
+function Resolve-BuildVersion {
+    if ($env:VERSION) { return $env:VERSION }
+
+    $described = Invoke-GitProbe -C $RepoDir describe --tags --exact-match
+    if ($described.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($described.Output)) {
+        return $described.Output
+    }
+
+    $short = Invoke-GitProbe -C $RepoDir rev-parse --short HEAD
+    if ($short.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($short.Output)) {
+        return $short.Output
+    }
+
+    return '0.1.0-local'
+}
+
 # Stage everything into a temp directory first so an in-place install (InstallDir
 # overlapping the source) can never delete its own inputs mid-copy.
 $staging = Join-Path ([System.IO.Path]::GetTempPath()) ('quasar-publish-' + [Guid]::NewGuid().ToString('N'))
@@ -65,11 +134,18 @@ try {
             ForEach-Object { Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $staging $_.Name) -Recurse -Force }
     }
     else {
-        Write-Host "Publishing Quasar ($Configuration, $Runtime)..."
+        $buildVersion = Resolve-BuildVersion
+        $nugetVersion = Normalize-NugetVersion $buildVersion
+        $assemblyFileVersion = Build-AssemblyFileVersion $buildVersion
+        Write-Host "Publishing Quasar ($Configuration, $Runtime, version $nugetVersion)..."
         & dotnet publish $bootstrapProject `
             -c $Configuration `
             -r $Runtime `
             -p:CopyToDeployDir=false `
+            -p:Version=$nugetVersion `
+            -p:AssemblyVersion=$assemblyFileVersion `
+            -p:FileVersion=$assemblyFileVersion `
+            -p:InformationalVersion=$nugetVersion `
             -o $staging `
             -v minimal
         if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed with exit code $LASTEXITCODE" }

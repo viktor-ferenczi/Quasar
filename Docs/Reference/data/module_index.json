@@ -326,7 +326,7 @@
       "name": "ServerDetailPanel.razor",
       "kind": "Blazor component",
       "tier": 2,
-      "summary": "Detail panel embedded inside `ServerCard`. When the agent snapshot is absent it shows a waiting/error message and basic process state chips. When a snapshot is present it renders live metrics chips, Refresh/Save buttons, a chat broadcast field, a players table with per-player action menus (kick/ban/set role), a recent-chat list, a plugins table, and recent command results. In both the snapshot-present and snapshot-absent states, an outlined \"Affinity <value>\" chip (Memory icon) is shown in the metrics chip rows when `Server.CpuAffinity` is set."
+      "summary": "Detail panel embedded inside `ServerCard`. When the agent snapshot is absent it shows a waiting/error message and basic process state chips. When a snapshot is present it renders live metrics chips, Refresh/Save buttons, a chat broadcast field, a players table with per-player action menus (kick/ban/set role), a recent-chat list, a plugins table, and recent command results. The plugin table merges live agent-reported plugins with plugins configured on the server's assigned config profile, so Magnetar-managed plugin selections still show on the landing-page card even when the DS runtime does not report them through `ConfigDedicated.Plugins`. In both the snapshot-present and snapshot-absent states, an outlined \"Affinity <value>\" chip (Memory icon) is shown in the metrics chip rows when `Server.CpuAffinity` is set."
     },
     {
       "path": "Quasar/Components/Layout/BrandingHeadContent.razor",
@@ -685,7 +685,7 @@
       "name": "DedicatedServerDefinition.cs",
       "kind": "class",
       "tier": 1,
-      "summary": "Persistent configuration record for a single managed Space Engineers dedicated server. Contains all fields needed to launch, supervise, health-monitor, and schedule restarts for a server, as well as process-priority, CPU-affinity, and managed-runtime settings. Serialized to disk as part of the server catalog."
+      "summary": "Persistent configuration record for a single managed Space Engineers dedicated server. Contains all fields needed to launch, supervise, health-monitor, rotate retained DS logs, and schedule restarts for a server, as well as process-priority, CPU-affinity, and managed-runtime settings. Serialized to disk as part of the server catalog."
     },
     {
       "path": "Quasar/Models/DedicatedServerGoalState.cs",
@@ -785,7 +785,7 @@
       "name": "launchSettings.json",
       "kind": "JSON config",
       "tier": 3,
-      "summary": "Visual Studio / `dotnet run` launch profile configuration. Defines a single `http` profile for local development: runs the project directly (no IIS), binds to `http://0.0.0.0:5022`, and sets `ASPNETCORE_ENVIRONMENT=Development`. Browser auto-launch is disabled."
+      "summary": "Visual Studio / `dotnet run` launch profile configuration. Defines a single `http` profile for local development: runs the project directly (no IIS), binds to `http://0.0.0.0:8080`, and sets `ASPNETCORE_ENVIRONMENT=Development`. Browser auto-launch is disabled."
     },
     {
       "path": "Quasar/Quasar.csproj",
@@ -941,7 +941,7 @@
       "name": "DedicatedServerSupervisor.cs",
       "kind": "class",
       "tier": 1,
-      "summary": "`DedicatedServerSupervisor` is the heart of Quasar's process management. It is an `IHostedService` that maintains in-memory `ManagedServerState` for every configured dedicated server, runs a 2-second reconcile loop that starts/stops/restarts processes to match goal state, evaluates server health (agent heartbeat, simulation frame progress, uptime thresholds), persists runtime state across Quasar worker restarts and **adopts surviving detached processes by PID on startup**, and coordinates graceful stop (save + stop commands to the agent before kill) plus scheduled and maximum-uptime restarts."
+      "summary": "`DedicatedServerSupervisor` is the heart of Quasar's process management. It is an `IHostedService` that maintains in-memory `ManagedServerState` for every configured dedicated server, runs a 2-second reconcile loop that starts/stops/restarts processes to match goal state, evaluates server health (agent heartbeat, simulation frame progress, uptime thresholds), rotates and prunes Quasar-captured DS stdout/stderr logs, persists runtime state across Quasar worker restarts and **adopts surviving detached processes by PID on startup**, and coordinates graceful stop (save + stop commands to the agent before kill) plus scheduled and maximum-uptime restarts."
     },
     {
       "path": "Quasar/Services/EntityService.cs",
@@ -1088,14 +1088,14 @@
       "name": "QuasarUpdateOptions.cs",
       "kind": "class",
       "tier": 2,
-      "summary": "Configuration record for Quasar's GitHub-release update checker. It controls whether checks run, which repository is queried, whether prereleases are eligible, how often automatic checks run, and which Linux release asset names represent the web worker and Bootstrap packages. `IncludePrerelease` is mutable so the Updates page can change the active worker's release stream immediately."
+      "summary": "Configuration record for Quasar's GitHub-release update checker. It controls whether checks run, which repository is queried, whether prereleases are eligible, how often automatic checks run, and which per-OS release asset names represent the web worker and Bootstrap packages. `WebAssetName` and `BootstrapAssetName` computed properties select the Windows or Linux variant based on `OperatingSystem.IsWindows()`. `IncludePrerelease` is mutable so the Updates page can change the active worker's release stream immediately."
     },
     {
       "path": "Quasar/Services/Updates/QuasarUpdateService.cs",
       "name": "QuasarUpdateService.cs",
       "kind": "class",
       "tier": 2,
-      "summary": "Hosted service that checks Quasar GitHub releases on Linux, discovers newer UI-worker and launcher assets from separate release tags, verifies `SHA256SUMS`, stages the UI worker under the Quasar updates directory, and activates a staged worker by writing `active-release.json` for Bootstrap. It keeps a thread-safe `QuasarUpdateSnapshot` for the UI, raises `Changed` whenever status moves, and persists the operator-controlled prerelease stream flag."
+      "summary": "Hosted service that checks Quasar GitHub releases on Linux and Windows, discovers newer UI-worker and launcher assets from a unified combined release, verifies `SHA256SUMS`, stages the UI worker under the Quasar updates directory, and activates a staged worker by writing `active-release.json` for Bootstrap. It keeps a thread-safe `QuasarUpdateSnapshot` for the UI, raises `Changed` whenever status moves, and persists the operator-controlled prerelease stream flag."
     },
     {
       "path": "Quasar/Services/Updates/QuasarUpdateSnapshot.cs",

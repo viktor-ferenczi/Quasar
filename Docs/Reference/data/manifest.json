@@ -534,8 +534,8 @@
       "path": "Quasar/Components/Pages/Analytics.razor",
       "name": "Analytics.razor",
       "ext": ".razor",
-      "size": 38257,
-      "sha256": "94e1614c87dd76768589df82e249f684f4a31d46dd7199ba8cfefeffbae2e7ce",
+      "size": 38473,
+      "sha256": "0b27d72d39e8695cf3fa8da4221056684fcbaca370638cf4d5b0a329a0ee568f",
       "module": "Quasar.Components",
       "tier": 2,
       "status": "pending"
@@ -1164,8 +1164,8 @@
       "path": "Quasar/Services/Analytics/AnalyticsSeriesService.cs",
       "name": "AnalyticsSeriesService.cs",
       "ext": ".cs",
-      "size": 13215,
-      "sha256": "c36796b11ed75b69529caa6a4dea63e27b88354f3ad0672cdf22230dab3ce176",
+      "size": 13493,
+      "sha256": "cb466b459f8ec19ac36652c096dac47ea03c08bb7cb0453024625dae5b9df37b",
       "module": "Quasar.Services.Analytics",
       "tier": 2,
       "status": "pending"
@@ -1984,8 +1984,8 @@
       "path": "Quasar/wwwroot/quasar-charts.js",
       "name": "quasar-charts.js",
       "ext": ".js",
-      "size": 14117,
-      "sha256": "96e38c2b342725f688daf2e604cf3781a4709d894c63f01c5b4e898cd23fff16",
+      "size": 14143,
+      "sha256": "1f7da6b6897f6400aae792f485d2e0a661fb917b73502a0518ef019d32d231b0",
       "module": "Quasar.Host",
       "tier": 3,
       "status": "pending"

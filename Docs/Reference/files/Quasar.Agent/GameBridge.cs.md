@@ -15,7 +15,7 @@
 |---|---|
 | `QuasarRequestedStop` (property) | True once a `StopServer` command was received from Quasar |
 | `GameBridge(object gameServer)` | Reads `MAGNETAR_HOST_ID` and `QUASAR_UNIQUE_NAME` env vars; captures plugin version |
-| `Update()` | Called each game tick; marks the game thread for profiler attribution, advances the profiler sampler, and throttles snapshot refresh to ≤1 Hz via `_lastSnapshotUtc` |
+| `Update()` | Called each game tick; marks the game thread for profiler attribution, advances continuous profiler publishing, and throttles snapshot refresh to ≤1 Hz via `_lastSnapshotUtc` |
 | `GetHello()` | Returns a cached `AgentHello`; thread-safe via `_sync` lock |
 | `GetSnapshot()` | Returns a cached `AgentSnapshot`; thread-safe via `_sync` lock |
 | `ExecuteCommandAsync(ServerCommandEnvelope, CancellationToken)` | Marshals `ExecuteCommandOnGameThread` via `game.Invoke`; handles `StopServer` without a live session |

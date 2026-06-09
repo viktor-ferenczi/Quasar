@@ -112,6 +112,7 @@
     "Magnetar.Protocol/Model/DeathEventSnapshot.cs",
     "Quasar.Agent/AgentConnection.cs",
     "Quasar.Agent/AgentOptions.cs",
+    "Quasar.Agent/AgentProfiler.cs",
     "Quasar.Agent/AgentProfilerPatches.cs",
     "Quasar.Agent/GameBridge.cs",
     "Quasar.Agent/PluginLogOutbox.cs",
@@ -127,12 +128,21 @@
     "Quasar.Agent/PluginLogOutbox.cs",
     "Quasar.Agent/WebServiceLocator.cs"
   ],
-  "Quasar.Agent/AgentOptions.cs": [],
+  "Quasar.Agent/AgentOptions.cs": [
+    "Quasar.Agent/AgentProfilerMode.cs"
+  ],
   "Quasar.Agent/AgentProfiler.cs": [
     "Magnetar.Protocol/Model/ProfilerSnapshot.cs",
-    "Quasar.Agent/ProfilerDescriptor.cs"
+    "Quasar.Agent/AgentOptions.cs",
+    "Quasar.Agent/AgentProfilerMode.cs"
   ],
+  "Quasar.Agent/AgentProfilerMode.cs": [],
   "Quasar.Agent/AgentProfilerPatches.cs": [
+    "Quasar.Agent/AgentProfiler.cs",
+    "Quasar.Agent/AgentProfilerMode.cs",
+    "Quasar.Agent/AgentProfilerTranspiler.cs"
+  ],
+  "Quasar.Agent/AgentProfilerTranspiler.cs": [
     "Quasar.Agent/AgentProfiler.cs"
   ],
   "Quasar.Agent/EntityInspector.cs": [],
@@ -144,7 +154,6 @@
     "Magnetar.Protocol/Model/PluginLogBatch.cs",
     "Quasar.Agent/AgentConnection.cs"
   ],
-  "Quasar.Agent/ProfilerDescriptor.cs": [],
   "Quasar.Agent/Quasar.Agent.csproj": [],
   "Quasar.Agent/WebServiceLocator.cs": [],
   "Quasar.Bootstrap/Program.cs": [

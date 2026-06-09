@@ -294,8 +294,8 @@
       "path": "Quasar.Agent/AdminPlugin.cs",
       "name": "AdminPlugin.cs",
       "ext": ".cs",
-      "size": 2726,
-      "sha256": "2376b7d320321717918930feafa4e3e4c5da9dffff6616c867ff30a5a6a3c577",
+      "size": 2814,
+      "sha256": "1da4ddbf99cff1a0024b1d85c22bb670ac16beda357fd3196ecef5373b8df4bd",
       "module": "Quasar.Agent",
       "tier": 1,
       "status": "pending"
@@ -314,8 +314,8 @@
       "path": "Quasar.Agent/AgentOptions.cs",
       "name": "AgentOptions.cs",
       "ext": ".cs",
-      "size": 2402,
-      "sha256": "3939d059bf88d39818d3d9368a19f5afd74b8ba45949cbcd368b6b4b3e1dd7fb",
+      "size": 3770,
+      "sha256": "1e75c48265a79c2a98cc74dda5f9328e437e7aa46a1fdde5e47de50b7fa57b89",
       "module": "Quasar.Agent",
       "tier": 1,
       "status": "pending"
@@ -324,8 +324,18 @@
       "path": "Quasar.Agent/AgentProfiler.cs",
       "name": "AgentProfiler.cs",
       "ext": ".cs",
-      "size": 9307,
-      "sha256": "25ee559a549171365f1116ebfd5f399c7f999011213f3663368cec5e16bb1827",
+      "size": 26454,
+      "sha256": "cb880e0242b413c2d03573c23347c6ffb122d5ef05ee3a6e25246ac071c1d91c",
+      "module": "Quasar.Agent",
+      "tier": 1,
+      "status": "pending"
+    },
+    {
+      "path": "Quasar.Agent/AgentProfilerMode.cs",
+      "name": "AgentProfilerMode.cs",
+      "ext": ".cs",
+      "size": 134,
+      "sha256": "a0b91b6af6ad08a7bf14d5f40a95be9728c43c497809c2dd23af3a2de0a6274e",
       "module": "Quasar.Agent",
       "tier": 1,
       "status": "pending"
@@ -334,8 +344,18 @@
       "path": "Quasar.Agent/AgentProfilerPatches.cs",
       "name": "AgentProfilerPatches.cs",
       "ext": ".cs",
-      "size": 7800,
-      "sha256": "ead7366e249319bbf369171885f7d33af10649dc21610f5257b97bc6c03602e5",
+      "size": 16465,
+      "sha256": "5886ae747448d8e2b682bf5e96e46f7368014e400f0ce540e6d47975cc1860b4",
+      "module": "Quasar.Agent",
+      "tier": 1,
+      "status": "pending"
+    },
+    {
+      "path": "Quasar.Agent/AgentProfilerTranspiler.cs",
+      "name": "AgentProfilerTranspiler.cs",
+      "ext": ".cs",
+      "size": 8287,
+      "sha256": "1e05bcf85bfa333a51c7ef4de86a25c630453e7a4373bb2ace56e9f132c87d6f",
       "module": "Quasar.Agent",
       "tier": 1,
       "status": "pending"
@@ -370,17 +390,6 @@
       "tier": 1,
       "status": "pending"
     },
-    {
-      "path": "Quasar.Agent/ProfilerDescriptor.cs",
-      "name": "ProfilerDescriptor.cs",
-      "ext": ".cs",
-      "size": 4710,
-      "sha256": "8d6c0d6ce38eee88d65d8c1b3218cf6f9086eba9079c1e9161fd579f35feb27a",
-      "module": "Quasar.Agent",
-      "tier": 1,
-      "status": "pending"
-    },
-    {
       "path": "Quasar.Agent/Quasar.Agent.csproj",
       "name": "Quasar.Agent.csproj",
       "ext": ".csproj",
@@ -1444,8 +1453,8 @@
       "path": "Quasar/Services/DedicatedServerSupervisor.cs",
       "name": "DedicatedServerSupervisor.cs",
       "ext": ".cs",
-      "size": 86591,
-      "sha256": "521e458428a29102cc622cd290092c791ce0ef3fcb732c91d22f60b4457097ca",
+      "size": 87832,
+      "sha256": "62b52da27af8576bf74b7e92127b970be6e80626b1e801ea5ebcf4c937f0fdcb",
       "module": "Quasar.Services.Core",
       "tier": 1,
       "status": "pending"
@@ -1864,8 +1873,8 @@
       "path": "Quasar/Services/WebServiceOptions.cs",
       "name": "WebServiceOptions.cs",
       "ext": ".cs",
-      "size": 9210,
-      "sha256": "960483742da46a722824a21f88489de975ee570edc8e4d9a6a92b9924a4bc088",
+      "size": 9656,
+      "sha256": "c5aca542957adf86cca67ea9a93a7eb8781ec00adc2d5950a19f777238991206",
       "module": "Quasar.Services.Core",
       "tier": 1,
       "status": "pending"
@@ -1904,8 +1913,8 @@
       "path": "Quasar/appsettings.json",
       "name": "appsettings.json",
       "ext": ".json",
-      "size": 2455,
-      "sha256": "65ea80228daaa3e3895aee948457239d00b88205edef08d167b60aa5e4508ab3",
+      "size": 2498,
+      "sha256": "e037449d66f13b377d17b347a9e86f4ccbe859770b5d7f21cfff2b9ee3fab888",
       "module": "Quasar.Host",
       "tier": 3,
       "status": "pending"

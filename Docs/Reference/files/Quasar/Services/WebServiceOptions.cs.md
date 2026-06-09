@@ -4,7 +4,7 @@
 
 ## Summary
 
-Immutable configuration record for the Quasar web service host. All properties are `init`-only and populated by the static factory method `Create(IConfiguration)`, which reads from the `Quasar` (or legacy `MagnetarWeb`) config section and a defined set of environment variables, with environment variables taking priority.
+Immutable configuration record for the Quasar web service host. All properties are `init`-only and populated by the static factory method `Create(IConfiguration)`, which reads from the `Quasar` (or legacy `MagnetarWeb`) config section and a defined set of environment variables, with environment variables taking priority. It also carries agent launch settings that the supervisor forwards to each managed dedicated server process.
 
 ## Structure
 
@@ -35,6 +35,7 @@ Namespace: `Quasar.Services`
 | `AgentOfflineShutdownSeconds` | `3600` | `QUASAR_AGENT_OFFLINE_SHUTDOWN_SECONDS` |
 | `AgentReconnectIntervalSeconds` | `10` | `QUASAR_AGENT_RECONNECT_INTERVAL_SECONDS` |
 | `AgentReconnectJitterSeconds` | `3` | `QUASAR_AGENT_RECONNECT_JITTER_SECONDS` |
+| `AgentProfilerMode` | `"DeepContinuous"` | `QUASAR_AGENT_PROFILER_MODE` / `AgentProfilerMode` |
 | `AvoidSimultaneousScheduledRestarts` | `true` | `QUASAR_AVOID_SIMULTANEOUS_SCHEDULED_RESTARTS` |
 | `LauncherToken` | empty | `QUASAR_LAUNCHER_TOKEN` |
 | `IsServiceMode` (computed) | — | `true` when `Mode == "service"` |
@@ -47,4 +48,4 @@ Namespace: `Quasar.Services`
 
 ## Notes
 
-`Version` is read from `AssemblyInformationalVersion` through `QuasarReleaseVersion` so prerelease labels survive packaging. `AgentOfflineShutdownSeconds` treats zero and negative values as meaningful (agent shuts down promptly when Quasar disappears), so only unparsable/missing values fall back to 3600. Wildcard bind addresses (`0.0.0.0`, `*`, `+`) are mapped to `127.0.0.1` when constructing `BaseUrl`. `BootstrapVersion` is populated only when the worker is launched by Quasar.Bootstrap. The legacy `MagnetarWeb` config section name is supported for backward compatibility.
+`Version` is read from `AssemblyInformationalVersion` through `QuasarReleaseVersion` so prerelease labels survive packaging. `AgentOfflineShutdownSeconds` treats zero and negative values as meaningful (agent shuts down promptly when Quasar disappears), so only unparsable/missing values fall back to 3600. `AgentProfilerMode` is passed through as text and interpreted by `Quasar.Agent`. Wildcard bind addresses (`0.0.0.0`, `*`, `+`) are mapped to `127.0.0.1` when constructing `BaseUrl`. `BootstrapVersion` is populated only when the worker is launched by Quasar.Bootstrap. The legacy `MagnetarWeb` config section name is supported for backward compatibility.

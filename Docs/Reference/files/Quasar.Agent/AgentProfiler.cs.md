@@ -4,7 +4,7 @@
 
 ## Summary
 
-Low-duty in-process profiler accumulator used by Harmony patches. It starts its first 10 second sample window on the first game-thread update, repeats every 60 seconds by default, records elapsed ticks from patched server methods, splits main-thread vs off-thread time, and publishes the latest `ProfilerSnapshot` for inclusion in the next agent snapshot.
+Continuous in-process profiler accumulator used by Harmony method patches and IL call-site transpilers. It records elapsed ticks into numeric call-site accumulators, splits main-thread vs off-thread time, and publishes the latest one-second `ProfilerSnapshot` window for inclusion in the next agent snapshot.
 
 ## Structure
 
@@ -13,20 +13,24 @@ Namespace: `Quasar.Agent`
 **`AgentProfiler`** (`internal static class`)
 
 Key members:
-- `Active` — true while a sample window is open.
+- `Enabled` / `Mode` — expose whether profiler collection is active and which `AgentProfilerMode` is configured.
+- `Configure(AgentOptions)` — applies the configured profiler mode and resets the publish window.
 - `MarkGameThread()` — records current game-thread id.
-- `Update()` — starts/finishes sample windows from the game tick.
+- `Update()` — publishes a completed rolling window from the game tick when the one-second interval elapses.
 - `Begin()` / `End(...)` — lightweight patch hooks using `Stopwatch.GetTimestamp`.
+- `RegisterCallSite(...)` — allocates numeric ids for patched methods or transpiled call sites.
+- `BeginCallSite(...)` / `EndCallSite(...)` — token-based hooks emitted around deep IL call sites.
 - `GetLatestSnapshot()` — returns latest completed profiler window.
 
-Private helpers build game-loop breakdowns and top lists for grids, scripts, per-entity updates, physics, network/replication/session, and other system methods.
+Private helpers project raw call-site timing into game-loop breakdowns and top lists for grids, scripts, entity types, physics, network/replication/session, and other system methods.
 
 ## Dependencies
 
-- [`Quasar.Agent/ProfilerDescriptor.cs`](ProfilerDescriptor.cs.md)
+- [`Quasar.Agent/AgentOptions.cs`](AgentOptions.cs.md)
+- [`Quasar.Agent/AgentProfilerMode.cs`](AgentProfilerMode.cs.md)
 - [`Magnetar.Protocol/Model/ProfilerSnapshot.cs`](../Magnetar.Protocol/Model/ProfilerSnapshot.cs.md)
 - `Sandbox.MySandboxGame` — simulation frame counter
 
 ## Notes
 
-Sampling is intentionally intermittent and top-list bounded to keep default telemetry useful without turning every managed server into a full-time deep profiler. The first window starts immediately once `GameBridge.Update` begins ticking.
+Hot-path work avoids string formatting: patches pass numeric call-site ids, accumulators use struct keys, and display labels are built only when a snapshot is published. Idle accumulators are pruned after empty windows so obsolete grids/scripts/types do not stay in memory forever.

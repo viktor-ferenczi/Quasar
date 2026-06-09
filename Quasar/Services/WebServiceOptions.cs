@@ -53,6 +53,8 @@ public sealed class WebServiceOptions
 
     public int AgentReconnectJitterSeconds { get; init; } = 3;
 
+    public string AgentProfilerMode { get; init; } = "DeepContinuous";
+
     public string LauncherToken { get; init; } = string.Empty;
 
     public bool IsServiceMode => string.Equals(Mode, "service", StringComparison.OrdinalIgnoreCase);
@@ -160,6 +162,12 @@ public sealed class WebServiceOptions
         if (!int.TryParse(agentReconnectJitterValue, out var agentReconnectJitterSeconds) || agentReconnectJitterSeconds < 0)
             agentReconnectJitterSeconds = 3;
 
+        var agentProfilerMode = Environment.GetEnvironmentVariable("QUASAR_AGENT_PROFILER_MODE")
+                                ?? section["AgentProfilerMode"]
+                                ?? "DeepContinuous";
+        if (string.IsNullOrWhiteSpace(agentProfilerMode))
+            agentProfilerMode = "DeepContinuous";
+
         var avoidSimultaneousScheduledRestartsValue =
             Environment.GetEnvironmentVariable("QUASAR_AVOID_SIMULTANEOUS_SCHEDULED_RESTARTS")
             ?? section["AvoidSimultaneousScheduledRestarts"];
@@ -190,6 +198,7 @@ public sealed class WebServiceOptions
             AgentOfflineShutdownSeconds = agentOfflineShutdownSeconds,
             AgentReconnectIntervalSeconds = agentReconnectIntervalSeconds,
             AgentReconnectJitterSeconds = agentReconnectJitterSeconds,
+            AgentProfilerMode = agentProfilerMode,
             LauncherToken = launcherToken,
             BootstrapVersion = bootstrapVersion,
         };

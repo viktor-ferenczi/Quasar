@@ -35,6 +35,34 @@ includes the executable path, arguments, working directory, and environment
 variables such as `LD_LIBRARY_PATH`. Use it only while troubleshooting because
 environment variables can contain secrets.
 
+## Agent profiler mode
+
+Managed Space Engineers servers receive the profiler mode through
+`QUASAR_AGENT_PROFILER_MODE`, derived from `Quasar:AgentProfilerMode`.
+
+Default:
+
+```json
+{
+  "Quasar": {
+    "AgentProfilerMode": "DeepContinuous"
+  }
+}
+```
+
+Supported values:
+
+- `DeepContinuous` - default. Continuous profiler with Harmony IL call-site
+  wrapping for session components, entity update dispatch, physics internals,
+  replication/network paths, scripts, and game-loop timing.
+- `SafeContinuous` - continuous method-level Harmony timing without deep IL
+  call-site transpilers.
+- `Off` - disables Quasar profiler patches and profiler snapshots.
+
+Use `SafeContinuous` or `Off` if a Space Engineers update changes IL shapes and a
+deep patch becomes suspect. Deep patch groups log failures and continue with the
+remaining profiler surface.
+
 ## Web UI host and port
 
 The browser connects to the web UI on the host and port configured here. Defaults:

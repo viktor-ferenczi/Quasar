@@ -4,7 +4,7 @@
 
 ## Summary
 
-Wire DTOs for Quasar's low-duty profiler telemetry. `ProfilerSnapshot` is embedded in `AgentSnapshot` and carries one sampled calculation window: frame range, frame count, per-frame game-loop timing buckets, and bounded top lists for grids, programmable blocks, entities, system methods, physics, and network/replication/session work.
+Wire DTOs for Quasar's continuous profiler telemetry. `ProfilerSnapshot` is embedded in `AgentSnapshot` and carries one completed rolling calculation window: frame range, frame count, per-frame game-loop timing buckets, and bounded top lists for grids, programmable blocks, entities, system methods, physics, and network/replication/session work.
 
 ## Structure
 

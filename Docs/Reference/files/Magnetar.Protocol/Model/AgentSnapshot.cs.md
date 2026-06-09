@@ -19,7 +19,7 @@ Class `AgentSnapshot` (concrete, no base type):
 | `IsRunning` | `bool` | Whether the simulation loop is active. |
 | `CapturedAtUtc` | `DateTimeOffset` | Snapshot capture time (defaults to `UtcNow`). |
 | `Metrics` | `ServerMetrics` | CPU, sim-speed, PCU, uptime, etc. |
-| `Profiler` | `ProfilerSnapshot?` | Latest completed profiler sample window, if available. |
+| `Profiler` | `ProfilerSnapshot?` | Latest completed profiler window, if available. |
 | `Players` | `List<PlayerSnapshot>` | All currently connected players. |
 | `KickedPlayers` | `List<KickedPlayerSnapshot>` | Offline players currently serving a server-side kick cooldown (separate from `Players`). |
 | `RecentChat` | `List<ChatMessageSnapshot>` | Chat messages since last snapshot. |

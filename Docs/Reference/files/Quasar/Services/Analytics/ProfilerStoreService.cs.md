@@ -29,4 +29,4 @@ Records:
 
 ## Notes
 
-Retention is deliberately small and in-memory (720 samples per server, roughly 12 hours at the default one-minute cadence). The persisted RRD path remains reserved for regular scalar analytics.
+Retention is deliberately small and in-memory (720 snapshots per server, roughly 12 minutes at the current one-snapshot-per-second profiler cadence). Full profiler top lists are not persisted into the scalar RRD path.

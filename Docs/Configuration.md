@@ -47,6 +47,54 @@ includes the executable path, arguments, working directory, and environment
 variables such as `LD_LIBRARY_PATH`. Use it only while troubleshooting because
 environment variables can contain secrets.
 
+## Agent profiler mode
+
+Managed Space Engineers servers receive the profiler mode through
+`QUASAR_AGENT_PROFILER_MODE`. For managed servers this comes from the server's
+saved `AgentProfilerMode`; the global `Quasar:AgentProfilerMode` is only a
+fallback for servers that do not have a per-server value yet.
+
+Default:
+
+```json
+{
+  "Quasar": {
+    "AgentProfilerMode": "SafeContinuous"
+  }
+}
+```
+
+Supported values:
+
+- `SafeContinuous` - default. Continuous low-overhead Harmony timing for named
+  high-level server paths, without deep IL call-site transpilers or broad entity
+  update patching.
+- `DeepContinuous` - continuous profiler with Harmony IL call-site wrapping for
+  session components, entity update dispatch, physics internals,
+  replication/network paths, scripts, and game-loop timing.
+- `Off` - disables Quasar profiler patches and profiler snapshots.
+
+The Analytics page exposes this per server/agent. Changing it there saves the
+server definition and sends a live command to the connected agent when present.
+Use `SafeContinuous` or `Off` if a Space Engineers update changes IL shapes and a
+deep patch becomes suspect. Deep patch groups log failures and continue with the
+remaining profiler surface; entity call-site misses fall back to high-level
+timing only.
+
+## Discord simspeed alerts
+
+The Discord page stores per-server alert rules in `discord-options.json`.
+Baseline rules are enabled for each server:
+
+- sharp drop: previous simspeed at least `0.980`, current simspeed at most
+  `0.800`, and drop delta at least `0.150`; cooldown `120` seconds
+- sustained loss: average simspeed at most `0.900` over `60` seconds; cooldown
+  `300` seconds
+
+Each server can override the alert channel, enable/disable either rule, and tune
+the thresholds, windows, and cooldowns. If the simspeed alert channel is empty,
+Quasar uses that server's analytics channel.
+
 ## Web UI host and port
 
 The browser connects to the web UI on the host and port configured here. Defaults:

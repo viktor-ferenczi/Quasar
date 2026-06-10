@@ -3,7 +3,7 @@
 **Module:** Quasar.Agent  **Kind:** class  **Tier:** 1
 
 ## Summary
-`AdminPlugin` is the Magnetar `IPlugin` entry point for the Quasar agent that runs inside the Space Engineers dedicated server. On `Init` it applies profiler Harmony patches, builds the `GameBridge`, starts a `PluginLogOutbox` (begun before the connection so startup log lines are buffered), and starts an `AgentConnection`. It drives the game-thread snapshot/profiler refresh on each `Update`, and handles two lifetime events: player death (forwarded as a `DeathEventSnapshot`) and server termination (sends an `AdminStop` signal to Quasar when the shutdown was admin-initiated, not Quasar-requested).
+`AdminPlugin` is the Magnetar `IPlugin` entry point for the Quasar agent that runs inside the Space Engineers dedicated server. On `Init` it reads `AgentOptions`, configures and applies profiler Harmony patches, builds the `GameBridge`, starts a `PluginLogOutbox` (begun before the connection so startup log lines are buffered), and starts an `AgentConnection`. It drives the game-thread snapshot/profiler refresh on each `Update`, and handles two lifetime events: player death (forwarded as a `DeathEventSnapshot`) and server termination (sends an `AdminStop` signal to Quasar when the shutdown was admin-initiated, not Quasar-requested).
 
 ## Structure
 **Namespace:** `Quasar.Agent`  **Base:** `IPlugin` (VRage.Plugins)  **Modifiers:** public, concrete
@@ -12,7 +12,7 @@ Fields: `_bridge` (`GameBridge`), `_connection` (`AgentConnection`), `_outbox` (
 
 | Member | Description |
 |---|---|
-| `Init(object gameServer)` | Calls `AgentProfilerPatches.Apply()`, builds `GameBridge`; creates and `Start()`s `PluginLogOutbox` (before the connection loop); constructs `AgentConnection(bridge, WebServiceLocator, AgentOptions.FromEnvironment(), outbox)` and starts it; subscribes `MyVisualScriptLogicProvider.PlayerDied` and `ServerControl.Terminating`. |
+| `Init(object gameServer)` | Reads `AgentOptions.FromEnvironment()`, calls `AgentProfiler.Configure(options)` and `AgentProfilerPatches.Apply(options)`, builds `GameBridge`; creates and `Start()`s `PluginLogOutbox` (before the connection loop); constructs `AgentConnection(bridge, WebServiceLocator, options, outbox)` and starts it; subscribes `MyVisualScriptLogicProvider.PlayerDied` and `ServerControl.Terminating`. |
 | `Update()` | Delegates to `GameBridge.Update()` each game tick. |
 | `Dispose()` | Unsubscribes events, stops the connection, disposes the outbox, unpatches profiler hooks, nulls references. |
 | `OnServerTerminating(ServerTerminationKind kind)` | If `kind == Shutdown` and `!_bridge.QuasarRequestedStop`, calls `AgentConnection.TrySendAdminStop()`. |
@@ -21,6 +21,7 @@ Fields: `_bridge` (`GameBridge`), `_connection` (`AgentConnection`), `_outbox` (
 ## Dependencies
 - `Quasar.Agent/GameBridge.cs`
 - [`Quasar.Agent/AgentProfilerPatches.cs`](AgentProfilerPatches.cs.md)
+- [`Quasar.Agent/AgentProfiler.cs`](AgentProfiler.cs.md)
 - [`Quasar.Agent/AgentConnection.cs`](AgentConnection.cs.md)
 - [`Quasar.Agent/PluginLogOutbox.cs`](PluginLogOutbox.cs.md)
 - `Quasar.Agent/WebServiceLocator.cs`

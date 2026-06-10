@@ -32,7 +32,7 @@ Namespace: `Quasar.Services`
 
 **`PrepareServerLogSlot` / `RotateActiveLogIfPresent` / `PruneServerLogFiles`** — manage Quasar-side DS log rotation. On each start, non-empty active `stdout.log` / `stderr.log` files are moved to timestamped archives (`stdout-*.log`, `stderr-*.log`) before a fresh active slot is used. On start and process exit, rotated archives are pruned to the per-server `DsLogFilesToKeep` setting, interpreted as current slot plus archives.
 
-**`LogManagedServerLaunchEnvironment`** — emits a warning-level Quasar log entry before process start when `DedicatedServerDefinition.LogLaunchEnvironment` is enabled. The entry includes the final executable path, arguments, working directory, and sorted environment block, so operators can verify values such as `LD_LIBRARY_PATH`; it may expose secrets and is intended for targeted troubleshooting.
+**`LogManagedServerLaunchEnvironment`** — emits a warning-level Quasar log entry before process start when `DedicatedServerDefinition.LogLaunchEnvironment` is enabled. The entry includes the final executable path, arguments, working directory, and sorted environment block, so operators can verify values such as `LD_LIBRARY_PATH` and `QUASAR_AGENT_PROFILER_MODE`; it may expose secrets and is intended for targeted troubleshooting.
 
 **`HandleRuntimeWarmupChanged` / `SetStopped`** — `HandleRuntimeWarmupChanged` kicks a reconcile when startup runtime preparation completes, so auto-started servers blocked during SteamCMD/DS download launch promptly after readiness. `SetStopped` records a non-fault stopped state and user-facing message when launch is requested while prerequisites are still preparing.
 

@@ -33,7 +33,7 @@
       "name": "AgentSnapshot.cs",
       "kind": "class",
       "tier": 1,
-      "summary": "Periodic snapshot pushed by `Quasar.Agent` to the Quasar supervisor containing the full observable state of one running SE dedicated server: identity fields, runtime status, scalar performance metrics, optional profiler timing data, online players, kicked players (serving a kick cooldown), recent chat, recent deaths, and loaded plugin list."
+      "summary": "Periodic snapshot pushed by `Quasar.Agent` to the Quasar supervisor containing the full observable state of one running SE dedicated server: identity fields, runtime status, scalar performance metrics, current profiler mode, optional profiler timing data, online players, kicked players (serving a kick cooldown), recent chat, recent deaths, and loaded plugin list."
     },
     {
       "path": "Magnetar.Protocol/Model/ChatMessageSnapshot.cs",
@@ -131,7 +131,7 @@
       "name": "ProfilerSnapshot.cs",
       "kind": "DTO classes",
       "tier": 1,
-      "summary": "Wire DTOs for Quasar's low-duty profiler telemetry. `ProfilerSnapshot` is embedded in `AgentSnapshot` and carries one sampled calculation window: frame range, frame count, per-frame game-loop timing buckets, and bounded top lists for grids, programmable blocks, entities, system methods, physics, and network/replication/session work."
+      "summary": "Wire DTOs for Quasar's continuous profiler telemetry. `ProfilerSnapshot` is embedded in `AgentSnapshot` and carries one completed rolling calculation window: frame range, frame count, per-frame game-loop timing buckets, and bounded top lists for grids, programmable blocks, entities, system methods, physics, and network/replication/session work."
     },
     {
       "path": "Magnetar.Protocol/Model/ServerMetrics.cs",
@@ -210,7 +210,7 @@
       "name": "AdminPlugin.cs",
       "kind": "class",
       "tier": 1,
-      "summary": "`AdminPlugin` is the Magnetar `IPlugin` entry point for the Quasar agent that runs inside the Space Engineers dedicated server. On `Init` it applies profiler Harmony patches, builds the `GameBridge`, starts a `PluginLogOutbox` (begun before the connection so startup log lines are buffered), and starts an `AgentConnection`. It drives the game-thread snapshot/profiler refresh on each `Update`, and handles two lifetime events: player death (forwarded as a `DeathEventSnapshot`) and server termination (sends an `AdminStop` signal to Quasar when the shutdown was admin-initiated, not Quasar-requested)."
+      "summary": "`AdminPlugin` is the Magnetar `IPlugin` entry point for the Quasar agent that runs inside the Space Engineers dedicated server. On `Init` it reads `AgentOptions`, configures and applies profiler Harmony patches, builds the `GameBridge`, starts a `PluginLogOutbox` (begun before the connection so startup log lines are buffered), and starts an `AgentConnection`. It drives the game-thread snapshot/profiler refresh on each `Update`, and handles two lifetime events: player death (forwarded as a `DeathEventSnapshot`) and server termination (sends an `AdminStop` signal to Quasar when the shutdown was admin-initiated, not Quasar-requested)."
     },
     {
       "path": "Quasar.Agent/AgentConnection.cs",
@@ -224,21 +224,35 @@
       "name": "AgentOptions.cs",
       "kind": "class",
       "tier": 1,
-      "summary": "`AgentOptions` is a sealed configuration DTO holding connection-resilience parameters for the agent's WebSocket link to Quasar. Values are read from environment variables set by Quasar when it launches a managed server (or by an operator for standalone servers), with sensible defaults applied when variables are absent or invalid."
+      "summary": "`AgentOptions` is a sealed configuration DTO holding connection-resilience parameters and profiler mode for the agent's WebSocket link to Quasar. Values are read from environment variables set by Quasar when it launches a managed server (or by an operator for standalone servers), with sensible defaults applied when variables are absent or invalid."
     },
     {
       "path": "Quasar.Agent/AgentProfiler.cs",
       "name": "AgentProfiler.cs",
       "kind": "class",
       "tier": 1,
-      "summary": "Low-duty in-process profiler accumulator used by Harmony patches. It starts its first 10 second sample window on the first game-thread update, repeats every 60 seconds by default, records elapsed ticks from patched server methods, splits main-thread vs off-thread time, and publishes the latest `ProfilerSnapshot` for inclusion in the next agent snapshot."
+      "summary": "Continuous in-process profiler accumulator used by Harmony method patches and IL call-site transpilers. It records elapsed ticks into numeric call-site accumulators, splits main-thread vs off-thread time, and publishes the latest one-second `ProfilerSnapshot` window for inclusion in the next agent snapshot."
+    },
+    {
+      "path": "Quasar.Agent/AgentProfilerMode.cs",
+      "name": "AgentProfilerMode.cs",
+      "kind": "enum",
+      "tier": 1,
+      "summary": "Public enum describing the in-DS profiler patch depth selected through `AgentOptions.ProfilerMode`."
     },
     {
       "path": "Quasar.Agent/AgentProfilerPatches.cs",
       "name": "AgentProfilerPatches.cs",
       "kind": "class",
       "tier": 1,
-      "summary": "Harmony patch registrar for Quasar's profiler telemetry. It patches known Space Engineers server methods for frame/update, programmable block scripts, physics, replication, network, and session components, then scans loaded entity types for declared simulation update methods so grids and other entities can be timed."
+      "summary": "Mode-aware Harmony patch registrar for Quasar's profiler telemetry. `SafeContinuous` patches only named high-level Space Engineers server methods for low-overhead continuous timing. `DeepContinuous` keeps those patches and adds detailed network-event method hooks plus IL call-site transpilers for session components, replication simulation, entity update dispatch, parallel waits/callbacks, and physics stepping internals. `Off` skips profiler patches."
+    },
+    {
+      "path": "Quasar.Agent/AgentProfilerTranspiler.cs",
+      "name": "AgentProfilerTranspiler.cs",
+      "kind": "class",
+      "tier": 1,
+      "summary": "Generic Harmony `CodeInstruction` transpiler used by deep profiler mode. It wraps selected `call` / `callvirt` instructions with `AgentProfiler.BeginCallSite` and `AgentProfiler.EndCallSite`, giving TorchMonitor-style call-site attribution without Torch patch-manager MSIL helpers."
     },
     {
       "path": "Quasar.Agent/EntityInspector.cs",
@@ -252,7 +266,7 @@
       "name": "GameBridge.cs",
       "kind": "class",
       "tier": 1,
-      "summary": "`GameBridge` is the central game-thread fa\u00e7ade for `AgentConnection`. It collects session telemetry (metrics, profiler snapshot, players, kicked players, chat, deaths, plugins), builds `AgentHello` / `AgentSnapshot` wire messages, and executes server commands (chat, save, stop, kick, ban, promote, clear-kick-cooldown, entity list/delete) by marshalling work onto the game thread via `MySandboxGame.Invoke`. Metrics include process CPU derived from `Process.TotalProcessorTime`, simspeed/sim CPU from `Sync`, memory, PCU, active entities/grids, total blocks, and floating objects. It enumerates loaded plugins from `MyPlugins.Plugins` (including Pulsar child plugins) for runtime inventory and exposes their configuration through `IQuasarConfigProvider` or Magnetar PluginSdk `PluginConfig` reflection."
+      "summary": "`GameBridge` is the central game-thread fa\u00e7ade for `AgentConnection`. It collects session telemetry (metrics, current profiler mode/snapshot, players, kicked players, chat, deaths, plugins), builds `AgentHello` / `AgentSnapshot` wire messages, and executes server commands (chat, save, stop, profiler mode change, kick, ban, promote, clear-kick-cooldown, entity list/delete) by marshalling work onto the game thread via `MySandboxGame.Invoke`. Metrics include process CPU derived from `Process.TotalProcessorTime`, simspeed/sim CPU from `Sync`, memory, PCU, active entities/grids, total blocks, and floating objects. It enumerates loaded plugins from `MyPlugins.Plugins` (including Pulsar child plugins) for runtime inventory and exposes their configuration through `IQuasarConfigProvider` or Magnetar PluginSdk `PluginConfig` reflection."
     },
     {
       "path": "Quasar.Agent/PluginLogOutbox.cs",
@@ -260,13 +274,6 @@
       "kind": "class",
       "tier": 1,
       "summary": "Bounded, thread-safe buffer that captures plugin log lines emitted in-process by the PluginSdk Quasar log sink and hands them to `AgentConnection` in batches for streaming to Quasar (as `PluginLogBatch` / `WireMessageKind.PluginLogs`). The buffer survives Quasar outages: lines accumulate while disconnected and are flushed on reconnect, so the supervisor's \"Recent plugin logs\" panel is backfilled rather than losing everything captured while Quasar was down."
-    },
-    {
-      "path": "Quasar.Agent/ProfilerDescriptor.cs",
-      "name": "ProfilerDescriptor.cs",
-      "kind": "class",
-      "tier": 1,
-      "summary": "Maps patched method context into stable profiler keys and display labels. It turns programmable block instances into per-script entries, cube grids into per-grid entries, other entities into per-entity entries when an entity id exists, and named system methods into category entries."
     },
     {
       "path": "Quasar.Agent/Quasar.Agent.csproj",
@@ -382,7 +389,7 @@
       "name": "Analytics.razor",
       "kind": "Blazor component",
       "tier": 2,
-      "summary": "Interactive `/analytics` dashboard that renders rolling Space Engineers server metrics and profiler timing buckets as uPlot time-series charts. It reads scalar samples from `MetricsStoreService`, fetches chart series over `/api/analytics/series`, supports per-server selection, a configurable CSS-grid panel layout, persisted view config (localStorage), auto-refresh, custom time ranges, theme-aware chart styling, and a per-panel settings dialog."
+      "summary": "Interactive `/analytics` dashboard that renders rolling Space Engineers server metrics and profiler timing buckets as uPlot time-series charts. It reads scalar samples from `MetricsStoreService`, fetches chart series over `/api/analytics/series`, supports per-server selection, live per-server profiler mode control, a configurable CSS-grid panel layout, persisted view config (localStorage), auto-refresh, custom time ranges, theme-aware chart styling, and a per-panel settings dialog."
     },
     {
       "path": "Quasar/Components/Pages/Analytics.razor.css",
@@ -452,7 +459,7 @@
       "name": "Discord.razor",
       "kind": "Blazor component",
       "tier": 2,
-      "summary": "Routable page (`/discord`) for configuring the Quasar Discord bot. Combines global bot settings (token, guild ID, enabled flag), per-server channel bindings (command, chat-relay, log, analytics, death-messages channels plus interval and feature toggles), and editable death-message template text areas organised by death-type category."
+      "summary": "Routable page (`/discord`) for configuring the Quasar Discord bot. Combines global bot settings (token, guild ID, enabled flag), per-server channel bindings (command, chat-relay, log, analytics, death-messages, simspeed-alert channels plus interval and feature toggles), configurable simspeed alert rules, and editable death-message template text areas organised by death-type category."
     },
     {
       "path": "Quasar/Components/Pages/Entities.razor",
@@ -813,7 +820,7 @@
       "name": "appsettings.json",
       "kind": "JSON config",
       "tier": 3,
-      "summary": "Default application configuration for the Quasar host. Provides baseline values for the `Quasar` options section (network, analytics retention, agent reconnect timing, managed runtime paths, logging, auth) plus ASP.NET Core logging. All keys are overridable via environment-specific `appsettings.{env}.json`, environment variables, or command-line arguments as resolved by the deployment configuration sources in `Program`."
+      "summary": "Default application configuration for the Quasar host. Provides baseline values for the `Quasar` options section (network, analytics retention, agent reconnect/profiler timing, managed runtime paths, logging, auth) plus ASP.NET Core logging. All keys are overridable via environment-specific `appsettings.{env}.json`, environment variables, or command-line arguments as resolved by the deployment configuration sources in `Program`."
     },
     {
       "path": "Quasar/wwwroot/app.css",
@@ -1130,7 +1137,7 @@
       "name": "WebServiceOptions.cs",
       "kind": "class",
       "tier": 1,
-      "summary": "Immutable configuration record for the Quasar web service host. All properties are `init`-only and populated by the static factory method `Create(IConfiguration)`, which reads from the `Quasar` (or legacy `MagnetarWeb`) config section and a defined set of environment variables, with environment variables taking priority."
+      "summary": "Immutable configuration record for the Quasar web service host. All properties are `init`-only and populated by the static factory method `Create(IConfiguration)`, which reads from the `Quasar` (or legacy `MagnetarWeb`) config section and a defined set of environment variables, with environment variables taking priority. It also carries agent launch settings that the supervisor forwards to each managed dedicated server process."
     },
     {
       "path": "Quasar/Services/WebServiceState.cs",
@@ -1153,7 +1160,7 @@
       "name": "AnalyticsMetrics.cs",
       "kind": "record + class",
       "tier": 2,
-      "summary": "Central catalogue of analytics chart panels exposed by the `/analytics` dashboard and `/api/analytics/series` endpoint. Scalar entries define metric key, panel title/subtitle, sample selector, availability check, axis formatting, and fixed/dynamic Y-axis behaviour. Profiler entries define sampled game-loop timing selectors while keeping browser chart rendering on the same existing payload shape."
+      "summary": "Central catalogue of analytics chart panels exposed by the `/analytics` dashboard and `/api/analytics/series` endpoint. Scalar entries define metric key, panel title/subtitle, sample selector, availability check, axis formatting, and fixed/dynamic Y-axis behaviour. Profiler entries define continuous game-loop timing selectors while keeping browser chart rendering on the same existing payload shape."
     },
     {
       "path": "Quasar/Services/Analytics/AnalyticsSeriesService.cs",
@@ -1304,7 +1311,7 @@
       "name": "DiscordBotService.cs",
       "kind": "class",
       "tier": 2,
-      "summary": "`IHostedService` that owns the `DiscordSocketClient` lifecycle. It starts, stops, and restarts the bot in response to options changes or agent registry changes, orchestrating all relay and export sub-services. Also exposes a status snapshot for the Quasar UI."
+      "summary": "`IHostedService` that owns the `DiscordSocketClient` lifecycle. It starts, stops, and restarts the bot in response to options changes or agent registry changes, orchestrating all relay, alert, and export sub-services. Also exposes a status snapshot for the Quasar UI."
     },
     {
       "path": "Quasar/Services/Discord/DiscordChatRelayService.cs",
@@ -1346,7 +1353,7 @@
       "name": "DiscordOptions.cs",
       "kind": "class",
       "tier": 2,
-      "summary": "Configuration POCO hierarchy for the Discord bot integration, covering the bot token, guild ID, and per-server channel bindings for commands, chat relay, log export, analytics export, and death messages. Provides clone and normalise helpers used by `DiscordOptionsCatalog`."
+      "summary": "Configuration POCO hierarchy for the Discord bot integration, covering the bot token, guild ID, and per-server channel bindings for commands, chat relay, log export, analytics export, death messages, and simspeed alerts. Provides clone and normalise helpers used by `DiscordOptionsCatalog`."
     },
     {
       "path": "Quasar/Services/Discord/DiscordOptionsCatalog.cs",
@@ -1361,6 +1368,13 @@
       "kind": "class",
       "tier": 2,
       "summary": "Per-channel Discord send rate limiter that enforces a minimum 300 ms interval between messages on any given channel, preventing Discord API rate-limit errors. Used by all relay and export services that post messages."
+    },
+    {
+      "path": "Quasar/Services/Discord/DiscordSimSpeedAlertService.cs",
+      "name": "DiscordSimSpeedAlertService.cs",
+      "kind": "class",
+      "tier": 2,
+      "summary": "Event-driven Discord alert evaluator for simspeed degradation. It runs on agent registry changes, reads fresh raw analytics samples for connected/running agents, scans unseen adjacent sample pairs for sharp drops, evaluates sustained-loss rules from `DiscordServerOptions`, applies per-rule cooldown state, and sends Discord embeds through the configured simspeed alert channel or the server's analytics channel."
     }
   ],
   "Quasar.Services.PluginSdk": [

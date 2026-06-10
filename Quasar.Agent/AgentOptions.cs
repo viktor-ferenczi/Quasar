@@ -26,6 +26,12 @@ namespace Quasar.Agent
         /// seconds, to avoid reconnect storms when many agents lose Quasar at once.</summary>
         public int ReconnectJitterSeconds { get; set; } = 3;
 
+        /// <summary>
+        /// Profiler patch depth. DeepContinuous adds IL call-site profiling and
+        /// falls back per patch group when a game update changes an IL shape.
+        /// </summary>
+        public AgentProfilerMode ProfilerMode { get; set; } = AgentProfilerMode.SafeContinuous;
+
         public static AgentOptions FromEnvironment()
         {
             var options = new AgentOptions
@@ -34,6 +40,7 @@ namespace Quasar.Agent
                 OfflineShutdownSeconds = ReadInt("QUASAR_AGENT_OFFLINE_SHUTDOWN_SECONDS", 3600),
                 ReconnectIntervalSeconds = ReadInt("QUASAR_AGENT_RECONNECT_INTERVAL_SECONDS", 10),
                 ReconnectJitterSeconds = ReadInt("QUASAR_AGENT_RECONNECT_JITTER_SECONDS", 3),
+                ProfilerMode = ReadProfilerMode("QUASAR_AGENT_PROFILER_MODE", AgentProfilerMode.SafeContinuous),
             };
 
             if (options.ReconnectIntervalSeconds < 1)
@@ -51,6 +58,42 @@ namespace Quasar.Agent
             return !string.IsNullOrWhiteSpace(raw) && int.TryParse(raw.Trim(), out var value)
                 ? value
                 : fallback;
+        }
+
+        private static AgentProfilerMode ReadProfilerMode(string name, AgentProfilerMode fallback)
+        {
+            var raw = Environment.GetEnvironmentVariable(name);
+            return TryParseProfilerMode(raw, out var mode) ? mode : fallback;
+        }
+
+        public static bool TryParseProfilerMode(string raw, out AgentProfilerMode mode)
+        {
+            mode = AgentProfilerMode.SafeContinuous;
+            if (string.IsNullOrWhiteSpace(raw))
+                return false;
+
+            switch (raw.Trim().ToLowerInvariant())
+            {
+                case "off":
+                case "disabled":
+                case "none":
+                    mode = AgentProfilerMode.Off;
+                    return true;
+                case "safe":
+                case "safecontinuous":
+                case "method":
+                case "methodcontinuous":
+                    mode = AgentProfilerMode.SafeContinuous;
+                    return true;
+                case "deep":
+                case "deepcontinuous":
+                case "callsite":
+                case "callsitecontinuous":
+                    mode = AgentProfilerMode.DeepContinuous;
+                    return true;
+                default:
+                    return false;
+            }
         }
     }
 }

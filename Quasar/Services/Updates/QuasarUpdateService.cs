@@ -40,6 +40,8 @@ public sealed class QuasarUpdateService : BackgroundService
             SupportedPlatform = OperatingSystem.IsLinux() || OperatingSystem.IsWindows(),
             CurrentVersion = webOptions.Version,
             CurrentBootstrapVersion = webOptions.BootstrapVersion,
+            IncludePrerelease = options.IncludePrerelease,
+            AutoStageWebUpdates = options.AutoStageWebUpdates,
             Status = QuasarUpdateStatus.Idle,
             Message = options.Enabled
                 ? "Update checks pending."
@@ -57,6 +59,7 @@ public sealed class QuasarUpdateService : BackgroundService
             return _snapshot with
             {
                 Web = _snapshot.Web is null ? null : _snapshot.Web with { },
+                WebReleases = _snapshot.WebReleases.Select(candidate => candidate with { }).ToArray(),
                 Bootstrap = _snapshot.Bootstrap is null ? null : _snapshot.Bootstrap with { },
             };
         }
@@ -65,15 +68,52 @@ public sealed class QuasarUpdateService : BackgroundService
     public async Task SetIncludePrereleaseAsync(bool includePrerelease, CancellationToken cancellationToken = default)
     {
         _options.IncludePrerelease = includePrerelease;
-        await PersistIncludePrereleaseAsync(includePrerelease, cancellationToken).ConfigureAwait(false);
+        await PersistUpdateBooleanAsync("IncludePrerelease", includePrerelease, cancellationToken).ConfigureAwait(false);
 
         SetSnapshot(_snapshot with
         {
             Message = includePrerelease
-                ? "Prerelease update stream enabled. This is intended only for testing and may install unstable builds."
+                ? "Prerelease versions are enabled for selection."
                 : "Stable update stream enabled.",
             Status = QuasarUpdateStatus.Idle,
         });
+    }
+
+    public async Task SetAutoStageWebUpdatesAsync(bool autoStageWebUpdates, CancellationToken cancellationToken = default)
+    {
+        _options.AutoStageWebUpdates = autoStageWebUpdates;
+        await PersistUpdateBooleanAsync("AutoStageWebUpdates", autoStageWebUpdates, cancellationToken).ConfigureAwait(false);
+
+        SetSnapshot(_snapshot with
+        {
+            Message = autoStageWebUpdates
+                ? "Automatic UI update staging enabled."
+                : "Manual UI update staging enabled.",
+            Status = QuasarUpdateStatus.Idle,
+        });
+    }
+
+    public Task SelectWebReleaseAsync(string version, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var normalizedVersion = QuasarReleaseVersion.Normalize(version);
+        var selected = _snapshot.WebReleases.FirstOrDefault(candidate =>
+            string.Equals(candidate.Version, normalizedVersion, StringComparison.OrdinalIgnoreCase));
+
+        SetSnapshot(_snapshot with
+        {
+            Web = selected,
+            SelectedWebVersion = selected?.Version ?? string.Empty,
+            Message = selected is null
+                ? "No Quasar UI release selected."
+                : BuildSelectedWebReleaseMessage(selected),
+            Status = selected is null
+                ? QuasarUpdateStatus.Idle
+                : selected.IsStaged ? QuasarUpdateStatus.Staged : QuasarUpdateStatus.UpdateQueued,
+        });
+
+        return Task.CompletedTask;
     }
 
     public async Task CheckNowAsync(CancellationToken cancellationToken = default)
@@ -107,52 +147,50 @@ public sealed class QuasarUpdateService : BackgroundService
                 Message = "Checking GitHub releases.",
             });
 
-            CleanupCurrentOrOlderStagedWebUpdates(_webOptions.Version);
+            var releases = await GetReleasesAsync(cancellationToken).ConfigureAwait(false);
+            var webReleases = BuildCandidates(releases, _options.WebAssetName, _webOptions.Version, requiresPrivilegedInstall: false);
+            var bootstrap = BuildCandidates(
+                    releases,
+                    _options.BootstrapAssetName,
+                    string.IsNullOrWhiteSpace(_webOptions.BootstrapVersion) ? _webOptions.Version : _webOptions.BootstrapVersion,
+                    requiresPrivilegedInstall: true)
+                .FirstOrDefault(candidate => candidate.IsNewer);
 
-            var webRelease = await GetLatestReleaseWithAssetAsync(_options.WebAssetName, cancellationToken).ConfigureAwait(false);
-            var bootstrapRelease = await GetLatestReleaseWithAssetAsync(_options.BootstrapAssetName, cancellationToken).ConfigureAwait(false);
-            if (webRelease is null && bootstrapRelease is null)
+            if (webReleases.Count == 0 && bootstrap is null)
             {
                 SetSnapshot(_snapshot with
                 {
                     Status = QuasarUpdateStatus.Idle,
                     Message = "No GitHub release found.",
                     LastCheckedUtc = DateTimeOffset.UtcNow,
+                    Web = null,
+                    WebReleases = [],
+                    SelectedWebVersion = string.Empty,
+                    Bootstrap = null,
                 });
                 return;
             }
 
-            var web = webRelease is null
-                ? null
-                : await BuildCandidateAsync(webRelease, _options.WebAssetName, _webOptions.Version, requiresPrivilegedInstall: false, cancellationToken)
-                    .ConfigureAwait(false);
-            var bootstrap = bootstrapRelease is null
-                ? null
-                : await BuildCandidateAsync(
-                    bootstrapRelease,
-                    _options.BootstrapAssetName,
-                    string.IsNullOrWhiteSpace(_webOptions.BootstrapVersion) ? _webOptions.Version : _webOptions.BootstrapVersion,
-                    requiresPrivilegedInstall: true,
-                    cancellationToken)
-                    .ConfigureAwait(false);
-
-            web = DiscardCurrentOrOlderCandidate(web, _webOptions.Version);
-            bootstrap = DiscardCurrentOrOlderCandidate(
-                bootstrap,
-                string.IsNullOrWhiteSpace(_webOptions.BootstrapVersion) ? _webOptions.Version : _webOptions.BootstrapVersion);
+            var selectedWeb = SelectWebCandidate(webReleases, _snapshot.SelectedWebVersion);
+            if (_options.AutoStageWebUpdates && selectedWeb?.IsNewer != true)
+                selectedWeb = webReleases.FirstOrDefault(candidate => candidate.IsNewer) ?? selectedWeb;
 
             SetSnapshot(_snapshot with
             {
-                Status = web is null && bootstrap is null ? QuasarUpdateStatus.Idle : QuasarUpdateStatus.UpdateQueued,
-                Message = web is null && bootstrap is null
+                Status = webReleases.Any(candidate => candidate.IsNewer) || bootstrap is not null
+                    ? QuasarUpdateStatus.UpdateQueued
+                    : QuasarUpdateStatus.Idle,
+                Message = webReleases.All(candidate => !candidate.IsNewer) && bootstrap is null
                     ? "No newer release found."
-                    : BuildReleaseFoundMessage(web, bootstrap),
+                    : BuildReleaseFoundMessage(webReleases.FirstOrDefault(candidate => candidate.IsNewer), bootstrap),
                 LastCheckedUtc = DateTimeOffset.UtcNow,
-                Web = web,
+                Web = selectedWeb,
+                WebReleases = webReleases,
+                SelectedWebVersion = selectedWeb?.Version ?? string.Empty,
                 Bootstrap = bootstrap,
             });
 
-            if (web is not null)
+            if (_options.AutoStageWebUpdates && selectedWeb is not null && selectedWeb.IsNewer)
                 await StageWebUpdateAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception)
@@ -177,19 +215,8 @@ public sealed class QuasarUpdateService : BackgroundService
         if (candidate is null)
             return;
 
-        if (!IsNewerVersion(candidate.Version, _webOptions.Version))
-        {
-            var bootstrap = _snapshot.Bootstrap;
-            SetSnapshot(_snapshot with
-            {
-                Status = bootstrap is null ? QuasarUpdateStatus.Idle : QuasarUpdateStatus.UpdateQueued,
-                Message = bootstrap is null
-                    ? "No newer Quasar UI release found."
-                    : BuildReleaseFoundMessage(web: null, bootstrap),
-                Web = null,
-            });
-            return;
-        }
+        if (candidate.IsCurrent)
+            throw new InvalidOperationException($"Quasar UI {candidate.Version} is already active.");
 
         if (candidate.IsStaged && !string.IsNullOrWhiteSpace(candidate.StagedDirectory))
             return;
@@ -202,6 +229,7 @@ public sealed class QuasarUpdateService : BackgroundService
 
         var stageDirectory = Path.Combine(MagnetarPaths.GetQuasarStagingDirectory(), candidate.Version);
         var workerPath = Path.Combine(stageDirectory, QuasarWebReleaseLayout.WorkerExecutableFileName);
+        var expectedSha256 = candidate.ExpectedSha256;
         if (!File.Exists(workerPath))
         {
             if (Directory.Exists(stageDirectory))
@@ -222,7 +250,8 @@ public sealed class QuasarUpdateService : BackgroundService
                 await response.Content.CopyToAsync(archive, cancellationToken).ConfigureAwait(false);
             }
 
-            await VerifySha256Async(archivePath, candidate.ExpectedSha256, cancellationToken).ConfigureAwait(false);
+            expectedSha256 = await ResolveExpectedSha256Async(candidate, cancellationToken).ConfigureAwait(false);
+            await VerifySha256Async(archivePath, expectedSha256, cancellationToken).ConfigureAwait(false);
             ExtractArchive(archivePath, stageDirectory);
             TryDeleteFile(archivePath);
         }
@@ -232,15 +261,24 @@ public sealed class QuasarUpdateService : BackgroundService
         EnsureExecutableBit(workerPath);
         var staged = candidate with
         {
+            ExpectedSha256 = expectedSha256,
             IsStaged = true,
             StagedDirectory = stageDirectory,
         };
+
+        var webReleases = _snapshot.WebReleases
+            .Select(release => string.Equals(release.Version, staged.Version, StringComparison.OrdinalIgnoreCase)
+                ? staged
+                : release)
+            .ToArray();
 
         SetSnapshot(_snapshot with
         {
             Status = QuasarUpdateStatus.Staged,
             Message = $"Quasar UI {candidate.Version} is staged and ready to activate.",
             Web = staged,
+            WebReleases = webReleases,
+            SelectedWebVersion = staged.Version,
         });
     }
 
@@ -250,8 +288,8 @@ public sealed class QuasarUpdateService : BackgroundService
         if (candidate is null || !candidate.IsStaged || string.IsNullOrWhiteSpace(candidate.StagedDirectory))
             throw new InvalidOperationException("No staged Quasar UI update is ready to activate.");
 
-        if (!IsNewerVersion(candidate.Version, _webOptions.Version))
-            throw new InvalidOperationException($"Staged Quasar UI {candidate.Version} is not newer than the current version {_webOptions.Version}.");
+        if (candidate.IsCurrent)
+            throw new InvalidOperationException($"Quasar UI {candidate.Version} is already active.");
 
         var workerPath = Path.Combine(candidate.StagedDirectory, QuasarWebReleaseLayout.WorkerExecutableFileName);
         if (!File.Exists(workerPath))
@@ -297,25 +335,6 @@ public sealed class QuasarUpdateService : BackgroundService
         }
     }
 
-    private async Task<QuasarUpdateCandidate?> BuildCandidateAsync(
-        GitHubRelease release,
-        string assetName,
-        string currentVersion,
-        bool requiresPrivilegedInstall,
-        CancellationToken cancellationToken)
-    {
-        var version = QuasarReleaseVersion.Normalize(release.TagName);
-        if (!IsNewerVersion(version, currentVersion))
-            return null;
-
-        var asset = FindAsset(release, assetName);
-        if (asset is null)
-            return null;
-
-        var checksums = await GetChecksumsAsync(release, cancellationToken).ConfigureAwait(false);
-        return BuildCandidate(version, release.PublishedAt, asset, GetChecksum(checksums, asset.Name), requiresPrivilegedInstall);
-    }
-
     private static string BuildReleaseFoundMessage(QuasarUpdateCandidate? web, QuasarUpdateCandidate? bootstrap)
     {
         if (web is not null && bootstrap is not null)
@@ -329,7 +348,20 @@ public sealed class QuasarUpdateService : BackgroundService
         return bootstrap is null ? "No newer release found." : $"Bootstrap {bootstrap.Version} found.";
     }
 
-    private async Task<GitHubRelease?> GetLatestReleaseWithAssetAsync(string assetName, CancellationToken cancellationToken)
+    private static string BuildSelectedWebReleaseMessage(QuasarUpdateCandidate selected)
+    {
+        if (selected.IsCurrent)
+            return $"Quasar UI {selected.Version} is already active.";
+
+        if (selected.IsStaged)
+            return $"Quasar UI {selected.Version} is staged and ready to activate.";
+
+        return selected.IsNewer
+            ? $"Quasar UI {selected.Version} is ready to download."
+            : $"Quasar UI {selected.Version} selected for rollback.";
+    }
+
+    private async Task<IReadOnlyList<GitHubRelease>> GetReleasesAsync(CancellationToken cancellationToken)
     {
         using var client = _httpClientFactory.CreateClient();
         client.Timeout = TimeSpan.FromSeconds(30);
@@ -344,10 +376,48 @@ public sealed class QuasarUpdateService : BackgroundService
         return releases?
             .Where(release => !release.Draft)
             .Where(release => _options.IncludePrerelease || !release.Prerelease)
-            .FirstOrDefault(release => FindAsset(release, assetName) is not null);
+            .ToArray() ?? [];
     }
 
-    private static async Task PersistIncludePrereleaseAsync(bool includePrerelease, CancellationToken cancellationToken)
+    private static IReadOnlyList<QuasarUpdateCandidate> BuildCandidates(
+        IReadOnlyList<GitHubRelease> releases,
+        string assetName,
+        string currentVersion,
+        bool requiresPrivilegedInstall)
+    {
+        return releases
+            .Select(release =>
+            {
+                var asset = FindAsset(release, assetName);
+                return asset is null
+                    ? null
+                    : BuildCandidate(release, asset, currentVersion, requiresPrivilegedInstall);
+            })
+            .Where(candidate => candidate is not null)
+            .Select(candidate => candidate!)
+            .GroupBy(candidate => candidate.Version, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToArray();
+    }
+
+    private static QuasarUpdateCandidate? SelectWebCandidate(
+        IReadOnlyList<QuasarUpdateCandidate> webReleases,
+        string selectedVersion)
+    {
+        if (!string.IsNullOrWhiteSpace(selectedVersion))
+        {
+            var selected = webReleases.FirstOrDefault(candidate =>
+                string.Equals(candidate.Version, selectedVersion, StringComparison.OrdinalIgnoreCase));
+            if (selected is not null)
+                return selected;
+        }
+
+        return webReleases.FirstOrDefault(candidate => candidate.IsNewer) ??
+               webReleases.FirstOrDefault(candidate => !candidate.IsCurrent) ??
+               webReleases.FirstOrDefault();
+    }
+
+    private static async Task PersistUpdateBooleanAsync(string settingName, bool value, CancellationToken cancellationToken)
     {
         var path = Path.Combine(MagnetarPaths.GetQuasarDirectory(), "appsettings.json");
         JsonObject root;
@@ -366,7 +436,7 @@ public sealed class QuasarUpdateService : BackgroundService
 
         var quasar = GetOrCreateObject(root, "Quasar");
         var updates = GetOrCreateObject(quasar, "Updates");
-        updates["IncludePrerelease"] = includePrerelease;
+        updates[settingName] = value;
 
         await AtomicFileWriter.WriteTextAsync(path, root.ToJsonString(JsonOptions), cancellationToken).ConfigureAwait(false);
     }
@@ -384,17 +454,20 @@ public sealed class QuasarUpdateService : BackgroundService
     private static GitHubAsset? FindAsset(GitHubRelease release, string assetName) =>
         release.Assets.FirstOrDefault(asset => string.Equals(asset.Name, assetName, StringComparison.OrdinalIgnoreCase));
 
-    private async Task<IReadOnlyDictionary<string, string>> GetChecksumsAsync(GitHubRelease release, CancellationToken cancellationToken)
+    private async Task<string> ResolveExpectedSha256Async(QuasarUpdateCandidate candidate, CancellationToken cancellationToken)
     {
-        var asset = FindAsset(release, "SHA256SUMS");
-        if (asset is null || string.IsNullOrWhiteSpace(asset.BrowserDownloadUrl))
-            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(candidate.ExpectedSha256))
+            return candidate.ExpectedSha256;
+
+        if (string.IsNullOrWhiteSpace(candidate.ChecksumDownloadUrl))
+            return string.Empty;
 
         using var client = _httpClientFactory.CreateClient();
         client.Timeout = TimeSpan.FromSeconds(30);
         client.DefaultRequestHeaders.UserAgent.ParseAdd("Quasar");
-        var text = await client.GetStringAsync(asset.BrowserDownloadUrl, cancellationToken).ConfigureAwait(false);
-        return ParseSha256Sums(text);
+        var text = await client.GetStringAsync(candidate.ChecksumDownloadUrl, cancellationToken).ConfigureAwait(false);
+        var checksums = ParseSha256Sums(text);
+        return GetChecksum(checksums, candidate.AssetName);
     }
 
     private static Dictionary<string, string> ParseSha256Sums(string text)
@@ -425,36 +498,40 @@ public sealed class QuasarUpdateService : BackgroundService
             throw new InvalidOperationException($"SHA256 mismatch for {Path.GetFileName(path)}.");
     }
 
-    private static QuasarUpdateCandidate BuildCandidate(string version, DateTimeOffset? publishedAt, GitHubAsset asset, string expectedSha256, bool requiresPrivilegedInstall)
+    private static QuasarUpdateCandidate BuildCandidate(
+        GitHubRelease release,
+        GitHubAsset asset,
+        string currentVersion,
+        bool requiresPrivilegedInstall)
     {
+        var version = QuasarReleaseVersion.Normalize(release.TagName);
+        var normalizedCurrent = QuasarReleaseVersion.Normalize(currentVersion);
         var stageDirectory = requiresPrivilegedInstall
             ? null
             : Path.Combine(MagnetarPaths.GetQuasarStagingDirectory(), version);
         var isStaged = stageDirectory is not null && File.Exists(Path.Combine(stageDirectory, QuasarWebReleaseLayout.WorkerExecutableFileName));
+        var checksumAsset = FindAsset(release, "SHA256SUMS");
+
         return new QuasarUpdateCandidate
         {
             Version = version,
             AssetName = asset.Name,
             DownloadUrl = asset.BrowserDownloadUrl,
-            ExpectedSha256 = expectedSha256,
             SizeBytes = asset.Size,
-            PublishedAtUtc = publishedAt,
+            PublishedAtUtc = release.PublishedAt,
+            ChecksumDownloadUrl = checksumAsset?.BrowserDownloadUrl ?? string.Empty,
             StagedDirectory = isStaged ? stageDirectory : null,
             IsAvailable = true,
             IsStaged = isStaged,
             RequiresPrivilegedInstall = requiresPrivilegedInstall,
+            IsPrerelease = release.Prerelease,
+            IsCurrent = string.Equals(version, normalizedCurrent, StringComparison.OrdinalIgnoreCase),
+            IsNewer = IsNewerVersion(version, normalizedCurrent),
         };
     }
 
     private static bool IsNewerVersion(string candidate, string current) =>
         QuasarReleaseVersion.IsNewer(candidate, current);
-
-    private static QuasarUpdateCandidate? DiscardCurrentOrOlderCandidate(
-        QuasarUpdateCandidate? candidate,
-        string currentVersion) =>
-        candidate is not null && IsNewerVersion(candidate.Version, currentVersion)
-            ? candidate
-            : null;
 
     private static void PrepareActiveWebRelease(string stagedDirectory, string activeDirectory)
     {
@@ -464,27 +541,6 @@ public sealed class QuasarUpdateService : BackgroundService
         CopyDirectory(stagedDirectory, activeDirectory);
         QuasarWebReleaseLayout.ValidateDirectory(activeDirectory);
         EnsureExecutableBit(Path.Combine(activeDirectory, QuasarWebReleaseLayout.WorkerExecutableFileName));
-    }
-
-    private static void CleanupCurrentOrOlderStagedWebUpdates(string currentVersion)
-    {
-        var stagingDirectory = MagnetarPaths.GetQuasarStagingDirectory();
-        if (!Directory.Exists(stagingDirectory))
-            return;
-
-        var activeWorkingDirectory = ReadActiveWorkingDirectory();
-        foreach (var directory in Directory.EnumerateDirectories(stagingDirectory))
-        {
-            var version = Path.GetFileName(directory);
-            if (version.StartsWith("Bootstrap-", StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            if (IsSamePath(directory, activeWorkingDirectory))
-                continue;
-
-            if (!IsNewerVersion(version, currentVersion))
-                TryDeleteDirectory(directory);
-        }
     }
 
     private static void CleanupStagedUpdates(string activeWorkingDirectory)
@@ -499,23 +555,6 @@ public sealed class QuasarUpdateService : BackgroundService
                 continue;
 
             TryDeleteDirectory(directory);
-        }
-    }
-
-    private static string ReadActiveWorkingDirectory()
-    {
-        try
-        {
-            var path = MagnetarPaths.GetQuasarActiveReleasePath();
-            if (!File.Exists(path))
-                return string.Empty;
-
-            var pointer = JsonSerializer.Deserialize<QuasarActiveReleasePointer>(File.ReadAllText(path), JsonOptions);
-            return pointer?.WorkingDirectory ?? string.Empty;
-        }
-        catch
-        {
-            return string.Empty;
         }
     }
 
@@ -606,6 +645,8 @@ public sealed class QuasarUpdateService : BackgroundService
                 SupportedPlatform = OperatingSystem.IsLinux() || OperatingSystem.IsWindows(),
                 CurrentVersion = _webOptions.Version,
                 CurrentBootstrapVersion = _webOptions.BootstrapVersion,
+                IncludePrerelease = _options.IncludePrerelease,
+                AutoStageWebUpdates = _options.AutoStageWebUpdates,
                 LastChangedUtc = DateTimeOffset.UtcNow,
             };
         }

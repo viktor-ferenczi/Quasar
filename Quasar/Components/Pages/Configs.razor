@@ -175,47 +175,54 @@
                                                 @foreach (var option in serverOptions)
                                                 {
                                                     var optionCardClass = GetOptionCssClass(option);
-                                                    <MudPaper Class="@optionCardClass" id="@GetOptionAnchorId(option)" tabindex="-1" @key="option.PropertyName">
-                                                        @switch (option.Kind)
-                                                        {
-                                                            case QuasarConfigOptionKind.Boolean:
-                                                                <MudCheckBox T="bool" Value="GetBoolOption(option)" ValueChanged="@(value => SetBoolOption(option, value))" Label="@option.Label"/>
-                                                                break;
-                                                            case QuasarConfigOptionKind.Integer:
-                                                                <MudNumericField T="int" Value="GetIntOption(option)" ValueChanged="@(value => SetIntOption(option, value))" Label="@option.Label" Variant="Variant.Outlined" Min="@ToIntOrDefault(option.Min, int.MinValue)" Max="@ToIntOrDefault(option.Max, int.MaxValue)" Step="@ToIntOrDefault(option.Step, 1)"/>
-                                                                break;
-                                                            case QuasarConfigOptionKind.Decimal:
-                                                                <MudNumericField T="double" Value="GetDoubleOption(option)" ValueChanged="@(value => SetDoubleOption(option, value))" Label="@option.Label" Variant="Variant.Outlined" Min="@ToDoubleOrDefault(option.Min, double.MinValue)" Max="@ToDoubleOrDefault(option.Max, double.MaxValue)" Step="@ToDoubleOrDefault(option.Step, 1d)"/>
-                                                                break;
-                                                            case QuasarConfigOptionKind.SelectInteger:
-                                                                <MudSelect T="int" Value="GetIntOption(option)" ValueChanged="@(value => SetIntOption(option, value))" Label="@option.Label" Variant="Variant.Outlined">
-                                                                    @foreach (var choice in option.SelectOptions)
-                                                                    {
-                                                                        <MudSelectItem T="int" Value="@choice.Value">@choice.Label</MudSelectItem>
-                                                                    }
-                                                                </MudSelect>
-                                                                break;
-                                                            case QuasarConfigOptionKind.SelectText:
-                                                                <MudSelect T="string" Value="GetStringOption(option)" ValueChanged="@(value => SetStringOption(option, value ?? string.Empty))" Label="@option.Label" Variant="Variant.Outlined">
-                                                                    @foreach (var choice in option.SelectTextOptions)
-                                                                    {
-                                                                        <MudSelectItem T="string" Value="@choice.Value">@choice.Label</MudSelectItem>
-                                                                    }
-                                                                </MudSelect>
-                                                                break;
-                                                            case QuasarConfigOptionKind.LongText:
-                                                                <MudTextField T="string" Value="GetStringOption(option)" ValueChanged="@(value => SetStringOption(option, value ?? string.Empty))" Label="@option.Label" Variant="Variant.Outlined" Lines="3"/>
-                                                                break;
-                                                            default:
-                                                                <MudTextField T="string" Value="GetStringOption(option)" ValueChanged="@(value => SetStringOption(option, value ?? string.Empty))" Label="@option.Label" Variant="Variant.Outlined"/>
-                                                                break;
-                                                        }
+                                                    <MudTooltip Placement="Placement.Top" Arrow="true" Delay="350" Inline="false">
+                                                        <TooltipContent>
+                                                            <div style="@ConfigOptionTooltipStyle">@GetOptionTooltipText(option)</div>
+                                                        </TooltipContent>
+                                                        <ChildContent>
+                                                            <MudPaper Class="@optionCardClass" id="@GetOptionAnchorId(option)" tabindex="-1" @key="option.PropertyName">
+                                                                @switch (option.Kind)
+                                                                {
+                                                                    case QuasarConfigOptionKind.Boolean:
+                                                                        <MudCheckBox T="bool" Value="GetBoolOption(option)" ValueChanged="@(value => SetBoolOption(option, value))" Label="@option.Label"/>
+                                                                        break;
+                                                                    case QuasarConfigOptionKind.Integer:
+                                                                        <MudNumericField T="int" Value="GetIntOption(option)" ValueChanged="@(value => SetIntOption(option, value))" Label="@option.Label" Variant="Variant.Outlined" Min="@ToIntOrDefault(option.Min, int.MinValue)" Max="@ToIntOrDefault(option.Max, int.MaxValue)" Step="@ToIntOrDefault(option.Step, 1)"/>
+                                                                        break;
+                                                                    case QuasarConfigOptionKind.Decimal:
+                                                                        <MudNumericField T="double" Value="GetDoubleOption(option)" ValueChanged="@(value => SetDoubleOption(option, value))" Label="@option.Label" Variant="Variant.Outlined" Min="@ToDoubleOrDefault(option.Min, double.MinValue)" Max="@ToDoubleOrDefault(option.Max, double.MaxValue)" Step="@ToDoubleOrDefault(option.Step, 1d)"/>
+                                                                        break;
+                                                                    case QuasarConfigOptionKind.SelectInteger:
+                                                                        <MudSelect T="int" Value="GetIntOption(option)" ValueChanged="@(value => SetIntOption(option, value))" Label="@option.Label" Variant="Variant.Outlined">
+                                                                            @foreach (var choice in option.SelectOptions)
+                                                                            {
+                                                                                <MudSelectItem T="int" Value="@choice.Value">@choice.Label</MudSelectItem>
+                                                                            }
+                                                                        </MudSelect>
+                                                                        break;
+                                                                    case QuasarConfigOptionKind.SelectText:
+                                                                        <MudSelect T="string" Value="GetStringOption(option)" ValueChanged="@(value => SetStringOption(option, value ?? string.Empty))" Label="@option.Label" Variant="Variant.Outlined">
+                                                                            @foreach (var choice in option.SelectTextOptions)
+                                                                            {
+                                                                                <MudSelectItem T="string" Value="@choice.Value">@choice.Label</MudSelectItem>
+                                                                            }
+                                                                        </MudSelect>
+                                                                        break;
+                                                                    case QuasarConfigOptionKind.LongText:
+                                                                        <MudTextField T="string" Value="GetStringOption(option)" ValueChanged="@(value => SetStringOption(option, value ?? string.Empty))" Label="@option.Label" Variant="Variant.Outlined" Lines="3"/>
+                                                                        break;
+                                                                    default:
+                                                                        <MudTextField T="string" Value="GetStringOption(option)" ValueChanged="@(value => SetStringOption(option, value ?? string.Empty))" Label="@option.Label" Variant="Variant.Outlined"/>
+                                                                        break;
+                                                                }
 
-                                                        @if (!string.IsNullOrWhiteSpace(option.HelperText))
-                                                        {
-                                                            <MudText Typo="Typo.caption" Class="d-block mt-2 config-secondary">@option.HelperText</MudText>
-                                                        }
-                                                    </MudPaper>
+                                                                @if (!string.IsNullOrWhiteSpace(option.HelperText))
+                                                                {
+                                                                    <MudText Typo="Typo.caption" Class="d-block mt-2 config-secondary">@option.HelperText</MudText>
+                                                                }
+                                                            </MudPaper>
+                                                        </ChildContent>
+                                                    </MudTooltip>
                                                 }
                                             </MudStack>
                                         </ChildContent>
@@ -236,10 +243,38 @@
                                         </TitleContent>
                                         <ChildContent>
                                             <MudStack Spacing="2" Class="mt-2">
-                                                <MudNumericField T="ulong" Value="_editor.RootSettings.GroupId" ValueChanged="SetGroupId" Label="Whitelist Group ID" Variant="Variant.Outlined" Min="0" HelperText="Dedicated server supports one group ID here. Use 0 to disable." id="@AccessGroupIdAnchorId"/>
-                                                <MudTextField T="string" Value="GetAdministratorText()" ValueChanged="@(v => SetAdministratorText(FilterNumericListInput(v)))" Label="Admin User IDs" Variant="Variant.Outlined" Lines="4" HelperText="Comma, space, or newline separated Steam IDs (numeric only)." id="@AccessAdministratorsAnchorId"/>
-                                                <MudTextField T="string" Value="GetReservedText()" ValueChanged="@(v => SetReservedText(FilterNumericListInput(v)))" Label="Reserved Slot User IDs" Variant="Variant.Outlined" Lines="4" HelperText="Comma, space, or newline separated numeric IDs." id="@AccessReservedAnchorId"/>
-                                                <MudTextField T="string" Value="GetBannedText()" ValueChanged="@(v => SetBannedText(FilterNumericListInput(v)))" Label="Banned / Blacklisted User IDs" Variant="Variant.Outlined" Lines="4" HelperText="Comma, space, or newline separated numeric IDs." id="@AccessBannedAnchorId"/>
+                                                <MudTooltip Placement="Placement.Top" Arrow="true" Delay="350" Inline="false">
+                                                    <TooltipContent>
+                                                        <div style="@ConfigOptionTooltipStyle">@GetAccessTooltipText("Limits joining to members of one Steam group. Use 0 to disable the group whitelist.")</div>
+                                                    </TooltipContent>
+                                                    <ChildContent>
+                                                        <MudNumericField T="ulong" Value="_editor.RootSettings.GroupId" ValueChanged="SetGroupId" Label="Whitelist Group ID" Variant="Variant.Outlined" Min="0" HelperText="Dedicated server supports one group ID here. Use 0 to disable." id="@AccessGroupIdAnchorId"/>
+                                                    </ChildContent>
+                                                </MudTooltip>
+                                                <MudTooltip Placement="Placement.Top" Arrow="true" Delay="350" Inline="false">
+                                                    <TooltipContent>
+                                                        <div style="@ConfigOptionTooltipStyle">@GetAccessTooltipText("Steam IDs that receive administrator rights on this server.")</div>
+                                                    </TooltipContent>
+                                                    <ChildContent>
+                                                        <MudTextField T="string" Value="GetAdministratorText()" ValueChanged="@(v => SetAdministratorText(FilterNumericListInput(v)))" Label="Admin User IDs" Variant="Variant.Outlined" Lines="4" HelperText="Comma, space, or newline separated Steam IDs (numeric only)." id="@AccessAdministratorsAnchorId"/>
+                                                    </ChildContent>
+                                                </MudTooltip>
+                                                <MudTooltip Placement="Placement.Top" Arrow="true" Delay="350" Inline="false">
+                                                    <TooltipContent>
+                                                        <div style="@ConfigOptionTooltipStyle">@GetAccessTooltipText("Steam IDs allowed to use reserved player slots.")</div>
+                                                    </TooltipContent>
+                                                    <ChildContent>
+                                                        <MudTextField T="string" Value="GetReservedText()" ValueChanged="@(v => SetReservedText(FilterNumericListInput(v)))" Label="Reserved Slot User IDs" Variant="Variant.Outlined" Lines="4" HelperText="Comma, space, or newline separated numeric IDs." id="@AccessReservedAnchorId"/>
+                                                    </ChildContent>
+                                                </MudTooltip>
+                                                <MudTooltip Placement="Placement.Top" Arrow="true" Delay="350" Inline="false">
+                                                    <TooltipContent>
+                                                        <div style="@ConfigOptionTooltipStyle">@GetAccessTooltipText("Steam IDs blocked from joining this server.")</div>
+                                                    </TooltipContent>
+                                                    <ChildContent>
+                                                        <MudTextField T="string" Value="GetBannedText()" ValueChanged="@(v => SetBannedText(FilterNumericListInput(v)))" Label="Banned / Blacklisted User IDs" Variant="Variant.Outlined" Lines="4" HelperText="Comma, space, or newline separated numeric IDs." id="@AccessBannedAnchorId"/>
+                                                    </ChildContent>
+                                                </MudTooltip>
                                             </MudStack>
                                         </ChildContent>
                                     </MudExpansionPanel>
@@ -263,47 +298,54 @@
                                                 @foreach (var option in categoryOptions)
                                                 {
                                                     var optionCardClass = GetOptionCssClass(option);
-                                                    <MudPaper Class="@optionCardClass" id="@GetOptionAnchorId(option)" tabindex="-1" @key="option.PropertyName">
-                                                        @switch (option.Kind)
-                                                        {
-                                                            case QuasarConfigOptionKind.Boolean:
-                                                                <MudCheckBox T="bool" Value="GetBoolOption(option)" ValueChanged="@(value => SetBoolOption(option, value))" Label="@option.Label"/>
-                                                                break;
-                                                            case QuasarConfigOptionKind.Integer:
-                                                                <MudNumericField T="int" Value="GetIntOption(option)" ValueChanged="@(value => SetIntOption(option, value))" Label="@option.Label" Variant="Variant.Outlined" Min="@ToIntOrDefault(option.Min, int.MinValue)" Max="@ToIntOrDefault(option.Max, int.MaxValue)" Step="@ToIntOrDefault(option.Step, 1)"/>
-                                                                break;
-                                                            case QuasarConfigOptionKind.Decimal:
-                                                                <MudNumericField T="double" Value="GetDoubleOption(option)" ValueChanged="@(value => SetDoubleOption(option, value))" Label="@option.Label" Variant="Variant.Outlined" Min="@ToDoubleOrDefault(option.Min, double.MinValue)" Max="@ToDoubleOrDefault(option.Max, double.MaxValue)" Step="@ToDoubleOrDefault(option.Step, 1d)"/>
-                                                                break;
-                                                            case QuasarConfigOptionKind.SelectInteger:
-                                                                <MudSelect T="int" Value="GetIntOption(option)" ValueChanged="@(value => SetIntOption(option, value))" Label="@option.Label" Variant="Variant.Outlined">
-                                                                    @foreach (var choice in option.SelectOptions)
-                                                                    {
-                                                                        <MudSelectItem T="int" Value="@choice.Value">@choice.Label</MudSelectItem>
-                                                                    }
-                                                                </MudSelect>
-                                                                break;
-                                                            case QuasarConfigOptionKind.SelectText:
-                                                                <MudSelect T="string" Value="GetStringOption(option)" ValueChanged="@(value => SetStringOption(option, value ?? string.Empty))" Label="@option.Label" Variant="Variant.Outlined">
-                                                                    @foreach (var choice in option.SelectTextOptions)
-                                                                    {
-                                                                        <MudSelectItem T="string" Value="@choice.Value">@choice.Label</MudSelectItem>
-                                                                    }
-                                                                </MudSelect>
-                                                                break;
-                                                            case QuasarConfigOptionKind.LongText:
-                                                                <MudTextField T="string" Value="GetStringOption(option)" ValueChanged="@(value => SetStringOption(option, value ?? string.Empty))" Label="@option.Label" Variant="Variant.Outlined" Lines="3"/>
-                                                                break;
-                                                            default:
-                                                                <MudTextField T="string" Value="GetStringOption(option)" ValueChanged="@(value => SetStringOption(option, value ?? string.Empty))" Label="@option.Label" Variant="Variant.Outlined"/>
-                                                                break;
-                                                        }
+                                                    <MudTooltip Placement="Placement.Top" Arrow="true" Delay="350" Inline="false">
+                                                        <TooltipContent>
+                                                            <div style="@ConfigOptionTooltipStyle">@GetOptionTooltipText(option)</div>
+                                                        </TooltipContent>
+                                                        <ChildContent>
+                                                            <MudPaper Class="@optionCardClass" id="@GetOptionAnchorId(option)" tabindex="-1" @key="option.PropertyName">
+                                                                @switch (option.Kind)
+                                                                {
+                                                                    case QuasarConfigOptionKind.Boolean:
+                                                                        <MudCheckBox T="bool" Value="GetBoolOption(option)" ValueChanged="@(value => SetBoolOption(option, value))" Label="@option.Label"/>
+                                                                        break;
+                                                                    case QuasarConfigOptionKind.Integer:
+                                                                        <MudNumericField T="int" Value="GetIntOption(option)" ValueChanged="@(value => SetIntOption(option, value))" Label="@option.Label" Variant="Variant.Outlined" Min="@ToIntOrDefault(option.Min, int.MinValue)" Max="@ToIntOrDefault(option.Max, int.MaxValue)" Step="@ToIntOrDefault(option.Step, 1)"/>
+                                                                        break;
+                                                                    case QuasarConfigOptionKind.Decimal:
+                                                                        <MudNumericField T="double" Value="GetDoubleOption(option)" ValueChanged="@(value => SetDoubleOption(option, value))" Label="@option.Label" Variant="Variant.Outlined" Min="@ToDoubleOrDefault(option.Min, double.MinValue)" Max="@ToDoubleOrDefault(option.Max, double.MaxValue)" Step="@ToDoubleOrDefault(option.Step, 1d)"/>
+                                                                        break;
+                                                                    case QuasarConfigOptionKind.SelectInteger:
+                                                                        <MudSelect T="int" Value="GetIntOption(option)" ValueChanged="@(value => SetIntOption(option, value))" Label="@option.Label" Variant="Variant.Outlined">
+                                                                            @foreach (var choice in option.SelectOptions)
+                                                                            {
+                                                                                <MudSelectItem T="int" Value="@choice.Value">@choice.Label</MudSelectItem>
+                                                                            }
+                                                                        </MudSelect>
+                                                                        break;
+                                                                    case QuasarConfigOptionKind.SelectText:
+                                                                        <MudSelect T="string" Value="GetStringOption(option)" ValueChanged="@(value => SetStringOption(option, value ?? string.Empty))" Label="@option.Label" Variant="Variant.Outlined">
+                                                                            @foreach (var choice in option.SelectTextOptions)
+                                                                            {
+                                                                                <MudSelectItem T="string" Value="@choice.Value">@choice.Label</MudSelectItem>
+                                                                            }
+                                                                        </MudSelect>
+                                                                        break;
+                                                                    case QuasarConfigOptionKind.LongText:
+                                                                        <MudTextField T="string" Value="GetStringOption(option)" ValueChanged="@(value => SetStringOption(option, value ?? string.Empty))" Label="@option.Label" Variant="Variant.Outlined" Lines="3"/>
+                                                                        break;
+                                                                    default:
+                                                                        <MudTextField T="string" Value="GetStringOption(option)" ValueChanged="@(value => SetStringOption(option, value ?? string.Empty))" Label="@option.Label" Variant="Variant.Outlined"/>
+                                                                        break;
+                                                                }
 
-                                                        @if (!string.IsNullOrWhiteSpace(option.HelperText))
-                                                        {
-                                                            <MudText Typo="Typo.caption" Class="d-block mt-2 config-secondary">@option.HelperText</MudText>
-                                                        }
-                                                    </MudPaper>
+                                                                @if (!string.IsNullOrWhiteSpace(option.HelperText))
+                                                                {
+                                                                    <MudText Typo="Typo.caption" Class="d-block mt-2 config-secondary">@option.HelperText</MudText>
+                                                                }
+                                                            </MudPaper>
+                                                        </ChildContent>
+                                                    </MudTooltip>
                                                 }
                                             </MudStack>
                                         </ChildContent>
@@ -749,6 +791,7 @@
     private const string PluginCatalogPanelKey = "plugin-catalog";
     private const string AdvancedPluginsPanelKey = "advanced-plugins";
     private const int PluginDescriptionFallbackMaxLength = 50;
+    private const string ConfigOptionTooltipStyle = "white-space: pre-line; max-width: 34rem; text-align: left; line-height: 1.35; font-size: 0.78rem;";
     private string _selectedProfileId = string.Empty;
     private QuasarConfigProfile? _editor;
     private string _newProfileName = string.Empty;
@@ -1304,6 +1347,52 @@
         return option.Scope == QuasarConfigOptionScope.Root
             ? _editor.RootSettings
             : _editor.SessionSettings;
+    }
+
+    private string GetOptionTooltipText(QuasarConfigOptionDefinition option)
+    {
+        var lines = new List<string>
+        {
+            GetOptionExplanation(option),
+        };
+
+        if (!string.IsNullOrWhiteSpace(option.HelperText))
+            lines.Add(option.HelperText.Trim());
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string GetAccessTooltipText(string explanation)
+    {
+        return explanation;
+    }
+
+    private static string GetOptionExplanation(QuasarConfigOptionDefinition option)
+    {
+        var subject = GetTooltipSubject(option.Label);
+        return option.Kind switch
+        {
+            QuasarConfigOptionKind.Boolean when option.Label.StartsWith("Enable ", StringComparison.OrdinalIgnoreCase) =>
+                $"Turns {GetTooltipSubject(option.Label["Enable ".Length..])} on or off.",
+            QuasarConfigOptionKind.Boolean =>
+                $"Toggles {subject}.",
+            QuasarConfigOptionKind.Integer or QuasarConfigOptionKind.Decimal =>
+                $"Sets {subject}.",
+            QuasarConfigOptionKind.Text or QuasarConfigOptionKind.LongText =>
+                $"Sets {subject}.",
+            QuasarConfigOptionKind.SelectInteger or QuasarConfigOptionKind.SelectText =>
+                $"Chooses {subject}.",
+            _ =>
+                $"Controls {subject}.",
+        };
+    }
+
+    private static string GetTooltipSubject(string label)
+    {
+        if (string.IsNullOrWhiteSpace(label))
+            return "this setting";
+
+        return string.Concat(char.ToLowerInvariant(label[0]), label[1..]);
     }
 
     private int GetAccessEntryCount()

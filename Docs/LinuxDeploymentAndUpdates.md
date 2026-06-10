@@ -82,10 +82,14 @@ migrates that release into `ManagedRuntime/WebService/<version>` before launch.
 
 ## UI Worker Updates
 
-The running Quasar UI checks GitHub releases every 15 minutes by default. When a
-new Linux web asset exists, Quasar downloads and stages it automatically, then
-shows an in-app notification and the `/settings/updates` page marks it ready.
-Staging requires a matching `SHA256SUMS` entry for the downloaded asset.
+The running Quasar UI checks GitHub releases every 15 minutes by default. The
+Updates page lists selectable Linux web assets from the configured release
+stream, including older versions so an operator can stage a rollback. When
+`AutoStageWebUpdates` is enabled and a newer web asset exists, Quasar downloads
+and stages it automatically, then shows an in-app notification and the
+`/settings/updates` page marks it ready. When auto-staging is disabled, releases
+are only queued until the operator stages the selected version. Staging requires
+a matching `SHA256SUMS` entry for the downloaded asset.
 
 Activation is explicit. The UI copies the staged payload into
 `ManagedRuntime/WebService/<version>`, writes the active-release pointer to that
@@ -170,6 +174,7 @@ both read that data-directory file on startup.
   "Owner": "viktor-ferenczi",
   "Repository": "Quasar",
   "IncludePrerelease": false,
+  "AutoStageWebUpdates": true,
   "CheckIntervalSeconds": 900,
   "LinuxWebAssetName": "quasar-web-linux-x64.tar.gz",
   "LinuxBootstrapAssetName": "quasar-linux-x64.tar.gz"
@@ -182,14 +187,18 @@ Environment overrides:
 - `QUASAR_UPDATES_OWNER`
 - `QUASAR_UPDATES_REPOSITORY`
 - `QUASAR_UPDATES_INCLUDE_PRERELEASE`
+- `QUASAR_UPDATES_AUTO_STAGE_WEB`
 - `QUASAR_UPDATES_CHECK_INTERVAL_SECONDS`
 - `QUASAR_UPDATES_LINUX_WEB_ASSET`
 - `QUASAR_UPDATES_LINUX_BOOTSTRAP_ASSET`
 
 The Updates page exposes an "Include prerelease versions" switch. Enabling it
 writes `Quasar:Updates:IncludePrerelease` to the data-directory `appsettings.json`
-and immediately affects worker-side release checks. Bootstrap also honors the
-same setting after its next restart.
+and immediately refreshes worker-side release checks so prerelease UI versions
+become selectable. Bootstrap also honors the same setting after its next restart.
+The page also exposes an automatic-staging checkbox backed by
+`Quasar:Updates:AutoStageWebUpdates`; disabling it keeps new UI versions queued
+until the operator chooses a version and presses Stage.
 
 **Warning:** prerelease updates are for testing only and should not be used by
 regular users. They may be unstable, may require manual recovery, and may update

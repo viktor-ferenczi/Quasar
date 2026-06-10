@@ -3,7 +3,7 @@
 **Module:** Quasar.Components  **Kind:** Blazor component  **Tier:** 2
 
 ## Summary
-Top-level application shell layout. Provides the MudBlazor theme/provider setup, a responsive app bar with branding, a theme-mode switcher, auth (login/logout) controls, and Quasar shutdown / worker-restart controls. It hosts a collapsible side drawer with `NavMenu`, the main content area that renders `@Body`, a full-screen restart overlay, and two confirmation `MudMessageBox` dialogs (shut-down-all-servers and restart-worker).
+Top-level application shell layout. Provides the MudBlazor theme/provider setup, a responsive app bar with branding, update notification bell, theme-mode switcher, auth (login/logout) controls, and Quasar shutdown / worker-restart controls. It hosts a collapsible side drawer with `NavMenu`, the main content area that renders `@Body`, a full-screen restart overlay, and two confirmation `MudMessageBox` dialogs (shut-down-all-servers and restart-worker).
 
 ## Structure
 Inherits: `LayoutComponentBase`  
@@ -14,6 +14,8 @@ Implements: `IDisposable`
 - `QuasarShutdownService ShutdownService` — orchestrates graceful multi-server shutdown (`StopAllServersAsync`) and worker restart (`RestartWorker`).
 - `WebServiceOptions WebServiceOptions` — read for `LauncherToken` to detect launcher-managed runs.
 - `BrandingService BrandingService` — supplies `AppName`, `AppSubtitle`, logo paths.
+- `QuasarUpdateService UpdateService` — update snapshot source for the app-bar bell and snackbars.
+- `ISnackbar Snackbar` — app-wide update notifications.
 - `IJSRuntime JS` — invokes `quasarConfigs.reloadWhenHealthy` during worker restart.
 
 **Private state:**
@@ -22,6 +24,7 @@ Implements: `IDisposable`
 - `_themeMode` (ThemeMode, default `System`)
 - `_isShuttingDown` (bool) — drives the blocking overlay during worker restart.
 - `_shutdownStatus` (string) — message shown in the restart overlay.
+- `_updateSnapshot` (`QuasarUpdateSnapshot`) — latest update state used by the bell badge/tooltip.
 - `_shutdownTooltipVisible`, `_shutdownTooltipSuppressed` — controlled state for the stop-all-servers tooltip so it is hidden while the confirmation dialog is active and does not remain visible after confirmation.
 - `_shutdownMessageBox`, `_restartWorkerMessageBox` (MudMessageBox refs)
 - `IsUnderBootstrap` (computed) — true when `WebServiceOptions.LauncherToken` is set (worker was spawned by the Quasar launcher).
@@ -32,6 +35,7 @@ Implements: `IDisposable`
 **App bar sections:**
 - Hamburger `MudIconButton` → `ToggleDrawer`.
 - Brand logo + name/subtitle from `BrandingService`.
+- Notification bell links to `/settings/updates`; it shows a warning badge when a newer UI release is ready to download/staged for activation or when a launcher update is available.
 - Theme-mode `MudMenu` (System / Light / Dark) via `SetThemeModeAsync`; icon from `GetThemeModeIcon`.
 - `<AuthorizeView>` — Logout icon button (tooltip from `GetAuthTooltip`, uses `ClaimsPrincipal.GetQuasarDisplayName`) for authenticated users; Login button for guests.
 - `<AuthorizeView Policy="CanShutdownQuasar">` — when `IsUnderBootstrap`, a restart-worker icon (`HandleRestartWorkerClickAsync`); always a red power-off icon (`HandleShutdownClickAsync`). Both disabled while `_isShuttingDown`. The stop-all tooltip is explicitly suppressed on click and re-enabled only after blur/mouse-leave so it cannot linger behind or after the confirmation dialog.
@@ -49,7 +53,7 @@ Implements: `IDisposable`
 **Error UI:** `#blazor-error-ui` div (styled in `MainLayout.razor.css`).
 
 **Lifecycle:**
-- `OnInitialized` — subscribes to `BrandingService.Changed` and `UpdateService.Changed`.
+- `OnInitialized` — subscribes to `BrandingService.Changed` and `UpdateService.Changed`, then hydrates `_updateSnapshot`.
 - `OnAfterRenderAsync(firstRender)` — calls `ThemePreference.InitializeAsync()` to hydrate `_themeMode`/`_isDarkMode` from browser storage.
 - `Dispose` — unsubscribes from `BrandingService.Changed` and `UpdateService.Changed`.
 

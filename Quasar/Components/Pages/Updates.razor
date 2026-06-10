@@ -42,42 +42,57 @@
                         Current version: <strong>@_snapshot.CurrentVersion</strong>
                     </MudText>
 
-                    @if (_snapshot.Web is null)
+                    @if (_snapshot.WebReleases.Count == 0)
                     {
-                        <MudText Typo="Typo.body2">No staged UI update.</MudText>
+                        <MudText Typo="Typo.body2">No UI releases detected.</MudText>
                     }
                     else
                     {
-                        <MudTable Items="new[] { _snapshot.Web }" Dense="true" Hover="true">
-                            <HeaderContent>
-                                <MudTh>Version</MudTh>
-                                <MudTh>Asset</MudTh>
-                                <MudTh>Status</MudTh>
-                            </HeaderContent>
-                            <RowTemplate>
-                                <MudTd DataLabel="Version">@context.Version</MudTd>
-                                <MudTd DataLabel="Asset">@context.AssetName</MudTd>
-                                <MudTd DataLabel="Status">@(context.IsStaged ? "Staged" : "Queued")</MudTd>
-                            </RowTemplate>
-                        </MudTable>
+                        <MudSelect T="string"
+                                   Value="_selectedWebVersion"
+                                   ValueChanged="HandleSelectedWebVersionChanged"
+                                   Label="Version to install"
+                                   Variant="Variant.Outlined"
+                                   Disabled="_busy">
+                            @foreach (var release in _snapshot.WebReleases)
+                            {
+                                <MudSelectItem T="string" Value="@release.Version">@FormatWebReleaseOption(release)</MudSelectItem>
+                            }
+                        </MudSelect>
 
-                        @if (!string.IsNullOrWhiteSpace(_snapshot.Web.StagedDirectory))
+                        @if (_snapshot.Web is not null)
                         {
-                            <MudText Typo="Typo.caption">Staged at @_snapshot.Web.StagedDirectory</MudText>
+                            <MudTable Items="new[] { _snapshot.Web }" Dense="true" Hover="true">
+                                <HeaderContent>
+                                    <MudTh>Version</MudTh>
+                                    <MudTh>Asset</MudTh>
+                                    <MudTh>Status</MudTh>
+                                </HeaderContent>
+                                <RowTemplate>
+                                    <MudTd DataLabel="Version">@context.Version</MudTd>
+                                    <MudTd DataLabel="Asset">@context.AssetName</MudTd>
+                                    <MudTd DataLabel="Status">@FormatWebReleaseStatus(context)</MudTd>
+                                </RowTemplate>
+                            </MudTable>
+
+                            @if (!string.IsNullOrWhiteSpace(_snapshot.Web.StagedDirectory))
+                            {
+                                <MudText Typo="Typo.caption">Staged at @_snapshot.Web.StagedDirectory</MudText>
+                            }
                         }
 
                         <MudStack Row="true" Spacing="2">
                             <MudButton Variant="Variant.Outlined"
                                        Color="Color.Primary"
                                        StartIcon="@Icons.Material.Filled.Download"
-                                       Disabled="_busy || _snapshot.Web.IsStaged"
+                                       Disabled="_busy || _snapshot.Web is null || _snapshot.Web.IsStaged || _snapshot.Web.IsCurrent"
                                        OnClick="StageAsync">
                                 Stage
                             </MudButton>
                             <MudButton Variant="Variant.Filled"
                                        Color="Color.Warning"
                                        StartIcon="@Icons.Material.Filled.RestartAlt"
-                                       Disabled="_busy || !_snapshot.Web.IsStaged || !IsNewerUiVersion(_snapshot.Web)"
+                                       Disabled="_busy || _snapshot.Web is null || !_snapshot.Web.IsStaged || _snapshot.Web.IsCurrent"
                                        OnClick="ActivateAsync">
                                 Activate
                             </MudButton>
@@ -143,6 +158,14 @@
                     <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Dense="true">
                         Prerelease versions are for testing only and should not be used by regular users.
                     </MudAlert>
+                    <MudCheckBox T="bool"
+                                 Value="_autoStageWebUpdates"
+                                 ValueChanged="HandleAutoStageWebUpdatesChanged"
+                                 Disabled="_busy"
+                                 Label="Automatically stage UI updates after checks" />
+                    <MudText Typo="Typo.caption">
+                        Turn this off to only queue detected versions, then stage and activate the selected version manually.
+                    </MudText>
                     <MudText Typo="Typo.body2">
                         Last check: @(FormatTimestamp(_snapshot.LastCheckedUtc))
                     </MudText>
@@ -162,11 +185,15 @@
     private QuasarUpdateSnapshot _snapshot = new();
     private bool _busy;
     private bool _includePrerelease;
+    private bool _autoStageWebUpdates = true;
+    private string _selectedWebVersion = string.Empty;
 
     protected override void OnInitialized()
     {
         _snapshot = UpdateService.GetSnapshot();
         _includePrerelease = Options.IncludePrerelease;
+        _autoStageWebUpdates = Options.AutoStageWebUpdates;
+        _selectedWebVersion = _snapshot.SelectedWebVersion;
         UpdateService.Changed += OnUpdatesChanged;
     }
 
@@ -179,6 +206,8 @@
     {
         _snapshot = UpdateService.GetSnapshot();
         _includePrerelease = Options.IncludePrerelease;
+        _autoStageWebUpdates = Options.AutoStageWebUpdates;
+        _selectedWebVersion = _snapshot.SelectedWebVersion;
         StateHasChanged();
     });
 
@@ -204,6 +233,29 @@
             () => UpdateService.ActivateStagedWebUpdateAsync(),
             "Quasar UI update activation requested. The page will reconnect shortly.",
             "Failed activating update");
+    }
+
+    private async Task HandleSelectedWebVersionChanged(string? version)
+    {
+        version ??= string.Empty;
+        if (string.Equals(version, _selectedWebVersion, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _selectedWebVersion = version;
+        _busy = true;
+        try
+        {
+            await UpdateService.SelectWebReleaseAsync(version);
+            _snapshot = UpdateService.GetSnapshot();
+        }
+        catch (Exception exception)
+        {
+            Snackbar.Add($"Failed selecting version: {exception.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
     }
 
     private async Task HandleIncludePrereleaseChanged(bool value)
@@ -232,6 +284,7 @@
         try
         {
             await UpdateService.SetIncludePrereleaseAsync(value);
+            await UpdateService.CheckNowAsync();
             _snapshot = UpdateService.GetSnapshot();
             Snackbar.Add(value ? "Prerelease updates enabled." : "Prerelease updates disabled.", value ? Severity.Warning : Severity.Success);
         }
@@ -239,6 +292,31 @@
         {
             _includePrerelease = previous;
             Snackbar.Add($"Failed updating release stream: {exception.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task HandleAutoStageWebUpdatesChanged(bool value)
+    {
+        if (value == _autoStageWebUpdates)
+            return;
+
+        var previous = _autoStageWebUpdates;
+        _autoStageWebUpdates = value;
+        _busy = true;
+        try
+        {
+            await UpdateService.SetAutoStageWebUpdatesAsync(value);
+            _snapshot = UpdateService.GetSnapshot();
+            Snackbar.Add(value ? "Automatic UI staging enabled." : "Manual UI staging enabled.", Severity.Success);
+        }
+        catch (Exception exception)
+        {
+            _autoStageWebUpdates = previous;
+            Snackbar.Add($"Failed updating staging mode: {exception.Message}", Severity.Error);
         }
         finally
         {
@@ -281,6 +359,33 @@
             ? "not managed by Bootstrap"
             : _snapshot.CurrentBootstrapVersion;
 
-    private bool IsNewerUiVersion(QuasarUpdateCandidate candidate) =>
-        QuasarReleaseVersion.IsNewer(candidate.Version, _snapshot.CurrentVersion);
+    private static string FormatWebReleaseOption(QuasarUpdateCandidate release)
+    {
+        var badges = new List<string>();
+        if (release.IsCurrent)
+            badges.Add("current");
+        else if (release.IsNewer)
+            badges.Add("newer");
+        else
+            badges.Add("rollback");
+
+        if (release.IsPrerelease)
+            badges.Add("prerelease");
+
+        if (release.IsStaged)
+            badges.Add("staged");
+
+        return $"{release.Version} ({string.Join(", ", badges)})";
+    }
+
+    private static string FormatWebReleaseStatus(QuasarUpdateCandidate release)
+    {
+        if (release.IsCurrent)
+            return "Current";
+
+        if (release.IsStaged)
+            return release.IsNewer ? "Staged update" : "Staged rollback";
+
+        return release.IsNewer ? "Ready to download" : "Rollback available";
+    }
 }

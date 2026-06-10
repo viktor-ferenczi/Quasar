@@ -28,6 +28,14 @@
             </MudStack>
         </MudStack>
         <MudSpacer />
+        <MudTooltip Text="@GetUpdateBellTooltip()">
+            <MudBadge Visible="@HasUpdateBellBadge" Color="Color.Warning" Dot="true" Overlap="true">
+                <MudIconButton
+                    Icon="@Icons.Material.Filled.Notifications"
+                    Color="@GetUpdateBellColor()"
+                    Href="/settings/updates" />
+            </MudBadge>
+        </MudTooltip>
         <MudMenu Icon="@GetThemeModeIcon()" Color="Color.Inherit" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" Dense="true">
             <MudMenuItem Icon="@Icons.Material.Filled.BrightnessAuto" IconColor="@(_themeMode == ThemeMode.System ? Color.Primary : Color.Default)" OnClick="@(() => SetThemeModeAsync(ThemeMode.System))">System</MudMenuItem>
             <MudMenuItem Icon="@Icons.Material.Filled.LightMode" IconColor="@(_themeMode == ThemeMode.Light ? Color.Primary : Color.Default)" OnClick="@(() => SetThemeModeAsync(ThemeMode.Light))">Light</MudMenuItem>
@@ -165,6 +173,7 @@
     private bool _isShuttingDown = false;
     private string _shutdownStatus = string.Empty;
     private string _lastUpdateNotice = string.Empty;
+    private QuasarUpdateSnapshot _updateSnapshot = new();
     private bool _shutdownTooltipVisible;
     private bool _shutdownTooltipSuppressed;
     private MudMessageBox? _shutdownMessageBox;
@@ -183,6 +192,7 @@
     {
         BrandingService.Changed += OnBrandingChanged;
         UpdateService.Changed += OnUpdatesChanged;
+        _updateSnapshot = UpdateService.GetSnapshot();
     }
 
     public void Dispose()
@@ -199,7 +209,13 @@
     private void OnUpdatesChanged()
     {
         var snapshot = UpdateService.GetSnapshot();
-        var web = snapshot.Web;
+        _ = InvokeAsync(() =>
+        {
+            _updateSnapshot = snapshot;
+            StateHasChanged();
+        });
+
+        var web = GetPrimaryWebUpdate(snapshot);
         var bootstrap = snapshot.Bootstrap;
         var noticeKey = $"{web?.Version}:{web?.IsStaged}:{bootstrap?.Version}";
         if (noticeKey == _lastUpdateNotice)
@@ -214,7 +230,7 @@
 
         if (web is not null)
         {
-            _ = InvokeAsync(() => Snackbar.Add($"Quasar UI {web.Version} update queued.", Severity.Info));
+            _ = InvokeAsync(() => Snackbar.Add($"Quasar UI {web.Version} is ready to download.", Severity.Info));
             return;
         }
 
@@ -258,6 +274,29 @@
         ThemeMode.Dark => Icons.Material.Filled.DarkMode,
         _ => Icons.Material.Filled.BrightnessAuto,
     };
+
+    private bool HasUpdateBellBadge =>
+        GetPrimaryWebUpdate(_updateSnapshot) is not null || _updateSnapshot.Bootstrap is not null;
+
+    private Color GetUpdateBellColor() => HasUpdateBellBadge ? Color.Warning : Color.Inherit;
+
+    private string GetUpdateBellTooltip()
+    {
+        var web = GetPrimaryWebUpdate(_updateSnapshot);
+        if (web is not null)
+            return web.IsStaged
+                ? $"Quasar UI {web.Version} is staged. Open Updates to activate."
+                : $"Quasar UI {web.Version} is ready to download.";
+
+        if (_updateSnapshot.Bootstrap is not null)
+            return $"Quasar launcher {_updateSnapshot.Bootstrap.Version} update available.";
+
+        return "Updates";
+    }
+
+    private static QuasarUpdateCandidate? GetPrimaryWebUpdate(QuasarUpdateSnapshot snapshot) =>
+        snapshot.WebReleases.FirstOrDefault(candidate => candidate.IsNewer && candidate.IsStaged) ??
+        snapshot.WebReleases.FirstOrDefault(candidate => candidate.IsNewer);
 
     private static string GetAuthTooltip(System.Security.Claims.ClaimsPrincipal principal)
     {

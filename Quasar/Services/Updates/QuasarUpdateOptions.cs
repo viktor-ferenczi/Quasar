@@ -10,6 +10,8 @@ public sealed class QuasarUpdateOptions
 
     public bool IncludePrerelease { get; set; }
 
+    public bool AutoStageWebUpdates { get; set; } = true;
+
     public TimeSpan CheckInterval { get; init; } = TimeSpan.FromMinutes(15);
 
     public string LinuxWebAssetName { get; init; } = "quasar-web-linux-x64.tar.gz";
@@ -42,6 +44,12 @@ public sealed class QuasarUpdateOptions
         if (!bool.TryParse(includePrereleaseValue, out var includePrerelease))
             includePrerelease = false;
 
+        var autoStageValue = Environment.GetEnvironmentVariable("QUASAR_UPDATES_AUTO_STAGE_WEB")
+                             ?? section["AutoStageWebUpdates"]
+                             ?? "true";
+        if (!bool.TryParse(autoStageValue, out var autoStageWebUpdates))
+            autoStageWebUpdates = true;
+
         var intervalValue = Environment.GetEnvironmentVariable("QUASAR_UPDATES_CHECK_INTERVAL_SECONDS")
                             ?? section["CheckIntervalSeconds"];
         if (!int.TryParse(intervalValue, out var intervalSeconds) || intervalSeconds < 60)
@@ -57,6 +65,7 @@ public sealed class QuasarUpdateOptions
                          ?? section["Repository"]
                          ?? "Quasar",
             IncludePrerelease = includePrerelease,
+            AutoStageWebUpdates = autoStageWebUpdates,
             CheckInterval = TimeSpan.FromSeconds(intervalSeconds),
             LinuxWebAssetName = Environment.GetEnvironmentVariable("QUASAR_UPDATES_LINUX_WEB_ASSET")
                                 ?? section["LinuxWebAssetName"]

@@ -1104,8 +1104,8 @@
       "path": "Quasar/Program.cs",
       "name": "Program.cs",
       "ext": ".cs",
-      "size": 31162,
-      "sha256": "dab85a7bac51ca88869d819c4cb4cc1da20b80a4462c7fb0c20f6768241437a9",
+      "size": 39041,
+      "sha256": "1e7a498508b88fa17ef5863ad98ec3da966278428a974c059d9790213539b7ab",
       "module": "Quasar.Host",
       "tier": 1,
       "status": "pending"

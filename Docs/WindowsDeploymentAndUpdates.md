@@ -76,8 +76,11 @@ downloaded archive must match the release's `SHA256SUMS` entry before extraction
 ## UI Worker Updates
 
 Identical to Linux: the running UI checks GitHub releases every 15 minutes by
-default, downloads and stages a newer `quasar-web-win-x64.zip` (after verifying its
-`SHA256SUMS` entry), and surfaces it on `/settings/updates`. Activation is
+default and lists selectable `quasar-web-win-x64.zip` releases on
+`/settings/updates`, including older versions for rollback. With
+`AutoStageWebUpdates` enabled, a newer web asset is downloaded and staged
+automatically after its `SHA256SUMS` entry is verified; with it disabled, releases
+remain queued until the operator stages the selected version. Activation is
 explicit; the UI copies the staged payload into
 `%APPDATA%\Quasar\ManagedRuntime\WebService\<version>`, clears stale staged
 payloads, and Bootstrap drains the old worker, starts the managed `Quasar.exe` on
@@ -136,6 +139,7 @@ Update defaults live in `Quasar:Updates`:
   "Owner": "viktor-ferenczi",
   "Repository": "Quasar",
   "IncludePrerelease": false,
+  "AutoStageWebUpdates": true,
   "CheckIntervalSeconds": 900,
   "LinuxWebAssetName": "quasar-web-linux-x64.tar.gz",
   "LinuxBootstrapAssetName": "quasar-linux-x64.tar.gz",
@@ -151,6 +155,7 @@ elsewhere. Environment overrides:
 - `QUASAR_UPDATES_OWNER`
 - `QUASAR_UPDATES_REPOSITORY`
 - `QUASAR_UPDATES_INCLUDE_PRERELEASE`
+- `QUASAR_UPDATES_AUTO_STAGE_WEB`
 - `QUASAR_UPDATES_CHECK_INTERVAL_SECONDS`
 - `QUASAR_UPDATES_LINUX_WEB_ASSET`
 - `QUASAR_UPDATES_LINUX_BOOTSTRAP_ASSET`

@@ -12,6 +12,10 @@ public sealed record QuasarUpdateSnapshot
 
     public QuasarUpdateStatus Status { get; init; } = QuasarUpdateStatus.Idle;
 
+    public bool IncludePrerelease { get; init; }
+
+    public bool AutoStageWebUpdates { get; init; } = true;
+
     public string Message { get; init; } = string.Empty;
 
     public DateTimeOffset? LastCheckedUtc { get; init; }
@@ -19,6 +23,10 @@ public sealed record QuasarUpdateSnapshot
     public DateTimeOffset? LastChangedUtc { get; init; }
 
     public QuasarUpdateCandidate? Web { get; init; }
+
+    public IReadOnlyList<QuasarUpdateCandidate> WebReleases { get; init; } = [];
+
+    public string SelectedWebVersion { get; init; } = string.Empty;
 
     public QuasarUpdateCandidate? Bootstrap { get; init; }
 }
@@ -37,6 +45,8 @@ public sealed record QuasarUpdateCandidate
 
     public DateTimeOffset? PublishedAtUtc { get; init; }
 
+    public string ChecksumDownloadUrl { get; init; } = string.Empty;
+
     public string? StagedDirectory { get; init; }
 
     public bool IsAvailable { get; init; }
@@ -44,6 +54,12 @@ public sealed record QuasarUpdateCandidate
     public bool IsStaged { get; init; }
 
     public bool RequiresPrivilegedInstall { get; init; }
+
+    public bool IsPrerelease { get; init; }
+
+    public bool IsCurrent { get; init; }
+
+    public bool IsNewer { get; init; }
 }
 
 public enum QuasarUpdateStatus

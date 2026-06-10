@@ -4,7 +4,7 @@
 
 ## Summary
 
-Hosted service that checks Quasar GitHub releases on Linux and Windows, discovers newer UI-worker and launcher assets from a unified combined release, verifies `SHA256SUMS`, stages the UI worker under the Quasar updates directory, and activates a staged worker by promoting it into `ManagedRuntime/WebService/<version>` before writing `active-release.json` for Bootstrap. It keeps a thread-safe `QuasarUpdateSnapshot` for the UI, raises `Changed` whenever status moves, and persists the operator-controlled prerelease stream flag.
+Hosted service that checks Quasar GitHub releases on Linux and Windows, discovers selectable UI-worker releases plus newer launcher assets from a unified combined release, verifies `SHA256SUMS`, stages the selected UI worker under the Quasar updates directory, and activates a staged worker by promoting it into `ManagedRuntime/WebService/<version>` before writing `active-release.json` for Bootstrap. It keeps a thread-safe `QuasarUpdateSnapshot` for the UI, raises `Changed` whenever status moves, and persists the operator-controlled prerelease stream and UI auto-stage flags.
 
 ## Structure
 
@@ -16,13 +16,15 @@ Namespace: `Quasar.Services.Updates`
 |---|---|
 | `GetSnapshot()` | Returns a defensive copy of the current update status and candidates. |
 | `SetIncludePrereleaseAsync(bool, ct)` | Updates the live prerelease-stream flag, writes `Quasar:Updates:IncludePrerelease` to the data-directory `appsettings.json`, and publishes a status message. |
-| `CheckNowAsync(ct)` | Checks the configured GitHub releases endpoint, cleans stale current-or-older staged UI payloads, independently finds the newest non-draft UI and Bootstrap releases containing their configured asset names, builds candidates for newer versions, discards current-or-older candidates, and auto-stages the UI asset when available. |
-| `StageWebUpdateAsync(ct)` | Downloads the queued web asset, verifies its SHA-256 checksum, extracts it into `Updates/Staged/<version>`, validates required web layout files, and marks it staged. If a stale current-or-older candidate remains in memory, clears it instead of staging. |
-| `ActivateStagedWebUpdateAsync(ct)` | Copies the staged payload into `ManagedRuntime/WebService/<version>`, writes `QuasarActiveReleasePointer` to the active-release path so Bootstrap can swap workers, clears old staged payloads, and refuses to activate a staged UI candidate that is not newer than the running UI worker. |
+| `SetAutoStageWebUpdatesAsync(bool, ct)` | Updates and persists `Quasar:Updates:AutoStageWebUpdates`, switching checks between automatic download/stage and manual queue-only mode. |
+| `SelectWebReleaseAsync(version, ct)` | Selects one UI-worker release from the discovered list, including older versions used for rollback. |
+| `CheckNowAsync(ct)` | Checks the configured GitHub releases endpoint, builds all selectable non-draft UI releases containing the configured asset, finds only newer Bootstrap candidates, updates the selected UI version, and auto-stages a newer UI version only when auto-stage mode is enabled. |
+| `StageWebUpdateAsync(ct)` | Downloads the selected web asset, resolves/verifies its SHA-256 checksum from `SHA256SUMS`, extracts it into `Updates/Staged/<version>`, validates required web layout files, and marks it staged. Current-version staging is rejected; older selected releases can be staged for rollback. |
+| `ActivateStagedWebUpdateAsync(ct)` | Copies the staged payload into `ManagedRuntime/WebService/<version>`, writes `QuasarActiveReleasePointer` to the active-release path so Bootstrap can swap workers, and clears old staged payloads. Staged older UI releases are valid rollback targets. |
 | `ExecuteAsync(stoppingToken)` | Runs an initial delayed check and repeats every configured interval while enabled. |
-| `GetLatestReleaseWithAssetAsync(assetName, ct)` | Calls GitHub releases API (`per_page=100`), ignores drafts, optionally includes prereleases, and returns the newest release containing the requested asset. |
-| `PersistIncludePrereleaseAsync(...)` / `GetOrCreateObject(...)` | Preserves or creates the data-directory `appsettings.json` object graph and atomically writes the prerelease setting. |
-| `GetChecksumsAsync(...)` / `VerifySha256Async(...)` | Reads `SHA256SUMS` and validates downloaded assets. |
+| `GetReleasesAsync(ct)` / `BuildCandidates(...)` | Calls GitHub releases API (`per_page=100`), ignores drafts, optionally includes prereleases, and maps matching release assets into UI/Bootstrap candidates. |
+| `PersistUpdateBooleanAsync(...)` / `GetOrCreateObject(...)` | Preserves or creates the data-directory `appsettings.json` object graph and atomically writes update-page boolean settings. |
+| `ResolveExpectedSha256Async(...)` / `VerifySha256Async(...)` | Reads `SHA256SUMS` on demand and validates downloaded assets. |
 | `ExtractArchive(...)` | Extracts `.zip`, `.tar.gz`, or `.tgz` Quasar UI archives. |
 
 Private nested DTOs `GitHubRelease` and `GitHubAsset` model the small subset of GitHub API JSON the service needs.
@@ -41,4 +43,4 @@ Private nested DTOs `GitHubRelease` and `GitHubAsset` model the small subset of 
 
 ## Notes
 
-UI-worker activation stays explicit from the Updates page on both Linux and Windows. Launcher updates are reported in the UI, but the launcher itself installs them automatically from the platform asset (`quasar-linux-x64.tar.gz` on Linux, `quasar-win-x64.zip` on Windows) and restarts: on Linux via systemd exit-75, on Windows by spawning a detached replacement launcher. Staged UI payloads are rejected before activation when core Blazor/MudBlazor/app static assets are missing or when their normalized release version is equal to or older than the running worker. Active UI releases live outside `Updates/Staged`, so the Updates folder only contains transient staged payloads plus the active pointer. The prerelease switch affects the running worker immediately; Bootstrap reads the persisted data-directory override after its next restart.
+UI-worker activation stays explicit from the Updates page on both Linux and Windows. Auto-stage mode only downloads/stages the newer selected UI release; manual mode queues releases until the operator stages one. Launcher updates are reported in the UI, but the launcher itself installs them automatically from the platform asset (`quasar-linux-x64.tar.gz` on Linux, `quasar-win-x64.zip` on Windows) and restarts: on Linux via systemd exit-75, on Windows by spawning a detached replacement launcher. Staged UI payloads are rejected before activation when core Blazor/MudBlazor/app static assets are missing; older staged UI payloads are allowed so the operator can roll back the worker. Active UI releases live outside `Updates/Staged`, so the Updates folder only contains transient staged payloads plus the active pointer. The prerelease switch affects the running worker immediately; Bootstrap reads the persisted data-directory override after its next restart.

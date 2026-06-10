@@ -347,7 +347,7 @@
       "name": "MainLayout.razor",
       "kind": "Blazor component",
       "tier": 2,
-      "summary": "Top-level application shell layout. Provides the MudBlazor theme/provider setup, a responsive app bar with branding, a theme-mode switcher, auth (login/logout) controls, and Quasar shutdown / worker-restart controls. It hosts a collapsible side drawer with `NavMenu`, the main content area that renders `@Body`, a full-screen restart overlay, and two confirmation `MudMessageBox` dialogs (shut-down-all-servers and restart-worker)."
+      "summary": "Top-level application shell layout. Provides the MudBlazor theme/provider setup, a responsive app bar with branding, update notification bell, theme-mode switcher, auth (login/logout) controls, and Quasar shutdown / worker-restart controls. It hosts a collapsible side drawer with `NavMenu`, the main content area that renders `@Body`, a full-screen restart overlay, and two confirmation `MudMessageBox` dialogs (shut-down-all-servers and restart-worker)."
     },
     {
       "path": "Quasar/Components/Layout/MainLayout.razor.css",
@@ -613,7 +613,7 @@
       "name": "Updates.razor",
       "kind": "component",
       "tier": 2,
-      "summary": "Routable MudBlazor page at `/settings/updates` for checking, staging, and activating Quasar Linux release updates. It shows current update status from `QuasarUpdateService`, separates Quasar UI and launcher candidates, exposes manual check/stage/activate actions for the UI worker, shows launcher update availability, displays configured GitHub release source and asset names, and provides a warning-gated switch for including prerelease versions in the update stream."
+      "summary": "Routable MudBlazor page at `/settings/updates` for checking, staging, activating, and rolling back Quasar UI worker releases. It shows current update status from `QuasarUpdateService`, separates selectable Quasar UI releases from launcher candidates, exposes manual check/stage/activate actions for the selected UI worker version, shows launcher update availability, displays configured GitHub release source and asset names, and provides controls for including prerelease versions plus choosing automatic or manual UI staging."
     },
     {
       "path": "Quasar/Components/Pages/WorldTemplateFromServerDialog.razor",
@@ -1109,21 +1109,21 @@
       "name": "QuasarUpdateOptions.cs",
       "kind": "class",
       "tier": 2,
-      "summary": "Configuration record for Quasar's GitHub-release update checker. It controls whether checks run, which repository is queried, whether prereleases are eligible, how often automatic checks run, and which per-OS release asset names represent the web worker and Bootstrap packages. `WebAssetName` and `BootstrapAssetName` computed properties select the Windows or Linux variant based on `OperatingSystem.IsWindows()`. `IncludePrerelease` is mutable so the Updates page can change the active worker's release stream immediately."
+      "summary": "Configuration record for Quasar's GitHub-release update checker. It controls whether checks run, which repository is queried, whether prereleases are eligible, whether UI releases are staged automatically after checks, how often automatic checks run, and which per-OS release asset names represent the web worker and Bootstrap packages. `WebAssetName` and `BootstrapAssetName` computed properties select the Windows or Linux variant based on `OperatingSystem.IsWindows()`. `IncludePrerelease` and `AutoStageWebUpdates` are mutable so the Updates page can change the active worker's release stream and staging mode immediately."
     },
     {
       "path": "Quasar/Services/Updates/QuasarUpdateService.cs",
       "name": "QuasarUpdateService.cs",
       "kind": "class",
       "tier": 2,
-      "summary": "Hosted service that checks Quasar GitHub releases on Linux and Windows, discovers newer UI-worker and launcher assets from a unified combined release, verifies `SHA256SUMS`, stages the UI worker under the Quasar updates directory, and activates a staged worker by promoting it into `ManagedRuntime/WebService/<version>` before writing `active-release.json` for Bootstrap. It keeps a thread-safe `QuasarUpdateSnapshot` for the UI, raises `Changed` whenever status moves, and persists the operator-controlled prerelease stream flag."
+      "summary": "Hosted service that checks Quasar GitHub releases on Linux and Windows, discovers selectable UI-worker releases plus newer launcher assets from a unified combined release, verifies `SHA256SUMS`, stages the selected UI worker under the Quasar updates directory, and activates a staged worker by promoting it into `ManagedRuntime/WebService/<version>` before writing `active-release.json` for Bootstrap. It keeps a thread-safe `QuasarUpdateSnapshot` for the UI, raises `Changed` whenever status moves, and persists the operator-controlled prerelease stream and UI auto-stage flags."
     },
     {
       "path": "Quasar/Services/Updates/QuasarUpdateSnapshot.cs",
       "name": "QuasarUpdateSnapshot.cs",
       "kind": "class (DTO)",
       "tier": 2,
-      "summary": "DTO records and status enum used by the update service and Updates page. `QuasarUpdateSnapshot` describes the current checker state, current UI worker and Bootstrap versions, last check/change timestamps, and optional web/Bootstrap candidates; `QuasarUpdateCandidate` describes one release asset and whether it is staged or requires privileged installation."
+      "summary": "DTO records and status enum used by the update service and Updates page. `QuasarUpdateSnapshot` describes the current checker state, current UI worker and Bootstrap versions, active prerelease/staging settings, last check/change timestamps, the selected web release, all selectable web releases, and optional web/Bootstrap candidates. `QuasarUpdateCandidate` describes one release asset and whether it is current, newer, prerelease, staged, or requires privileged installation."
     },
     {
       "path": "Quasar/Services/WebServiceManifestHostedService.cs",

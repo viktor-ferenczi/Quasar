@@ -101,6 +101,7 @@ public sealed class ConfigPropertyDto
 
     public int? MaxLength { get; set; }
     public string? Pattern { get; set; }
+    public bool? Multiline { get; set; }
 
     public int? MaxCount { get; set; }
     public string? ElementType { get; set; }

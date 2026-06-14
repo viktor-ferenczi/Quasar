@@ -248,6 +248,9 @@ else
                               Value="@GetString(get())"
                               ValueChanged="@((string value) => { set(JsonValue.Create(value ?? string.Empty)); MarkDirty(); })"
                               MaxLength="@(field.MaxLength ?? 524288)"
+                              Lines="@(field.Multiline ? 3 : 1)"
+                              AutoGrow="@field.Multiline"
+                              MaxLines="@(field.Multiline ? 20 : 1)"
                               HelperText="@field.Description" />
                 break;
 
@@ -1150,6 +1153,7 @@ else
         public double? Min { get; init; }
         public double? Max { get; init; }
         public int? MaxLength { get; init; }
+        public bool Multiline { get; init; }
         public int? MaxCount { get; init; }
         public string? ElementType { get; init; }
         public string? ElementStruct { get; init; }
@@ -1172,6 +1176,7 @@ else
             Min = Min,
             Max = Max,
             MaxLength = MaxLength,
+            Multiline = Multiline,
             MaxCount = MaxCount,
             ElementType = ElementType,
             ElementStruct = ElementStruct,
@@ -1195,6 +1200,7 @@ else
             Min = property.Min,
             Max = property.Max,
             MaxLength = property.MaxLength,
+            Multiline = property.Multiline ?? false,
             MaxCount = property.MaxCount,
             ElementType = NormalizeType(property.ElementType),
             ElementStruct = property.ElementStruct,

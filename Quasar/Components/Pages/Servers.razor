@@ -222,7 +222,7 @@
 
     private async Task OpenCreateDialogAsync()
     {
-        var definition = await ShowEditorDialogAsync(CreateBlank(), isEditing: false);
+        var definition = await ShowEditorDialogAsync(CreateBlank(), isEditing: false, isClone: false);
         if (definition is null)
             return;
 
@@ -243,7 +243,7 @@
         cloned.WorldPath = string.Empty;
         cloned.ConfigFilePath = string.Empty;
 
-        var created = await ShowEditorDialogAsync(cloned, isEditing: false);
+        var created = await ShowEditorDialogAsync(cloned, isEditing: false, isClone: true);
         if (created is null)
             return;
 
@@ -277,7 +277,7 @@
 
     private async Task OpenEditDialogAsync(DedicatedServerDefinition definition)
     {
-        var updated = await ShowEditorDialogAsync(definition, isEditing: true);
+        var updated = await ShowEditorDialogAsync(definition, isEditing: true, isClone: false);
         if (updated is null)
             return;
 
@@ -369,12 +369,13 @@
         }
     }
 
-    private async Task<DedicatedServerDefinition?> ShowEditorDialogAsync(DedicatedServerDefinition definition, bool isEditing)
+    private async Task<DedicatedServerDefinition?> ShowEditorDialogAsync(DedicatedServerDefinition definition, bool isEditing, bool isClone)
     {
         var parameters = new DialogParameters
         {
             [nameof(ServerEditorDialog.Definition)] = definition.Clone(),
             [nameof(ServerEditorDialog.IsEditing)] = isEditing,
+            [nameof(ServerEditorDialog.IsClone)] = isClone,
             [nameof(ServerEditorDialog.UniqueNameLocked)] = isEditing && IsRunning(definition.UniqueName),
         };
 
@@ -385,7 +386,12 @@
             MaxWidth = MaxWidth.ExtraLarge,
         };
 
-        var dialog = await DialogService.ShowAsync<ServerEditorDialog>(isEditing ? "Edit Server" : "Create Server", parameters, options);
+        var title = isEditing
+            ? "Edit Server"
+            : isClone
+                ? "Clone Server"
+                : "Create Server";
+        var dialog = await DialogService.ShowAsync<ServerEditorDialog>(title, parameters, options);
         var result = await dialog.Result;
         if (result is null || result.Canceled || result.Data is not DedicatedServerDefinition updated)
             return null;

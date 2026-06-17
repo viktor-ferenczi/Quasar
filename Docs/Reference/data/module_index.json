@@ -333,7 +333,7 @@
       "name": "ServerDetailPanel.razor",
       "kind": "Blazor component",
       "tier": 2,
-      "summary": "Detail panel embedded inside `ServerCard`. When the agent snapshot is absent it shows a waiting/error message and basic process state chips. When a snapshot is present it renders live metrics chips, Refresh/Save buttons, a chat broadcast field, a players table with per-player action menus (kick/ban confirm first; set role sends directly), a recent-chat list, a plugins table, and recent command results. Server-authored chat (`IsServerMessage`, SteamId 0, `Good.bot`, or `Server`) is displayed as `Server`. The plugin table merges live agent-reported plugins with plugins configured on the server's assigned config profile, so Magnetar-managed plugin selections still show on the landing-page card even when the DS runtime does not report them through `ConfigDedicated.Plugins`; catalog-hidden/internal entries such as MagnetarInterim, compat helpers, and Quasar.Agent are filtered out. In both the snapshot-present and snapshot-absent states, an outlined \"Affinity <value>\" chip (Memory icon) is shown in the metrics chip rows when `Server.CpuAffinity` is set, and mod-download failures captured from runtime output are shown as an explicit error alert."
+      "summary": "Detail panel embedded inside `ServerCard`. When the agent snapshot is absent it shows a waiting/error message and basic process state chips. When a snapshot is present it renders live metrics chips, Refresh/Save buttons, a chat broadcast field, a players table with per-player action menus (kick/ban confirm first; set role sends directly), a recent-chat list, and recent command results. Server-authored chat (`IsServerMessage`, SteamId 0, `Good.bot`, or `Server`) is displayed as `Server`. In both the snapshot-present and snapshot-absent states, an outlined \"Affinity <value>\" chip (Memory icon) is shown in the metrics chip rows when `Server.CpuAffinity` is set, and mod-download failures captured from runtime output are shown as an explicit error alert."
     },
     {
       "path": "Quasar/Components/Layout/BrandingHeadContent.razor",
@@ -564,7 +564,7 @@
       "name": "Players.razor",
       "kind": "Blazor component",
       "tier": 2,
-      "summary": "Routable page at `/players` listing all known players observed across managed servers. Merges the persisted `KnownPlayerCatalog` with live agent snapshots to show online/offline status, role, faction, service and Steam id, and offers per-row moderation actions (set promote level, kick, clear-kick-cooldown, ban/unban) dispatched to the owning agent; Kick and Ban require confirmation first. While a kicked player's cooldown is active it shows a warning \"kicked (Ns)\" countdown chip; the expiry (`KickCooldownExpiresUtc`) is derived from the agent snapshot's `KickedPlayers` (converting `RemainingCooldownMs` to an absolute time) so the countdown keeps ticking between ~1s snapshot refreshes."
+      "summary": "Routable page at `/players` listing all known players observed across managed servers. Merges the persisted `KnownPlayerCatalog` with live agent snapshots to show online/offline status, role, faction, service and Steam id, offers server/type/search filtering plus global/per-server known-player cleanup, exposes the known-player auto-clear retention setting, and provides per-row moderation actions (set promote level, kick, clear-kick-cooldown, ban/unban) dispatched to the owning agent; Kick, Ban, and cleanup actions require confirmation first. While a kicked player's cooldown is active it shows a warning \"kicked (Ns)\" countdown chip; the expiry (`KickCooldownExpiresUtc`) is derived from the agent snapshot's `KickedPlayers` (converting `RemainingCooldownMs` to an absolute time) so the countdown keeps ticking between ~1s snapshot refreshes."
     },
     {
       "path": "Quasar/Components/Pages/PluginCatalogDescriptionDialog.razor",
@@ -613,7 +613,7 @@
       "name": "ServerEditorDialog.razor",
       "kind": "Blazor component",
       "tier": 2,
-      "summary": "MudBlazor dialog (no `@page` route) for creating or editing a `DedicatedServerDefinition`. It validates server identity/runtime settings, exposes per-server Space Engineers multiplayer-list server/world name overrides, opens inline config/world-template creation dialogs, consumes world-import results that include a config-profile id, can merge missing world-template mods directly into the selected config profile before save, and offers a confirmed reset-world action while editing stopped servers."
+      "summary": "MudBlazor dialog (no `@page` route) for creating, cloning, or editing a `DedicatedServerDefinition`. It validates server identity/runtime settings, exposes per-server Space Engineers multiplayer-list server/world name overrides, opens inline config/world-template creation dialogs, consumes world-import results that include a config-profile id, can merge missing world-template mods directly into the selected config profile before save, and offers a confirmed reset-world action while editing stopped servers."
     },
     {
       "path": "Quasar/Components/Pages/ServerEditorDialog.razor.css",
@@ -948,7 +948,7 @@
       "name": "QuasarBackupService.cs",
       "kind": "class",
       "tier": 2,
-      "summary": "Builds and restores ZIP backups for three scopes: Quasar configuration, server runtime state, and world-only data. Configuration backups still capture Quasar's own singleton/config/catalog files; server backups include the server definition plus non-cache Dedicated Server and Magnetar app data; world backups restore world files while excluding `Sandbox_config.sbc*`. Stored backup writes publish atomically by writing `final.zip.tmp` in the Backups directory first and renaming it to `final.zip` only after the archive is complete."
+      "summary": "Builds and restores ZIP backups for three scopes: Quasar configuration, server runtime state, and world-only data. Configuration backups still capture Quasar's own singleton/config/catalog files, including known-player rows and known-player retention settings; server backups include the server definition plus non-cache Dedicated Server and Magnetar app data; world backups restore world files while excluding `Sandbox_config.sbc*`. Stored backup writes publish atomically by writing `final.zip.tmp` in the Backups directory first and renaming it to `final.zip` only after the archive is complete."
     },
     {
       "path": "Quasar/Services/Backup/QuasarBackupSettingsService.cs",
@@ -1032,7 +1032,7 @@
       "name": "KnownPlayerCatalog.cs",
       "kind": "class",
       "tier": 1,
-      "summary": "`KnownPlayerCatalog` accumulates and persists a historical record of every human player seen across all managed dedicated servers. It is updated from `AgentSnapshot` telemetry and from successful command outcomes (ban/unban/promote/demote), deduplicates by `{uniqueName}::{steamId}` key, prunes snapshot-reported hidden NPC/bot player ids, and saves to `known-players.json` with a 500 ms debounce."
+      "summary": "`KnownPlayerCatalog` accumulates and persists a historical record of every human player seen across all managed dedicated servers. It is updated from `AgentSnapshot` telemetry and from successful command outcomes (ban/unban/promote/demote), deduplicates by `{uniqueName}::{steamId}` key, prunes snapshot-reported hidden NPC/bot player ids, automatically removes records older than the configured retention window (default 30 days by `LastSeenUtc`), saves players to `known-players.json` with a 500 ms debounce, and persists retention settings in `known-player-settings.json`."
     },
     {
       "path": "Quasar/Services/ManagedDedicatedServerRuntimeResolver.cs",

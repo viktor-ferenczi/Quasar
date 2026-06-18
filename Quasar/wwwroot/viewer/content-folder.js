@@ -4,12 +4,18 @@ import { log } from "./logging.js";
 const DB_NAME = "quasar-viewer";
 const STORE_NAME = "handles";
 const HANDLE_KEY = "space-engineers-content";
+const LOOKUP_CONCURRENCY = 6;
+const METADATA_CONCURRENCY = 4;
+const KNOWN_FILE_EXTENSION = /\.(mwm|dds|png|jpe?g|webp)$/i;
 
 const resolvedPathCache = new Map();
-let childLookupCache = new WeakMap();
-let childMapCache = new WeakMap();
 const inFlightPathCache = new Map();
+const fileMetadataByCanonicalPath = new Map();
+const inFlightMetadataByCanonicalPath = new Map();
+let directoryNodesByLowerPath = new Map();
 let contentCacheGeneration = 0;
+const lookupQueue = createAsyncQueue(LOOKUP_CONCURRENCY);
+const metadataQueue = createAsyncQueue(METADATA_CONCURRENCY);
 
 export async function restoreContentFolder() {
     if (!window.indexedDB) return null;
@@ -45,20 +51,26 @@ export async function pickContentFolder() {
 }
 
 export async function looksLikeContentFolder(handle) {
-    return !!(await getChildDirectory(handle, "Data")) &&
-        !!(await getChildDirectory(handle, "Models")) &&
-        !!(await getChildDirectory(handle, "Textures"));
+    const root = createDirectoryNode("", handle);
+    return !!(await getChildDirectory(root, "Data")) &&
+        !!(await getChildDirectory(root, "Models")) &&
+        !!(await getChildDirectory(root, "Textures"));
 }
 
 export async function resolveContentFile(logicalPath) {
     if (!state.contentFolder || !logicalPath) return null;
     const normalized = normalizeLogicalPath(logicalPath);
+    if (!normalized) return null;
     const cacheKey = normalized.toLowerCase();
-    if (resolvedPathCache.has(cacheKey)) return resolvedPathCache.get(cacheKey);
+    if (resolvedPathCache.has(cacheKey)) {
+        addCacheCounter("pathCacheHit");
+        return resolvedPathCache.get(cacheKey);
+    }
     if (inFlightPathCache.has(cacheKey)) return await inFlightPathCache.get(cacheKey);
+    addCacheCounter("pathCacheMiss");
 
     const generation = contentCacheGeneration;
-    const promise = resolveContentFileUncached(normalized);
+    const promise = resolveContentFileUncached(normalized, generation);
     inFlightPathCache.set(cacheKey, promise);
     try {
         const resolved = await promise;
@@ -71,20 +83,33 @@ export async function resolveContentFile(logicalPath) {
 
 export function clearContentFolderCaches() {
     resolvedPathCache.clear();
-    childLookupCache = new WeakMap();
-    childMapCache = new WeakMap();
     inFlightPathCache.clear();
+    fileMetadataByCanonicalPath.clear();
+    inFlightMetadataByCanonicalPath.clear();
+    directoryNodesByLowerPath = new Map();
     contentCacheGeneration++;
 }
 
-async function resolveContentFileUncached(normalized) {
-    const hasKnownExtension = /\.(mwm|dds|png|jpe?g|webp)$/i.test(normalized);
+export function getContentFolderCacheGeneration() {
+    return contentCacheGeneration;
+}
+
+async function resolveContentFileUncached(normalized, generation) {
+    const hasKnownExtension = KNOWN_FILE_EXTENSION.test(normalized);
     const candidates = hasKnownExtension
         ? [normalized]
         : [`${normalized}.mwm`, normalized];
     for (const candidate of candidates) {
-        const file = await getFileByPath(state.contentFolder, candidate);
-        if (file) return { logicalPath: candidate, file };
+        const candidateKey = candidate.toLowerCase();
+        if (resolvedPathCache.has(candidateKey)) {
+            const cached = resolvedPathCache.get(candidateKey);
+            if (cached) return cached;
+            continue;
+        }
+
+        const resolved = await getFileByPath(candidate);
+        if (generation === contentCacheGeneration) resolvedPathCache.set(candidateKey, resolved);
+        if (resolved) return resolved;
     }
     return null;
 }
@@ -93,96 +118,241 @@ function normalizeLogicalPath(path) {
     let value = String(path || "").trim().replaceAll("\\", "/");
     while (value.startsWith("./")) value = value.slice(2);
     value = value.replace(/^Content\//i, "");
+    value = value.replace(/\/+/g, "/");
     return value;
 }
 
-async function getFileByPath(root, path) {
+async function getFileByPath(path) {
     const parts = path.split("/").filter(Boolean);
-    let current = root;
+    let current = getRootDirectoryNode();
     for (let i = 0; i < parts.length; i++) {
         const last = i === parts.length - 1;
-        if (last) return await getChildFile(current, parts[i]);
-        current = await getChildDirectory(current, parts[i]);
-        if (!current) return null;
+        if (last) return await getChildFile(current, parts[i], path);
+        const entry = await getChildDirectory(current, parts[i]);
+        if (!entry) return null;
+        current = entry.node;
     }
     return null;
 }
 
-async function getChildDirectory(handle, name) {
-    const child = await getChild(handle, name);
-    return child && child.kind === "directory" ? child : null;
+async function getChildDirectory(parent, name) {
+    return await getTypedChild(parent, name, "directory");
 }
 
-async function getChildFile(handle, name) {
-    const child = await getChild(handle, name);
-    if (!child || child.kind !== "file") return null;
-    return await child.getFile();
+async function getChildFile(parent, name, logicalPath) {
+    const child = await getTypedChild(parent, name, "file");
+    if (!child) return null;
+    const generation = contentCacheGeneration;
+    return {
+        logicalPath,
+        canonicalPath: child.canonicalPath,
+        fileHandle: child.handle,
+        getFile: () => getFileSnapshot(child.canonicalPath, child.handle, generation),
+    };
 }
 
-async function getChild(handle, name) {
+async function getTypedChild(parent, name, kind) {
     const wanted = name.toLowerCase();
-    const lookupCache = getChildLookupCache(handle);
-    if (lookupCache.has(wanted)) return await lookupCache.get(wanted);
+    const misses = kind === "file" ? parent.fileMisses : parent.directoryMisses;
+    if (misses.has(wanted)) {
+        addCacheCounter("negativeCacheHit");
+        return null;
+    }
 
-    const promise = getChildUncached(handle, name, wanted);
-    lookupCache.set(wanted, promise);
+    if (parent.childrenByLowerName) {
+        const entry = parent.childrenByLowerName.get(wanted) || null;
+        if (entry && entry.kind === kind) {
+            addCacheCounter("directoryCacheHit");
+            return entry;
+        }
+        misses.add(wanted);
+        addCacheCounter("negativeCacheHit");
+        return null;
+    }
+
+    const promiseKey = `${kind}:${wanted}`;
+    if (parent.childPromises.has(promiseKey)) return await parent.childPromises.get(promiseKey);
+
+    const promise = getTypedChildUncached(parent, name, wanted, kind);
+    parent.childPromises.set(promiseKey, promise);
     try {
         const child = await promise;
-        lookupCache.set(wanted, child);
+        if (!child) misses.add(wanted);
         return child;
     } catch (error) {
-        lookupCache.delete(wanted);
         throw error;
+    } finally {
+        parent.childPromises.delete(promiseKey);
     }
 }
 
-async function getChildUncached(handle, name, wanted) {
-    if (childMapCache.has(handle)) return (await childMapCache.get(handle)).get(wanted) || null;
-
+async function getTypedChildUncached(parent, name, wanted, kind) {
     try {
-        return await handle.getDirectoryHandle(name);
+        addCacheCounter(kind === "file" ? "exactFileProbe" : "exactDirectoryProbe");
+        const handle = await lookupQueue(() => kind === "file"
+            ? parent.handle.getFileHandle(name)
+            : parent.handle.getDirectoryHandle(name));
+        return createChildEntry(parent, name, kind, handle);
     } catch {
     }
-    try {
-        return await handle.getFileHandle(name);
-    } catch {
+
+    const childMap = await getLowercaseChildMap(parent);
+    const entry = childMap.get(wanted) || null;
+    if (entry && entry.kind === kind) {
+        if (entry.name !== name) addCacheCounter("caseFallbackHit");
+        return entry;
     }
-    return (await getLowercaseChildMap(handle)).get(wanted) || null;
+    return null;
 }
 
-function getChildLookupCache(handle) {
-    let cache = childLookupCache.get(handle);
-    if (!cache) {
-        cache = new Map();
-        childLookupCache.set(handle, cache);
-    }
-    return cache;
-}
+async function getLowercaseChildMap(parent) {
+    if (parent.childrenByLowerName) return parent.childrenByLowerName;
+    if (parent.enumerationPromise) return await parent.enumerationPromise;
 
-async function getLowercaseChildMap(handle) {
-    if (childMapCache.has(handle)) return await childMapCache.get(handle);
-
-    const promise = buildLowercaseChildMap(handle);
-    childMapCache.set(handle, promise);
+    const promise = buildLowercaseChildMap(parent);
+    parent.enumerationPromise = promise;
     try {
         const map = await promise;
-        childMapCache.set(handle, map);
+        parent.childrenByLowerName = map;
         return map;
     } catch (error) {
-        childMapCache.delete(handle);
         throw error;
+    } finally {
+        parent.enumerationPromise = null;
     }
 }
 
-async function buildLowercaseChildMap(handle) {
-    const map = new Map();
-    const lookupCache = getChildLookupCache(handle);
-    for await (const [entryName, entryHandle] of handle.entries()) {
-        const key = entryName.toLowerCase();
-        map.set(key, entryHandle);
-        lookupCache.set(key, entryHandle);
+async function buildLowercaseChildMap(parent) {
+    addCacheCounter("directoryEnumeration");
+    return await lookupQueue(async () => {
+        const map = new Map();
+        for await (const [entryName, entryHandle] of parent.handle.entries()) {
+            const key = entryName.toLowerCase();
+            map.set(key, createChildEntry(parent, entryName, entryHandle.kind, entryHandle));
+        }
+        return map;
+    });
+}
+
+function getRootDirectoryNode() {
+    const key = directoryNodeKey("", contentCacheGeneration);
+    let node = directoryNodesByLowerPath.get(key);
+    if (!node) {
+        node = createDirectoryNode("", state.contentFolder, contentCacheGeneration);
+        directoryNodesByLowerPath.set(key, node);
     }
-    return map;
+    return node;
+}
+
+function getDirectoryNode(canonicalPath, handle, generation) {
+    const key = directoryNodeKey(canonicalPath, generation);
+    let node = directoryNodesByLowerPath.get(key);
+    if (!node) {
+        node = createDirectoryNode(canonicalPath, handle, generation);
+        directoryNodesByLowerPath.set(key, node);
+    }
+    return node;
+}
+
+function createDirectoryNode(canonicalPath, handle, generation = contentCacheGeneration) {
+    return {
+        canonicalPath,
+        generation,
+        handle,
+        childrenByLowerName: null,
+        childPromises: new Map(),
+        fileMisses: new Set(),
+        directoryMisses: new Set(),
+        enumerationPromise: null,
+    };
+}
+
+function createChildEntry(parent, name, kind, handle) {
+    const canonicalPath = joinPath(parent.canonicalPath, name);
+    const entry = {
+        name,
+        lowerName: name.toLowerCase(),
+        kind,
+        handle,
+        canonicalPath,
+    };
+    if (kind === "directory") entry.node = getDirectoryNode(canonicalPath, handle, parent.generation);
+    return entry;
+}
+
+function directoryNodeKey(canonicalPath, generation) {
+    return `${generation}:${canonicalPath.toLowerCase()}`;
+}
+
+async function getFileSnapshot(canonicalPath, fileHandle, generation) {
+    const cacheKey = canonicalPath.toLowerCase();
+    if (generation === contentCacheGeneration && fileMetadataByCanonicalPath.has(cacheKey)) {
+        addCacheCounter("metadataCacheHit");
+        return fileMetadataByCanonicalPath.get(cacheKey);
+    }
+    if (generation === contentCacheGeneration && inFlightMetadataByCanonicalPath.has(cacheKey)) {
+        return await inFlightMetadataByCanonicalPath.get(cacheKey);
+    }
+
+    const promise = timedQueue(metadataQueue, "localFileMetadataRead", () => fileHandle.getFile());
+    if (generation === contentCacheGeneration) inFlightMetadataByCanonicalPath.set(cacheKey, promise);
+    try {
+        const file = await promise;
+        if (generation === contentCacheGeneration) fileMetadataByCanonicalPath.set(cacheKey, file);
+        return file;
+    } finally {
+        inFlightMetadataByCanonicalPath.delete(cacheKey);
+    }
+}
+
+function joinPath(parentPath, name) {
+    return parentPath ? `${parentPath}/${name}` : name;
+}
+
+async function timedQueue(queue, timingKey, operation) {
+    const start = performance.now();
+    try {
+        return await queue(operation);
+    } finally {
+        addTiming(timingKey, performance.now() - start);
+    }
+}
+
+function createAsyncQueue(limit) {
+    let active = 0;
+    const queued = [];
+
+    function runNext() {
+        while (active < limit && queued.length) {
+            const item = queued.shift();
+            active++;
+            Promise.resolve()
+                .then(item.operation)
+                .then(item.resolve, item.reject)
+                .finally(() => {
+                    active--;
+                    runNext();
+                });
+        }
+    }
+
+    return operation => new Promise((resolve, reject) => {
+        queued.push({ operation, resolve, reject });
+        runNext();
+    });
+}
+
+function addTiming(key, durationMs) {
+    const metric = state.timings[key] || { count: 0, totalMs: 0, maxMs: 0 };
+    metric.count++;
+    metric.totalMs += durationMs;
+    metric.maxMs = Math.max(metric.maxMs, durationMs);
+    state.timings[key] = metric;
+}
+
+function addCacheCounter(key) {
+    const label = key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/^./, value => value.toUpperCase());
+    state.stats[label] = (state.stats[label] || 0) + 1;
 }
 
 async function ensurePermission(handle, request) {

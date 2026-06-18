@@ -17,4 +17,4 @@ Small in-page log buffer for the standalone grid viewer. It retains the latest 5
 - Browser `Blob`, object URL, and animation-frame APIs.
 
 ## Notes
-Successful texture-load chatter is kept out of this DOM log by default; warnings and fallbacks remain visible and downloadable.
+Successful texture-load chatter is kept out of this DOM log by default; warnings and fallbacks remain visible and downloadable. Detailed path-cache diagnostics and path/metadata/byte-read timings are exposed through the viewer stats panel rather than this retained text log.

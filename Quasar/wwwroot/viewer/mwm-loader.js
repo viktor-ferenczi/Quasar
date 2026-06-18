@@ -34,12 +34,14 @@ export async function resolveModelAsset(asset) {
     const resolved = await timed("modelFileResolution", () => resolveContentFile(asset.logicalPath));
     if (!resolved) return { status: "missing", message: `Missing local model: ${asset.logicalPath}` };
 
+    let file = null;
     try {
-        const model = await parseResolvedModel(resolved, new Set());
+        file = await resolved.getFile();
+        const model = await parseResolvedModel(resolved, file, new Set());
         return {
             status: "parsed",
             logicalPath: resolved.logicalPath,
-            byteLength: resolved.file.size,
+            byteLength: file.size,
             model,
             message: `Parsed ${asset.logicalPath} locally (${model.vertexCount.toLocaleString()} vertices, ${model.triangleCount.toLocaleString()} triangles).`,
         };
@@ -47,18 +49,18 @@ export async function resolveModelAsset(asset) {
         return {
             status: "proxy",
             logicalPath: resolved.logicalPath,
-            byteLength: resolved.file.size,
-            message: `Resolved ${asset.logicalPath} locally (${resolved.file.size} bytes), but MWM parsing failed: ${error.message}. Rendering proxy geometry.`,
+            byteLength: file ? file.size : 0,
+            message: `Resolved ${asset.logicalPath} locally (${file ? file.size : 0} bytes), but MWM parsing failed: ${error.message}. Rendering proxy geometry.`,
         };
     }
 }
 
-async function parseResolvedModel(resolved, stack) {
-    const cacheKey = `${resolved.logicalPath.toLowerCase()}|${resolved.file.size}|${resolved.file.lastModified || 0}`;
+async function parseResolvedModel(resolved, file, stack) {
+    const cacheKey = `${resolved.logicalPath.toLowerCase()}|${file.size}|${file.lastModified || 0}`;
     if (modelCache.has(cacheKey)) return modelCache.get(cacheKey);
     if (stack.has(resolved.logicalPath.toLowerCase())) throw new Error(`recursive GeometryDataAsset reference: ${resolved.logicalPath}`);
 
-    const promise = parseResolvedModelUncached(resolved, stack);
+    const promise = parseResolvedModelUncached(resolved, file, stack);
     modelCache.set(cacheKey, promise);
     try {
         return await promise;
@@ -68,10 +70,10 @@ async function parseResolvedModel(resolved, stack) {
     }
 }
 
-async function parseResolvedModelUncached(resolved, stack) {
+async function parseResolvedModelUncached(resolved, file, stack) {
     stack.add(resolved.logicalPath.toLowerCase());
     try {
-        const buffer = await timed("mwmFileRead", () => resolved.file.arrayBuffer());
+        const buffer = await timed("mwmFileRead", () => file.arrayBuffer());
         const parseStart = performance.now();
         const reader = new MwmReader(buffer);
         const tags = reader.readTagIndex();
@@ -79,7 +81,8 @@ async function parseResolvedModelUncached(resolved, stack) {
         if (!tags.has("Vertices") && geometryAsset) {
             const geometryResolved = await resolveContentFile(geometryAsset);
             if (!geometryResolved) throw new Error(`missing geometry asset ${geometryAsset}`);
-            const model = await parseResolvedModel(geometryResolved, stack);
+            const geometryFile = await geometryResolved.getFile();
+            const model = await parseResolvedModel(geometryResolved, geometryFile, stack);
             return { ...model, logicalPath: resolved.logicalPath, geometryLogicalPath: geometryResolved.logicalPath };
         }
 

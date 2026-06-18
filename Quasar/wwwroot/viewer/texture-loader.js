@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { resolveContentFile } from "./content-folder.js";
+import { getContentFolderCacheGeneration, resolveContentFile } from "./content-folder.js";
 import { state } from "./state.js";
 
 const MAX_CONCURRENT_TEXTURE_RESOLVES = 24;
@@ -8,6 +8,9 @@ const MAX_CONCURRENT_TEXTURE_UPLOADS = 4;
 const resolveQueue = createAsyncQueue(MAX_CONCURRENT_TEXTURE_RESOLVES);
 const readQueue = createAsyncQueue(MAX_CONCURRENT_TEXTURE_READS);
 const uploadQueue = createAsyncQueue(MAX_CONCURRENT_TEXTURE_UPLOADS);
+const resolvedTexturePathCache = new Map();
+const inFlightTexturePathCache = new Map();
+let texturePathCacheGeneration = -1;
 
 export async function resolveTextureAsset(asset) {
     if (!asset || !asset.logicalPath) return null;
@@ -37,10 +40,11 @@ async function loadTextureUncoalesced(logicalPath, slot, colorSpaceKey) {
         throw error;
     }
 
-    const cacheKey = `${resolved.logicalPath.toLowerCase()}|${resolved.file.size}|${resolved.file.lastModified || 0}|${colorSpaceKey}`;
+    const file = await resolved.getFile();
+    const cacheKey = `${resolved.logicalPath.toLowerCase()}|${file.size}|${file.lastModified || 0}|${colorSpaceKey}`;
     if (state.textureCache.has(cacheKey)) return await state.textureCache.get(cacheKey);
 
-    const promise = loadResolvedTexture(resolved, slot);
+    const promise = loadResolvedTexture(resolved, file, slot);
     state.textureCache.set(cacheKey, promise);
     try {
         const texture = await promise;
@@ -55,26 +59,51 @@ async function loadTextureUncoalesced(logicalPath, slot, colorSpaceKey) {
 export async function resolveTextureFile(logicalPath) {
     const path = String(logicalPath || "").trim();
     if (!path) return null;
+    const generation = ensureTexturePathCacheGeneration();
+    const cacheKey = normalizeTextureKey(path);
+    if (resolvedTexturePathCache.has(cacheKey)) return resolvedTexturePathCache.get(cacheKey);
+    if (inFlightTexturePathCache.has(cacheKey)) return await inFlightTexturePathCache.get(cacheKey);
+
+    const promise = resolveTextureFileUncached(path, generation);
+    inFlightTexturePathCache.set(cacheKey, promise);
+    try {
+        const resolved = await promise;
+        if (generation === texturePathCacheGeneration) resolvedTexturePathCache.set(cacheKey, resolved);
+        return resolved;
+    } finally {
+        inFlightTexturePathCache.delete(cacheKey);
+    }
+}
+
+async function resolveTextureFileUncached(path, generation) {
     const hasExtension = /\.[a-z0-9]+$/i.test(path);
     const candidates = hasExtension ? [path] : [`${path}.dds`, `${path}.png`, `${path}.jpg`, `${path}.jpeg`, `${path}.webp`, path];
     for (const candidate of candidates) {
+        const candidateKey = normalizeTextureKey(candidate);
+        if (resolvedTexturePathCache.has(candidateKey)) {
+            const cached = resolvedTexturePathCache.get(candidateKey);
+            if (cached) return cached;
+            continue;
+        }
+
         const resolved = await resolveContentFile(candidate);
+        if (generation === texturePathCacheGeneration) resolvedTexturePathCache.set(candidateKey, resolved);
         if (resolved) return resolved;
     }
     return null;
 }
 
-async function loadResolvedTexture(resolved, slot) {
+async function loadResolvedTexture(resolved, file, slot) {
     const lower = resolved.logicalPath.toLowerCase();
     const texture = lower.endsWith(".dds")
-        ? await loadDdsTexture(resolved, slot)
-        : await loadBrowserImageTexture(resolved, slot);
+        ? await loadDdsTexture(resolved, file, slot)
+        : await loadBrowserImageTexture(file);
     configureTexture(texture, resolved.logicalPath, slot);
     return texture;
 }
 
-async function loadBrowserImageTexture(resolved, slot) {
-    const objectUrl = URL.createObjectURL(resolved.file);
+async function loadBrowserImageTexture(file) {
+    const objectUrl = URL.createObjectURL(file);
     try {
         return await new Promise((resolve, reject) => {
             new THREE.TextureLoader().load(objectUrl, resolve, undefined, reject);
@@ -84,8 +113,8 @@ async function loadBrowserImageTexture(resolved, slot) {
     }
 }
 
-async function loadDdsTexture(resolved, slot) {
-    const buffer = await timedQueue(readQueue, "ddsFileRead", () => resolved.file.arrayBuffer());
+async function loadDdsTexture(resolved, file, slot) {
+    const buffer = await timedQueue(readQueue, "ddsFileRead", () => file.arrayBuffer());
     const parseStart = performance.now();
     const info = readDdsInfo(buffer, resolved.logicalPath);
     const texture = createCompressedDdsTexture(parseDdsMipmaps(buffer, info), resolved.logicalPath, info);
@@ -240,6 +269,16 @@ function isNonColorTexture(logicalPath, slot) {
 
 function normalizeTextureKey(logicalPath) {
     return String(logicalPath || "").trim().replaceAll("\\", "/").toLowerCase();
+}
+
+function ensureTexturePathCacheGeneration() {
+    const generation = getContentFolderCacheGeneration();
+    if (generation !== texturePathCacheGeneration) {
+        resolvedTexturePathCache.clear();
+        inFlightTexturePathCache.clear();
+        texturePathCacheGeneration = generation;
+    }
+    return generation;
 }
 
 function createAsyncQueue(limit) {

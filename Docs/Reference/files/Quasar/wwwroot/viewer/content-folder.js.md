@@ -3,7 +3,7 @@
 **Module:** Quasar.Host  **Kind:** JS  **Tier:** 3
 
 ## Summary
-Browser File System Access helper for the grid viewer's local Space Engineers `Content` folder. It restores or stores the selected folder handle in IndexedDB, validates the expected `Data`, `Models`, and `Textures` directories, resolves logical asset paths case-insensitively, and keeps in-memory path/directory/child-handle caches for the active folder.
+Browser File System Access helper for the grid viewer's local Space Engineers `Content` folder. It restores or stores the selected folder handle in IndexedDB, validates the expected `Data`, `Models`, and `Textures` directories, resolves logical asset paths through a lazy case-insensitive path cache, and separates path lookup from `getFile()` metadata snapshots.
 
 ## Structure
 
@@ -12,8 +12,9 @@ Browser File System Access helper for the grid viewer's local Space Engineers `C
 | `restoreContentFolder()` | Loads the persisted directory handle and reuses it when read permission is already granted. |
 | `pickContentFolder()` | Opens `showDirectoryPicker`, validates the selection, stores the handle, and clears asset caches. |
 | `looksLikeContentFolder(handle)` | Checks for the top-level directories expected in an SE `Content` folder. |
-| `resolveContentFile(logicalPath)` | Normalizes a logical asset path, tries known extension candidates, and returns `{ logicalPath, file }` or `null`. |
+| `resolveContentFile(logicalPath)` | Normalizes a logical asset path, tries known extension candidates, and returns `{ logicalPath, canonicalPath, fileHandle, getFile }` or `null`. |
 | `clearContentFolderCaches()` | Clears resolved path, miss, in-flight lookup, and lowercase directory-entry caches. |
+| `getContentFolderCacheGeneration()` | Returns the active Content-cache generation for dependent candidate caches. |
 
 ## Dependencies
 - [`Quasar/wwwroot/viewer/state.js`](state.js.md) for selected folder state and texture cache reset.
@@ -21,4 +22,6 @@ Browser File System Access helper for the grid viewer's local Space Engineers `C
 - Browser File System Access API and IndexedDB.
 
 ## Notes
-Case-insensitive fallback enumerates directory entries only once per `FileSystemDirectoryHandle` and caches the lowercase map in a `WeakMap`. Child handle lookups are also coalesced per directory/name so concurrent model resolutions share common path segments like `Models` and `Cubes`. Once a lowercase map exists, later child lookups use it before exact-case File System Access calls so repeated model/texture resolutions do not keep paying for failed case-sensitive probes. Caches are intentionally in-memory and are cleared when the active Content folder changes.
+Path resolution uses typed child lookups: intermediate segments call `getDirectoryHandle()` only, final segments call `getFileHandle()` only, and case-insensitive fallback enumerates a directory only after an exact typed lookup misses. Directory nodes preserve canonical casing, cache lowercase child maps, coalesce in-flight child lookups, and remember negative file/directory misses so repeated bad candidates avoid filesystem calls.
+
+Resolved path hits and misses are cached by slash-normalized lowercase path. The returned `getFile()` function defers browser metadata snapshots until a loader needs size, mtime, or bytes, then caches the `File` by canonical path with a separate metadata queue. The stats panel receives cache diagnostics for path hits/misses, exact probes, directory enumeration, case fallback, negative-cache hits, and metadata-cache hits. Caches are intentionally in-memory and are cleared when the active Content folder changes.

@@ -8,7 +8,6 @@ const SMALL_GRID_CUBE_SIZE = 0.5;
 const LARGE_GRID_CUBE_SIZE = 2.5;
 const FLOOR_GRID_DEFAULT_SIZE = 240;
 const FLOOR_GRID_PADDING_SUPERSQUARES = 2;
-const FLOOR_GRID_MAX_MINOR_CELLS_PER_AXIS = 20000;
 const FLY_MOUSE_SENSITIVITY = 0.0022;
 const FLY_BASE_SPEED = 18;
 const FLY_FAST_MULTIPLIER = 3;
@@ -99,14 +98,6 @@ function createFloorGrid(bounds, gridSize) {
     const majorColor = colorComponents(0x2563eb);
     const axisColor = colorComponents(0x6ee7f9);
     const majorEveryCells = Math.max(1, Math.round(layout.majorStep / SMALL_GRID_CUBE_SIZE));
-    const xCellCount = layout.endXCell - layout.startXCell;
-    const zCellCount = layout.endZCell - layout.startZCell;
-    const drawMinor = xCellCount <= FLOOR_GRID_MAX_MINOR_CELLS_PER_AXIS && zCellCount <= FLOOR_GRID_MAX_MINOR_CELLS_PER_AXIS;
-    const fallbackEveryCells = Math.max(
-        majorEveryCells,
-        Math.ceil(Math.max(xCellCount, zCellCount) / FLOOR_GRID_MAX_MINOR_CELLS_PER_AXIS)
-    );
-    const coarseEveryCells = Math.ceil(fallbackEveryCells / majorEveryCells) * majorEveryCells;
 
     appendFloorGridLines({
         positions,
@@ -117,9 +108,7 @@ function createFloorGrid(bounds, gridSize) {
         rangeEnd: layout.endZCell * SMALL_GRID_CUBE_SIZE - layout.originZ,
         origin: layout.originX,
         axis: "x",
-        drawMinor,
         majorEveryCells,
-        coarseEveryCells,
         minorColor,
         majorColor,
         axisColor,
@@ -133,9 +122,7 @@ function createFloorGrid(bounds, gridSize) {
         rangeEnd: layout.endXCell * SMALL_GRID_CUBE_SIZE - layout.originX,
         origin: layout.originZ,
         axis: "z",
-        drawMinor,
         majorEveryCells,
-        coarseEveryCells,
         minorColor,
         majorColor,
         axisColor,
@@ -189,9 +176,7 @@ function floorGridCells(minX, maxX, minZ, maxZ, y, majorStep) {
 }
 
 function appendFloorGridLines(options) {
-    const step = options.drawMinor ? 1 : options.coarseEveryCells;
-    const firstCell = Math.ceil(options.startCell / step) * step;
-    for (let cell = firstCell; cell <= options.endCell; cell += step) {
+    for (let cell = options.startCell; cell <= options.endCell; cell++) {
         const coordinate = cell * SMALL_GRID_CUBE_SIZE - options.origin;
         const isAxis = cell === 0;
         const isMajor = cell % options.majorEveryCells === 0;

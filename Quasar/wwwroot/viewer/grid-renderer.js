@@ -750,47 +750,94 @@ function flushProxyBatches(layer, proxyBatches) {
     const rotation = new THREE.Quaternion();
 
     for (const batch of proxyBatches.values()) {
-        const solid = createProxyBatchMesh(geometry, batch, false);
-        const wire = createProxyBatchMesh(geometry, batch, true);
-        layer.add(solid, wire);
+        const solid = createProxyBatchMesh(geometry, batch);
+        const edges = createProxyEdgeBatch(batch);
+        layer.add(solid, edges);
 
         for (let i = 0; i < batch.instances.length; i++) {
             const instance = batch.instances[i];
             matrix.compose(instance.center, rotation, instance.size);
             solid.setMatrixAt(i, matrix);
-            wire.setMatrixAt(i, matrix);
             solid.setColorAt(i, instance.color);
             solid.userData.blocks.push(instance.block);
-            wire.userData.blocks.push(instance.block);
         }
 
         solid.instanceMatrix.needsUpdate = true;
-        wire.instanceMatrix.needsUpdate = true;
         if (solid.instanceColor) solid.instanceColor.needsUpdate = true;
         if (typeof solid.computeBoundingBox === "function") solid.computeBoundingBox();
         if (typeof solid.computeBoundingSphere === "function") solid.computeBoundingSphere();
-        if (typeof wire.computeBoundingBox === "function") wire.computeBoundingBox();
-        if (typeof wire.computeBoundingSphere === "function") wire.computeBoundingSphere();
     }
 }
 
-function createProxyBatchMesh(geometry, batch, wireframe) {
-    const material = wireframe
-        ? new THREE.MeshBasicMaterial({ color: 0x93c5fd, wireframe: true, transparent: true, opacity: 0.68, depthWrite: false })
-        : new THREE.MeshStandardMaterial({
-            color: 0xffffff,
-            roughness: 0.78,
-            metalness: 0.12,
-            vertexColors: true,
-            transparent: batch.opacity < 1,
-            opacity: batch.opacity,
-        });
+function createProxyBatchMesh(geometry, batch) {
+    const material = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        roughness: 0.78,
+        metalness: 0.12,
+        transparent: batch.opacity < 1,
+        opacity: batch.opacity,
+    });
     const mesh = new THREE.InstancedMesh(geometry, material, batch.instances.length);
-    mesh.name = wireframe ? `ProxyWireBatch:${batch.opacity}` : `ProxyBatch:${batch.opacity}`;
+    mesh.name = `ProxyBatch:${batch.opacity}`;
     mesh.matrixAutoUpdate = false;
     mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
     mesh.userData.blocks = [];
     return mesh;
+}
+
+function createProxyEdgeBatch(batch) {
+    const geometry = createProxyEdgeGeometry(batch.instances);
+    const material = new THREE.LineBasicMaterial({ color: 0x93c5fd, transparent: true, opacity: 0.75 });
+    const edges = new THREE.LineSegments(geometry, material);
+    edges.name = `ProxyEdgeBatch:${batch.opacity}`;
+    edges.matrixAutoUpdate = false;
+    return edges;
+}
+
+function createProxyEdgeGeometry(instances) {
+    const positions = new Float32Array(instances.length * 12 * 2 * 3);
+    let offset = 0;
+    for (const instance of instances) offset = writeProxyEdges(positions, offset, instance.center, instance.size);
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.computeBoundingSphere();
+    return geometry;
+}
+
+function writeProxyEdges(positions, offset, center, size) {
+    const hx = size.x / 2;
+    const hy = size.y / 2;
+    const hz = size.z / 2;
+    const x0 = center.x - hx;
+    const x1 = center.x + hx;
+    const y0 = center.y - hy;
+    const y1 = center.y + hy;
+    const z0 = center.z - hz;
+    const z1 = center.z + hz;
+
+    offset = writeProxyEdge(positions, offset, x0, y0, z0, x1, y0, z0);
+    offset = writeProxyEdge(positions, offset, x1, y0, z0, x1, y1, z0);
+    offset = writeProxyEdge(positions, offset, x1, y1, z0, x0, y1, z0);
+    offset = writeProxyEdge(positions, offset, x0, y1, z0, x0, y0, z0);
+    offset = writeProxyEdge(positions, offset, x0, y0, z1, x1, y0, z1);
+    offset = writeProxyEdge(positions, offset, x1, y0, z1, x1, y1, z1);
+    offset = writeProxyEdge(positions, offset, x1, y1, z1, x0, y1, z1);
+    offset = writeProxyEdge(positions, offset, x0, y1, z1, x0, y0, z1);
+    offset = writeProxyEdge(positions, offset, x0, y0, z0, x0, y0, z1);
+    offset = writeProxyEdge(positions, offset, x1, y0, z0, x1, y0, z1);
+    offset = writeProxyEdge(positions, offset, x1, y1, z0, x1, y1, z1);
+    return writeProxyEdge(positions, offset, x0, y1, z0, x0, y1, z1);
+}
+
+function writeProxyEdge(positions, offset, x0, y0, z0, x1, y1, z1) {
+    positions[offset++] = x0;
+    positions[offset++] = y0;
+    positions[offset++] = z0;
+    positions[offset++] = x1;
+    positions[offset++] = y1;
+    positions[offset++] = z1;
+    return offset;
 }
 
 function proxyOpacity(definition) {

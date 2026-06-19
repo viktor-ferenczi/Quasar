@@ -18,7 +18,7 @@ const lookupQueue = createAsyncQueue(LOOKUP_CONCURRENCY);
 const metadataQueue = createAsyncQueue(METADATA_CONCURRENCY);
 
 export async function restoreContentFolder() {
-    if (!window.indexedDB) return null;
+    if (!window.indexedDB || !window.showDirectoryPicker) return null;
     const handle = await readHandle();
     if (!handle) return null;
     if (await ensurePermission(handle, false)) {
@@ -33,21 +33,38 @@ export async function restoreContentFolder() {
 }
 
 export async function pickContentFolder() {
-    if (!window.showDirectoryPicker) {
-        throw new Error("This browser does not support folder selection. Use a Chromium-based browser for local Content loading.");
-    }
+    if (!window.showDirectoryPicker) return await pickContentFolderFromFileList();
     const handle = await window.showDirectoryPicker({ id: "space-engineers-content", mode: "read" });
     if (!(await looksLikeContentFolder(handle))) {
         throw new Error("Selected folder does not look like a Space Engineers Content folder. Pick the folder containing Data, Models, and Textures.");
     }
-    state.contentFolder = handle;
-    state.contentFolderName = handle.name || "Content";
-    state.textureCache.clear();
-    state.textureLoadPromises.clear();
-    clearContentFolderCaches();
+    activateContentFolder(handle, handle.name || "Content");
     await writeHandle(handle);
     log(`Selected local Content folder: ${state.contentFolderName}`);
     return handle;
+}
+
+async function pickContentFolderFromFileList() {
+    const files = await selectContentFolderFiles();
+    if (!files) throw createAbortError("Content folder selection cancelled.");
+    if (!files.length) throw new Error("Selected folder does not contain any files.");
+
+    const handle = createFileListDirectoryHandle(files);
+    if (!(await looksLikeContentFolder(handle))) {
+        throw new Error("Selected folder does not look like a Space Engineers Content folder. Pick the folder containing Data, Models, and Textures.");
+    }
+
+    activateContentFolder(handle, handle.name || "Content");
+    log(`Selected local Content folder: ${state.contentFolderName} (${files.length.toLocaleString()} files).`);
+    return handle;
+}
+
+function activateContentFolder(handle, name) {
+    state.contentFolder = handle;
+    state.contentFolderName = name;
+    state.textureCache.clear();
+    state.textureLoadPromises.clear();
+    clearContentFolderCaches();
 }
 
 export async function looksLikeContentFolder(handle) {
@@ -55,6 +72,118 @@ export async function looksLikeContentFolder(handle) {
     return !!(await getChildDirectory(root, "Data")) &&
         !!(await getChildDirectory(root, "Models")) &&
         !!(await getChildDirectory(root, "Textures"));
+}
+
+function selectContentFolderFiles() {
+    return new Promise(resolve => {
+        const input = document.getElementById("folderPicker") || createFolderPickerInput();
+        input.value = "";
+        input.type = "file";
+        input.multiple = true;
+        input.webkitdirectory = true;
+        input.setAttribute("webkitdirectory", "");
+        input.setAttribute("directory", "");
+
+        let done = false;
+        const finish = files => {
+            if (done) return;
+            done = true;
+            input.removeEventListener("change", handleChange);
+            input.removeEventListener("cancel", handleCancel);
+            if (!input.id) input.remove();
+            resolve(files);
+        };
+        const handleChange = () => finish(Array.from(input.files || []));
+        const handleCancel = () => finish(null);
+
+        input.addEventListener("change", handleChange);
+        input.addEventListener("cancel", handleCancel);
+        if (!input.isConnected) document.body.appendChild(input);
+        input.click();
+    });
+}
+
+function createFolderPickerInput() {
+    const input = document.createElement("input");
+    input.hidden = true;
+    return input;
+}
+
+function createFileListDirectoryHandle(files) {
+    const root = createVirtualDirectoryHandle(fileListRootName(files));
+    for (const file of files) {
+        const parts = fileListRelativeParts(file);
+        if (parts.length < 2) continue;
+
+        let directory = root;
+        for (let i = 1; i < parts.length - 1; i++) {
+            directory = getOrCreateVirtualDirectory(directory, parts[i]);
+        }
+        directory.children.set(parts[parts.length - 1], createVirtualFileHandle(parts[parts.length - 1], file));
+    }
+    return root;
+}
+
+function fileListRootName(files) {
+    const firstPath = fileListRelativePath(files[0] || null);
+    const firstPart = firstPath.split("/").filter(Boolean)[0];
+    return firstPart || "Content";
+}
+
+function fileListRelativeParts(file) {
+    return fileListRelativePath(file).split("/").filter(Boolean);
+}
+
+function fileListRelativePath(file) {
+    return String(file && (file.webkitRelativePath || file.relativePath || file.name) || "").replaceAll("\\", "/");
+}
+
+function getOrCreateVirtualDirectory(parent, name) {
+    let child = parent.children.get(name);
+    if (!child || child.kind !== "directory") {
+        child = createVirtualDirectoryHandle(name);
+        parent.children.set(name, child);
+    }
+    return child;
+}
+
+function createVirtualDirectoryHandle(name) {
+    const handle = {
+        kind: "directory",
+        name,
+        children: new Map(),
+        async getDirectoryHandle(childName) {
+            const child = handle.children.get(childName);
+            if (!child || child.kind !== "directory") throw new Error(`Directory not found: ${childName}`);
+            return child;
+        },
+        async getFileHandle(childName) {
+            const child = handle.children.get(childName);
+            if (!child || child.kind !== "file") throw new Error(`File not found: ${childName}`);
+            return child;
+        },
+        async *entries() {
+            for (const entry of handle.children) yield entry;
+        },
+    };
+    return handle;
+}
+
+function createVirtualFileHandle(name, file) {
+    return {
+        kind: "file",
+        name,
+        async getFile() {
+            return file;
+        },
+    };
+}
+
+function createAbortError(message) {
+    if (typeof DOMException === "function") return new DOMException(message, "AbortError");
+    const error = new Error(message);
+    error.name = "AbortError";
+    return error;
 }
 
 export async function resolveContentFile(logicalPath) {

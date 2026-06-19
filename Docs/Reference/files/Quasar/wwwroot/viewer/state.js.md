@@ -3,7 +3,7 @@
 **Module:** Quasar.Host  **Kind:** JS  **Tier:** 3
 
 ## Summary
-Shared mutable runtime state and DOM-element cache for the standalone grid viewer ES modules. It centralizes Three.js objects, camera/fly-mode state, current scene/bounds, local Content folder handles, model/texture caches, progressive texture stats, timing counters, and displayed stats.
+Shared mutable runtime state and DOM-element cache for the standalone grid viewer ES modules. It centralizes Three.js objects, camera/fly-mode state, current scene/bounds, local Content folder handles or folder-input adapters, model/texture caches, progressive texture stats, timing counters, and displayed stats.
 
 ## Structure
 

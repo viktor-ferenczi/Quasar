@@ -37,7 +37,9 @@ The endpoint must not return:
 
 The browser asks the user to select their local Space Engineers `Content` folder. The folder should contain `Data`, `Models`, and `Textures` directories.
 
-The viewer resolves logical model and texture paths case-insensitively where the browser file-system API permits it. The selected folder handle is stored in browser storage when supported, so the viewer can reuse it on later visits after permission is granted.
+On Chromium browsers, the viewer uses the File System Access API (`showDirectoryPicker`) and keeps the selected folder handle in browser storage when supported, so the viewer can reuse it on later visits after permission is granted. On Firefox, which does not support `showDirectoryPicker`, the viewer falls back to a browser folder input (`webkitdirectory`) and builds an in-memory view of the selected files. Firefox users must select the Content folder again after a page reload.
+
+The viewer resolves logical model and texture paths case-insensitively where the selected browser file API permits it.
 
 ## Current Rendering Behavior
 
@@ -71,7 +73,7 @@ The `Show sun` toggle controls the directional sun light and marker. When enable
 
 The stats panel also includes live WebGL and viewport counters such as draw calls, triangles, lines, points, GPU geometries/textures, shader programs, renderables, visible objects, culled objects, meshes, sprites, and lights.
 
-Missing or unparseable local models and missing or unloadable textures are non-fatal. The viewer logs warnings and keeps the scene visible with proxy boxes and generated fallback materials where needed. Local Content lookups are cached in memory for the current selected folder, including resolved paths, misses, in-flight full-path lookups, typed directory/file child lookups, and case-insensitive directory entry maps. Intermediate path segments only probe directories and final path segments only probe files, avoiding slow wrong-kind probes such as treating `.mwm` filenames as directories. `getFile()` metadata snapshots are deferred until size, mtime, or bytes are needed and are cached separately by canonical path. Once a directory has been enumerated, later child lookups use the cached lowercase map first to avoid repeated expensive failed exact-case probes. Cache diagnostics in the stats panel include path hits/misses, exact probes, enumerations, case-fallback hits, negative-cache hits, and metadata-cache hits. The caches are cleared when a different Content folder is selected or restored.
+Missing or unparseable local models and missing or unloadable textures are non-fatal. The viewer logs warnings and keeps the scene visible with proxy boxes and generated fallback materials where needed. Local Content lookups are cached in memory for the current selected folder, including resolved paths, misses, in-flight full-path lookups, typed directory/file child lookups, and case-insensitive directory entry maps. Intermediate path segments only probe directories and final path segments only probe files, avoiding slow wrong-kind probes such as treating `.mwm` filenames as directories. `getFile()` metadata snapshots are deferred until size, mtime, or bytes are needed and are cached separately by canonical path. Once a directory has been enumerated, later child lookups use the cached lowercase map first to avoid repeated expensive failed exact-case probes. Firefox's folder-input fallback feeds the same cache through virtual directory/file handles backed by the selected `File` objects. Cache diagnostics in the stats panel include path hits/misses, exact probes, enumerations, case-fallback hits, negative-cache hits, and metadata-cache hits. The caches are cleared when a different Content folder is selected or restored.
 
 ## Mods
 

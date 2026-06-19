@@ -57,6 +57,7 @@ async function selectContentFolder() {
         updateContentStatus(`Using Content folder: ${handle.name || "Content"}`);
         if (state.lastScene) await renderGridScene(state.lastScene);
     } catch (error) {
+        if (error.name === "AbortError") return;
         updateContentStatus(error.message, true);
         log(error.message, true);
     } finally {

@@ -175,10 +175,10 @@ h1:focus {
 }
 
 .installed-world-template-action-cell {
-    width: 5.5rem;
-    min-width: 5.5rem;
-    max-width: 5.5rem;
-    text-align: right;
+    width: 3rem;
+    min-width: 3rem;
+    max-width: 3rem;
+    text-align: left;
     white-space: nowrap;
 }
 
@@ -326,6 +326,21 @@ h1:focus {
 
 .servers-list-table .mud-table-root {
     min-width: 72rem;
+}
+
+.table-pack,
+.table-actions {
+    width: 1px;
+    white-space: nowrap;
+}
+
+.table-actions {
+    text-align: left;
+}
+
+.table-grow {
+    width: 100%;
+    min-width: 14rem;
 }
 
 .players-list-card,

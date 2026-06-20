@@ -210,7 +210,7 @@
       "name": "AdminPlugin.cs",
       "kind": "class",
       "tier": 1,
-      "summary": "`AdminPlugin` is the Magnetar `IPlugin` entry point for the Quasar agent that runs inside the Space Engineers dedicated server. On `Init` it reads `AgentOptions`, configures and applies profiler Harmony patches, builds the `GameBridge`, starts a `PluginLogOutbox` (begun before the connection so startup log lines are buffered), and starts an `AgentConnection`. It drives the game-thread snapshot/profiler refresh on each `Update`, and handles two lifetime events: player death (forwarded as a `DeathEventSnapshot`) and server termination (sends an `AdminStop` signal to Quasar when the shutdown was admin-initiated, not Quasar-requested)."
+      "summary": "`AdminPlugin` is the Magnetar `IPlugin` entry point for the Quasar agent that runs inside the Space Engineers dedicated server. On `Init` it reads `AgentOptions`, configures and applies profiler Harmony patches, builds the `GameBridge`, starts a `PluginLogOutbox` (begun before the connection so startup log lines are buffered), and starts an `AgentConnection`. It drives the game-thread snapshot/profiler refresh on each `Update`, refreshes per-character death subscriptions so respawned players are re-hooked, and handles server termination by sending an `AdminStop` signal to Quasar when shutdown was admin-initiated."
     },
     {
       "path": "Quasar.Agent/AgentConnection.cs",
@@ -333,7 +333,7 @@
       "name": "ServerDetailPanel.razor",
       "kind": "Blazor component",
       "tier": 2,
-      "summary": "Detail panel embedded inside `ServerCard`. When the agent snapshot is absent it shows a waiting/error message and basic process state chips. When a snapshot is present it renders live metrics chips, Refresh/Save buttons, a chat broadcast field, a players table with per-player action menus (kick/ban confirm first; set role sends directly), a recent-chat list, and recent command results. Server-authored chat (`IsServerMessage`, SteamId 0, `Good.bot`, or `Server`) is displayed as `Server`. In both the snapshot-present and snapshot-absent states, an outlined \"Affinity <value>\" chip (Memory icon) is shown in the metrics chip rows when `Server.CpuAffinity` is set, and mod-download failures captured from runtime output are shown as an explicit error alert."
+      "summary": "Detail panel embedded inside `ServerCard`. When the agent snapshot is absent it shows a waiting/error message and basic process state chips. When a snapshot is present it renders live metrics chips, Refresh/Save buttons, a chat broadcast field, a players table with action menus and packed Steam/service/role columns before the growing player-name column, a recent-chat list, and recent command results. Server-authored chat (`IsServerMessage`, SteamId 0, `Good.bot`, or `Server`) is displayed as `Server`. In both the snapshot-present and snapshot-absent states, an outlined \"Affinity <value>\" chip (Memory icon) is shown in the metrics chip rows when `Server.CpuAffinity` is set, and mod-download failures captured from runtime output are shown as an explicit error alert."
     },
     {
       "path": "Quasar/Components/Layout/BrandingHeadContent.razor",
@@ -515,7 +515,7 @@
       "name": "FolderPickerDialog.razor",
       "kind": "Blazor component",
       "tier": 2,
-      "summary": "General-purpose server-side folder browser dialog. Renders a navigable directory tree with breadcrumb navigation, bookmark shortcut chips, caller-supplied shortcut chips, hidden-folder toggle, and an optional world-folder validation mode. Returns the selected absolute path on confirmation. Used from `Configs.razor` (dev-folder picker), server instance editors (world-folder picker), and world-template import flows."
+      "summary": "General-purpose server-side folder browser dialog. Renders a navigable directory tree with breadcrumb navigation, bookmark shortcut chips, caller-supplied shortcut chips, hidden-folder toggle, quick filtering for the current folder list, and an optional world-folder validation mode. Returns the selected absolute path on confirmation. Used from `Configs.razor` (dev-folder picker), server instance editors (world-folder picker), and world-template import flows."
     },
     {
       "path": "Quasar/Components/Pages/FolderPickerDialog.razor.css",
@@ -585,7 +585,7 @@
       "name": "Plugins.razor",
       "kind": "Blazor component",
       "tier": 2,
-      "summary": "Routable page at `/plugins` with three sections: a plugin-inventory table aggregated across all connected servers, a live plugin-configuration section that uses a server-selector dropdown to render `PluginConfigEditor`s for one chosen server's plugins, and a `PluginLogPanel` of structured plugin logs. On first render it triggers a background refresh of `QuasarPluginCatalogService` to resolve GitHub source URLs for inventory rows."
+      "summary": "Routable page at `/plugins` with live plugin configuration and structured plugin logs. The configuration section uses a server-selector dropdown to render `PluginConfigEditor`s for one chosen server's plugins, and `PluginLogPanel` shows PluginSdk log output captured from managed dedicated servers."
     },
     {
       "path": "Quasar/Components/Pages/Security.razor",

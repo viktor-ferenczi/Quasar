@@ -43,7 +43,7 @@ Implements: `IDisposable`
 
 **Restart Quasar flow:** `RestartQuasarAsync` sets `_isShuttingDown`, invokes JS `quasarConfigs.reloadWhenHealthy("/")` so the browser reloads to the Dashboard once the new worker is healthy, then calls `ShutdownService.RestartWorker()` (the circuit drops as the worker stops). Only available under Bootstrap.
 
-**Shutdown Quasar flow:** `ShutdownQuasarAsync` sets the blocking overlay and calls `ShutdownService.ShutdownQuasarPreservingServers()`, leaving running servers detached.
+**Shutdown Quasar flow:** `ShutdownQuasarAsync` sets the blocking overlay and calls `ShutdownService.ShutdownQuasarPreservingServers()`, leaving running servers detached. On Linux service installs the shutdown service tries to stop the systemd unit first; otherwise it falls back to the Bootstrap shutdown request.
 
 **Shutdown-all-servers flow:** `ShutdownAllServers` starts `ShutdownService.StopAllServersAsync(setGoalStateOff: true)` without awaiting it. This matches pressing Stop on every server card: servers wind down in the background, goal state is set to Off, Quasar itself stays up, and Dashboard / Servers reflect progress.
 

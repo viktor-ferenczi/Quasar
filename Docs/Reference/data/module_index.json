@@ -1116,7 +1116,7 @@
       "name": "QuasarShutdownService.cs",
       "kind": "class",
       "tier": 1,
-      "summary": "`QuasarShutdownService` orchestrates stopping all managed Magnetar servers and stopping or recycling the Quasar worker with clear server-preservation semantics. It distinguishes four operations: stop every running server while Quasar stays up, full shutdown that stops servers then stops the host, worker restart that leaves servers running for Bootstrap to re-adopt, and Quasar shutdown that stops the worker/launcher while preserving running servers."
+      "summary": "`QuasarShutdownService` orchestrates stopping all managed Magnetar servers and stopping or recycling the Quasar worker with clear server-preservation semantics. It distinguishes four operations: stop every running server while Quasar stays up, full shutdown that stops servers then stops the host, worker restart that leaves servers running for Bootstrap to re-adopt, and Quasar shutdown that stops the installed systemd unit or launcher while preserving running servers."
     },
     {
       "path": "Quasar/Services/QuasarTheme.cs",

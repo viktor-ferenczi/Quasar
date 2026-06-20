@@ -424,8 +424,8 @@
       "path": "Quasar.Bootstrap/Program.cs",
       "name": "Program.cs",
       "ext": ".cs",
-      "size": 86406,
-      "sha256": "e489e9690e86fd4dc2fb06b2bfb6acf77281f8b499d54d50e6137b2dbea27d87",
+      "size": 86396,
+      "sha256": "5d5c408e229675b6d6f8b952e7ba4f8e119b68de0f246169483b0956935a5c90",
       "module": "Quasar.Bootstrap",
       "tier": 1,
       "status": "pending"
@@ -665,7 +665,7 @@
       "name": "Configs.razor",
       "ext": ".razor",
       "size": 122879,
-      "sha256": "538b49f8d42a42f942041eb0db0bda0410268be283c7d5e344adfc2750664ff0",
+      "sha256": "163d1480d1f329b370d7304e9bbaa0fb261c1272db8f3bb53b01090ae84d79f3",
       "module": "Quasar.Components",
       "tier": 2,
       "status": "pending"
@@ -1734,8 +1734,8 @@
       "path": "Quasar/Services/ManagedRuntimeOptions.cs",
       "name": "ManagedRuntimeOptions.cs",
       "ext": ".cs",
-      "size": 6210,
-      "sha256": "59642fbfa16714078e80561df7c16e91e56748732d2a2bd3ea93dd84b0b37f6b",
+      "size": 6205,
+      "sha256": "2a193335b0c38a66c1c0b27fba161ae42ef5834c576d3c3acb7796dc0222c4b9",
       "module": "Quasar.Services.Core",
       "tier": 1,
       "status": "pending"
@@ -1864,8 +1864,8 @@
       "path": "Quasar/Services/QuasarShutdownService.cs",
       "name": "QuasarShutdownService.cs",
       "ext": ".cs",
-      "size": 5480,
-      "sha256": "5e586a9bee2a5727b966d0475e2c48713c87b1cb389ede56b6945b3a7ad9b165",
+      "size": 10860,
+      "sha256": "88f617e2a0cc21a6b17d94a6960200c7d0d3fd016b0f207dc3d00572e85cacfd",
       "module": "Quasar.Services.Core",
       "tier": 1,
       "status": "pending"
@@ -1944,8 +1944,8 @@
       "path": "Quasar/Services/Updates/QuasarUpdateOptions.cs",
       "name": "QuasarUpdateOptions.cs",
       "ext": ".cs",
-      "size": 4160,
-      "sha256": "c5b4af6cc957ebd93639fbcf426c492851ae969c92cbd13cc5eec12687557f5c",
+      "size": 4150,
+      "sha256": "d251559fb51da7c61384a511c297f08169bec657e5450e25600ee44930c85730",
       "module": "Quasar.Services.Core",
       "tier": 2,
       "status": "pending"
@@ -2034,8 +2034,8 @@
       "path": "Quasar/appsettings.json",
       "name": "appsettings.json",
       "ext": ".json",
-      "size": 2576,
-      "sha256": "9f4db0e8b48819d23920d0cf4b3566695c6f94e2657d4b2324dbf9739fc6e14e",
+      "size": 2571,
+      "sha256": "aa36bf1c2b9a857968040d593bd85e9c16a5bb51642efab1f9c182bc26bdd90a",
       "module": "Quasar.Host",
       "tier": 3,
       "status": "pending"

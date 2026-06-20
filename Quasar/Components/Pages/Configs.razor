@@ -400,8 +400,8 @@
                                     <MudTable T="QuasarPluginSelection" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Items="FilteredPlugins">
                                         <HeaderContent>
                                             <MudTh>Actions</MudTh>
-                                            <MudTh>Debug build</MudTh>
                                             <MudTh>Name</MudTh>
+                                            <MudTh>Debug build</MudTh>
                                         </HeaderContent>
                                         <RowTemplate>
                                             @{
@@ -420,16 +420,6 @@
                                                     </MudTooltip>
                                                 </div>
                                             </MudTd>
-                                            <MudTd DataLabel="Debug build">
-                                                @if (devFolder is not null)
-                                                {
-                                                    <MudCheckBox T="bool"
-                                                                 Value="@devFolder.DebugBuild"
-                                                                 ValueChanged="@(value => SetDevFolderDebugAsync(devFolder, value))"
-                                                                 Color="Color.Primary"
-                                                                 Label="Debug" />
-                                                }
-                                            </MudTd>
                                             <MudTd DataLabel="Name">
                                                 <MudStack Spacing="0">
                                                     <MudText Typo="Typo.subtitle2">@context.DisplayName</MudText>
@@ -439,6 +429,16 @@
                                                         <MudText Typo="Typo.caption" Class="config-secondary">Local dev folder</MudText>
                                                     }
                                                 </MudStack>
+                                            </MudTd>
+                                            <MudTd DataLabel="Debug build">
+                                                @if (devFolder is not null)
+                                                {
+                                                    <MudCheckBox T="bool"
+                                                                 Value="@devFolder.DebugBuild"
+                                                                 ValueChanged="@(value => SetDevFolderDebugAsync(devFolder, value))"
+                                                                 Color="Color.Primary"
+                                                                 Label="Debug" />
+                                                }
                                             </MudTd>
                                         </RowTemplate>
                                         <NoRecordsContent>
@@ -624,8 +624,8 @@
                                 <MudTable T="QuasarModSelection" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Items="FilteredMods">
                                     <HeaderContent>
                                         <MudTh>Actions</MudTh>
-                                        <MudTh>Workshop ID</MudTh>
                                         <MudTh>Name</MudTh>
+                                        <MudTh>Workshop ID</MudTh>
                                     </HeaderContent>
                                     <RowTemplate>
                                         <MudTd DataLabel="Actions">
@@ -633,8 +633,8 @@
                                                 <MudIconButton Icon="@Icons.Material.Filled.DeleteOutline" Color="Color.Error" OnClick="@(() => RemoveModAsync(context.WorkshopId))" />
                                             </MudTooltip>
                                         </MudTd>
-                                        <MudTd DataLabel="Workshop ID" Class="mono">@context.WorkshopId</MudTd>
                                         <MudTd DataLabel="Name">@context.DisplayName</MudTd>
+                                        <MudTd DataLabel="Workshop ID" Class="mono">@context.WorkshopId</MudTd>
                                     </RowTemplate>
                                     <NoRecordsContent>
                                         <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="ma-4">

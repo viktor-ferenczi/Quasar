@@ -294,8 +294,8 @@
       "path": "Quasar.Agent/AdminPlugin.cs",
       "name": "AdminPlugin.cs",
       "ext": ".cs",
-      "size": 8697,
-      "sha256": "f4c8e5d383fb3df950af57f56fc228214bacc945f1652c745dd94a070e21fd0b",
+      "size": 8811,
+      "sha256": "2697be3dc59cfe4bfcafa96b46c861ee8462a8a77aa24e33666683a01c25d460",
       "module": "Quasar.Agent",
       "tier": 1,
       "status": "pending"
@@ -398,6 +398,16 @@
       "sha256": "f95812fd340676a5eea0bb4ae2dc860ffc4cafc0b060db844ac528b40ab42904",
       "module": "Quasar.Agent",
       "tier": 3,
+      "status": "pending"
+    },
+    {
+      "path": "Quasar.Agent/StopCommand.cs",
+      "name": "StopCommand.cs",
+      "ext": ".cs",
+      "size": 484,
+      "sha256": "44315819966c875d60337f1e5a2e074c646aa7bd498767c475edfa5be2afa132",
+      "module": "Quasar.Agent",
+      "tier": 1,
       "status": "pending"
     },
     {

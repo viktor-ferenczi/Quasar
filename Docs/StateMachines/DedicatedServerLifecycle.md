@@ -49,11 +49,13 @@ stateDiagram-v2
 ## Process state
 
 The observed supervisor lifecycle. The UI treats `Starting`, `Stopping`, and
-`Restarting` as transitionary states. `Starting` shows `Stop` and an immediate
-`Kill` action so an accidental or wedged launch can be cancelled before the
-agent attaches; `Restarting` shows `Kill` to cancel the pending relaunch.
-`Running` shows `Stop`/`Restart`; `Stopped`, `Crashed`, and `Faulted` show
-`Start`.
+`Restarting` as transitionary states: `Start`, `Stop`, `Restart`, and `Save`
+actions are disabled while a server is already transitioning. `Starting` and
+`Restarting` keep an immediate `Kill` action so an accidental or wedged launch
+can still be cancelled before the agent attaches. `Running` shows
+`Stop`/`Restart`; `Stopped`, `Crashed`, and `Faulted` show `Start`. The
+Dashboard problem banner can clear `Crashed`/`Faulted` error status back to
+`Stopped` after setting the goal `Off`.
 
 Restart is a supervisor-owned stop/start sequence. Reconciliation does not
 auto-schedule an agent-refresh restart. If a connected running server's deployed
@@ -70,7 +72,7 @@ stateDiagram-v2
     Stopped --> Restarting: goal On (restart pending)
     Starting --> Running: agent attached, snapshot ready
     Starting --> Restarting: attach grace expired, retry budget remains
-    Starting --> Stopping: operator Stop/Kill (cancel launch)
+    Starting --> Stopping: operator Kill (cancel launch)
     Starting --> Faulted: launch prep failure / attach retries exhausted
     Running --> Stopping: goal Off
     Running --> Restarting: unhealthy, uptime or scheduled
@@ -83,8 +85,9 @@ stateDiagram-v2
     Stopping --> Faulted: stop failure
     Crashed --> Restarting: RestartOnCrash, within budget
     Crashed --> Starting: operator Start retry
-    Crashed --> Stopped: goal Off
+    Crashed --> Stopped: goal Off / clear error status
     Faulted --> Starting: operator Start after cause fixed
+    Faulted --> Stopped: clear error status
 ```
 
 ![Dedicated server process state](diagrams/ds-process-state.png)
@@ -97,7 +100,7 @@ stateDiagram-v2
 | `Stopping` | Graceful stop in progress; waiting for exit. | `Stopped`, `Faulted` |
 | `Restarting` | Intentional restart sequence in progress. | `Starting`, `Running`, `Faulted` |
 | `Crashed` | Process exited unexpectedly. | `Starting`, `Restarting`, `Stopped` |
-| `Faulted` | Launch/restart failed or attempts exhausted. | `Starting` after the cause is fixed |
+| `Faulted` | Launch/restart failed or attempts exhausted. | `Starting` after the cause is fixed, `Stopped` after clear error status |
 
 **Restart policy & faults** (all in [`DedicatedServerSupervisor`](../../Quasar/Services/DedicatedServerSupervisor.cs)):
 
@@ -113,6 +116,10 @@ stateDiagram-v2
   failure, process start failure) or from crash-restart budget exhaustion. An
   explicit operator `Start` resets the streak and retries after the cause is
   fixed; the reconcile loop does not auto-retry `Crashed`/`Faulted` states.
+- Clear error status is an explicit operator acknowledgement for a non-running
+  `Crashed`/`Faulted` server. It sets the goal `Off`, resets health/restart
+  counters and mod-download failure details, and returns the process state to
+  `Stopped`.
 - Agent attach retries: while a process is still `Starting`, health monitoring
   waits `AgentStartupGraceSeconds` for Quasar.Agent. If it does not attach and
   `AutoRestartOnUnhealthy` is enabled, the supervisor kills the starting process,

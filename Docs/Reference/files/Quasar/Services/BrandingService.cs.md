@@ -3,7 +3,7 @@
 **Module:** Quasar.Services.Core  **Kind:** class  **Tier:** 1
 
 ## Summary
-`BrandingService` is the singleton store for all branding and theme configuration. It persists settings to `branding.json` in the Quasar data directory, saves uploaded logo and favicon assets into `{WebRootPath}/branding/`, and live-reloads after external edits via a debounced `FileSystemWatcher`. It also builds the `MudTheme` consumed by the Blazor layout.
+`BrandingService` is the singleton store for all branding and theme configuration. It persists settings to `branding.json` in the Quasar data directory, saves uploaded logo and favicon assets into the data-root `Branding/` directory so they survive web-service updates, migrates legacy `wwwroot/branding` files when present, and live-reloads after external edits via a debounced `FileSystemWatcher`. It also builds the `MudTheme` consumed by the Blazor layout.
 
 ## Structure
 Namespace: `Quasar.Services`
@@ -17,7 +17,7 @@ Namespace: `Quasar.Services`
 | `GetSettings()` | Returns a deep-cloned copy safe for UI draft editing |
 | `BuildMudTheme()` | Constructs `MudTheme` from current light/dark palettes and `QuasarTheme.Default.LayoutProperties` |
 | `SaveAsync(BrandingSettings, CancellationToken)` | Normalises, serialises, writes via `AtomicFileWriter`, updates in-memory state, fires `Changed` |
-| `SaveLogoAsync(bool isDark, Stream, string extension, CancellationToken)` | Writes logo asset to `{brandingDir}/logo-dark|light.{ext}?v={cachebust}` and calls `SaveAsync` |
+| `SaveLogoAsync(bool isDark, Stream, string extension, CancellationToken)` | Writes logo asset to the data-root branding directory as `logo-dark|light.{ext}?v={cachebust}` and calls `SaveAsync` |
 | `SaveFaviconAsync(Stream, string extension, CancellationToken)` | Writes favicon asset and calls `SaveAsync` |
 | `ResetToDefaultAsync(CancellationToken)` | Saves a default-normalised `BrandingSettings` |
 | `Dispose()` | Disposes watcher and debounce CTS |
@@ -33,4 +33,4 @@ Internal file watcher uses a 250 ms debounce (`ScheduleReload`) and compares a J
 - MudBlazor — `MudTheme`, `PaletteLight`, `PaletteDark`
 
 ## Notes
-Assets are written with a cache-busting query string (`?v={unix-ms}`). Old assets sharing the same `baseName` are deleted before writing the new one. Extension sanitisation strips any invalid filename characters. The snapshot-based change detection prevents spurious `Changed` events when Quasar itself writes the file (the watcher sees its own writes).
+Assets are written with a cache-busting query string (`?v={unix-ms}`). Old assets sharing the same `baseName` are deleted before writing the new one. Extension sanitisation strips any invalid filename characters. The snapshot-based change detection prevents spurious `Changed` events when Quasar itself writes the file (the watcher sees its own writes). Legacy assets under the current release's `wwwroot/branding` are copied into the persistent data directory if no matching persistent file exists.

@@ -373,10 +373,22 @@
     </MudPaper>
 }
 
-@if (ProblemBanner is not null)
+@if (ProblemBanner is { } problemBanner)
 {
-    <MudAlert Severity="@ProblemBanner.Value.Severity" Variant="Variant.Filled" Class="mb-4">
-        @ProblemBanner.Value.Message
+    <MudAlert Severity="@problemBanner.Severity" Variant="Variant.Filled" Class="mb-4">
+        <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Spacing="2">
+            <MudText Typo="Typo.body2">@problemBanner.Message</MudText>
+            @if (!string.IsNullOrWhiteSpace(problemBanner.ClearErrorUniqueName))
+            {
+                <MudButton Variant="Variant.Outlined"
+                           Color="Color.Inherit"
+                           Size="Size.Small"
+                           StartIcon="@Icons.Material.Filled.Clear"
+                           OnClick="@(() => ClearErrorStatusAsync(problemBanner.ClearErrorUniqueName))">
+                    Clear Error Status
+                </MudButton>
+            }
+        </MudStack>
     </MudAlert>
 }
 
@@ -570,19 +582,23 @@ else
         snapshot.HealthState == DedicatedServerHealthState.Unhealthy ||
         snapshot.State is DedicatedServerProcessState.Crashed or DedicatedServerProcessState.Faulted);
 
-    private (Severity Severity, string Message)? ProblemBanner
+    private (Severity Severity, string Message, string? ClearErrorUniqueName)? ProblemBanner
     {
         get
         {
-            var error = RuntimeSnapshotList.FirstOrDefault(snapshot =>
-                snapshot.HealthState == DedicatedServerHealthState.Unhealthy ||
+            var stateError = RuntimeSnapshotList.FirstOrDefault(snapshot =>
                 snapshot.State is DedicatedServerProcessState.Crashed or DedicatedServerProcessState.Faulted);
-            if (error is not null)
-                return (Severity.Error, $"{error.UniqueName}: {FirstNonEmpty(error.HealthSummary, error.LastMessage, "Server needs attention.")}");
+            if (stateError is not null)
+                return (Severity.Error, $"{stateError.UniqueName}: {FirstNonEmpty(stateError.HealthSummary, stateError.LastMessage, "Server needs attention.")}", stateError.UniqueName);
+
+            var healthError = RuntimeSnapshotList.FirstOrDefault(snapshot =>
+                snapshot.HealthState == DedicatedServerHealthState.Unhealthy);
+            if (healthError is not null)
+                return (Severity.Error, $"{healthError.UniqueName}: {FirstNonEmpty(healthError.HealthSummary, healthError.LastMessage, "Server needs attention.")}", null);
 
             var warning = RuntimeSnapshotList.FirstOrDefault(snapshot => snapshot.HealthState == DedicatedServerHealthState.Warning);
             if (warning is not null)
-                return (Severity.Warning, $"{warning.UniqueName}: {FirstNonEmpty(warning.HealthSummary, warning.LastMessage, "Health warning.")}");
+                return (Severity.Warning, $"{warning.UniqueName}: {FirstNonEmpty(warning.HealthSummary, warning.LastMessage, "Health warning.")}", null);
 
             return null;
         }
@@ -825,6 +841,23 @@ else
         {
             await Supervisor.SetGoalStateAsync(uniqueName, DedicatedServerGoalState.Off);
             Snackbar.Add($"Stop requested for '{uniqueName}'.", Severity.Warning);
+        }
+        catch (Exception exception)
+        {
+            Snackbar.Add(exception.Message, Severity.Error);
+        }
+    }
+
+    private async Task ClearErrorStatusAsync(string uniqueName)
+    {
+        try
+        {
+            var cleared = await Supervisor.ClearErrorStatusAsync(uniqueName);
+            Snackbar.Add(
+                cleared
+                    ? $"Error status cleared for '{uniqueName}'."
+                    : $"No clearable error status for '{uniqueName}'.",
+                cleared ? Severity.Success : Severity.Info);
         }
         catch (Exception exception)
         {

@@ -3,7 +3,7 @@
 **Module:** Quasar.Components  **Kind:** Blazor component  **Tier:** 2
 
 ## Summary
-Detail panel embedded inside `ServerCard`. When the agent snapshot is absent it shows a waiting/error message and basic process state chips. When a snapshot is present it renders live metrics chips, Refresh/Save buttons, a chat broadcast field, a players table with player identity/status columns and a rightmost unlabeled action menu column, a recent-chat list, and recent command results. The Plugins chip compares loaded runtime plugins against the assigned config profile's selected plugins, displays `loaded/total`, and turns warning-colored when the loaded count differs from the configured total; if no profile is available it falls back to the aggregate agent plugin metric. The Save chip shows save-in-progress state, or the latest world-save local time plus unsaved in-game progress as `MM:SS`, with a tooltip containing the full local timestamp. Server-authored chat (`IsServerMessage`, SteamId 0, `Good.bot`, or `Server`) is displayed as `Server`. In both the snapshot-present and snapshot-absent states, an outlined "Affinity <value>" chip (Memory icon) is shown in the metrics chip rows when `Server.CpuAffinity` is set, and mod-download failures captured from runtime output are shown as an explicit error alert.
+Detail panel embedded inside `ServerCard`. When the agent snapshot is absent it shows a waiting/error message and basic process state chips. When a snapshot is present it renders live metrics chips, Refresh/Save buttons (Save disabled while the runtime is `Starting`/`Stopping`/`Restarting`), a chat broadcast field, a players table with player identity/status columns and a rightmost unlabeled action menu column, a recent-chat list, and recent command results. The Plugins chip compares loaded runtime plugins against the assigned config profile's selected plugins, displays `loaded/total`, and turns warning-colored when the loaded count differs from the configured total; if no profile is available it falls back to the aggregate agent plugin metric. The Save chip shows save-in-progress state, or the latest world-save local time plus unsaved in-game progress as `MM:SS`, with a tooltip containing the full local timestamp. Server-authored chat (`IsServerMessage`, SteamId 0, `Good.bot`, or `Server`) is displayed as `Server`. In both the snapshot-present and snapshot-absent states, an outlined "Affinity <value>" chip (Memory icon) is shown in the metrics chip rows when `Server.CpuAffinity` is set, and mod-download failures captured from runtime output are shown as an explicit error alert.
 
 ## Structure
 No `@page` route — used as a child component.
@@ -23,6 +23,7 @@ No `@page` route — used as a child component.
 
 **Key private state:**
 - `_chatText` — bound to the broadcast message field.
+- `ProcessState`, `IsUnstable`, `CanSaveWorld` — derived runtime state used to block save during transitions.
 - `_menuOpen` — suppresses re-render while a player action menu is open via `ShouldRender()`.
 
 **Key private methods:**

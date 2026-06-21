@@ -80,7 +80,7 @@ else
         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => SendCommandAsync(ServerCommandType.Refresh))" Disabled="@(!Agent.IsConnected)">
             Refresh
         </MudButton>
-        <MudButton Variant="Variant.Filled" Color="Color.Info" OnClick="@(() => SendCommandAsync(ServerCommandType.SaveWorld))" Disabled="@(!Agent.IsConnected)">
+        <MudButton Variant="Variant.Filled" Color="Color.Info" OnClick="@(() => SendCommandAsync(ServerCommandType.SaveWorld))" Disabled="@(!CanSaveWorld)">
             Save
         </MudButton>
     </MudStack>
@@ -197,6 +197,14 @@ else
     public AgentRuntimeState? Agent { get; set; }
 
     private string _chatText = string.Empty;
+
+    private DedicatedServerProcessState ProcessState => Runtime?.State ?? DedicatedServerProcessState.Stopped;
+
+    private bool IsUnstable => ProcessState is DedicatedServerProcessState.Starting
+        or DedicatedServerProcessState.Stopping
+        or DedicatedServerProcessState.Restarting;
+
+    private bool CanSaveWorld => Agent?.IsConnected == true && !IsUnstable;
 
     // True while a player's action menu is open. The parent re-renders this panel on every
     // live snapshot; doing so under an open menu would close it, so we hold renders until the

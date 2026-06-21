@@ -3,7 +3,7 @@
 **Module:** Magnetar.Protocol  **Kind:** class  **Tier:** 1
 
 ## Summary
-Periodic snapshot pushed by `Quasar.Agent` to the Quasar supervisor containing the full observable state of one running SE dedicated server: identity fields, runtime status, scalar performance metrics, current profiler mode, optional profiler timing data, online human players, hidden NPC/bot player ids, kicked players (serving a kick cooldown), recent chat, recent deaths, and loaded plugin list.
+Periodic snapshot pushed by `Quasar.Agent` to the Quasar supervisor containing the full observable state of one running SE dedicated server: identity fields, runtime status, scalar performance metrics, current profiler mode, optional profiler timing data, online human players, hidden NPC/bot player ids, kicked players (serving a kick cooldown), recent chat, registered PluginSdk chat commands, recent deaths, and loaded plugin list.
 
 ## Structure
 Namespace: `Magnetar.Protocol.Model`
@@ -25,6 +25,7 @@ Class `AgentSnapshot` (concrete, no base type):
 | `HiddenPlayerSteamIds` / `HiddenPlayerIdentityIds` | `List<long>` | Steam/identity ids for online `MyPlayer` entries filtered out as zero-SteamId, bot, or NPC identities, allowing Quasar to purge stale known-player rows without hiding those entities from entity inspection. |
 | `KickedPlayers` | `List<KickedPlayerSnapshot>` | Offline players currently serving a server-side kick cooldown (separate from `Players`). |
 | `RecentChat` | `List<ChatMessageSnapshot>` | Chat messages since last snapshot. |
+| `ChatCommands` | `List<ChatCommandSnapshot>` | Registered PluginSdk chat-command suggestions for the Chat page command-mode autocomplete. |
 | `RecentDeaths` | `List<DeathEventSnapshot>` | Death events since last snapshot. |
 | `Plugins` | `List<PluginRuntimeInfo>` | Loaded plugin registry. |
 
@@ -34,6 +35,7 @@ Class `AgentSnapshot` (concrete, no base type):
 - [`Magnetar.Protocol/Model/PlayerSnapshot.cs`](PlayerSnapshot.cs.md)
 - [`Magnetar.Protocol/Model/KickedPlayerSnapshot.cs`](KickedPlayerSnapshot.cs.md)
 - [`Magnetar.Protocol/Model/ChatMessageSnapshot.cs`](ChatMessageSnapshot.cs.md)
+- [`Magnetar.Protocol/Model/ChatCommandSnapshot.cs`](ChatCommandSnapshot.cs.md)
 - [`Magnetar.Protocol/Model/DeathEventSnapshot.cs`](DeathEventSnapshot.cs.md)
 - [`Magnetar.Protocol/Model/PluginRuntimeInfo.cs`](PluginRuntimeInfo.cs.md)
 - [`Magnetar.Protocol/Transport/AgentWireMessage.cs`](../Transport/AgentWireMessage.cs.md) — carried as the `Snapshot` field.

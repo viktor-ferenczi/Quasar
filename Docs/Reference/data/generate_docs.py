@@ -38,7 +38,7 @@ MODULES = [
      "envelope with `WireMessageKind` discriminators, the server-command request/response triple "
      "(`ServerCommandEnvelope` / `ServerCommandResult` / `ServerCommandType`), the handshake "
      "(`AgentHello`) and periodic telemetry (`AgentSnapshot` carrying `ServerMetrics`, `PlayerSnapshot`, "
-     "chat/death events and plugin info), the entity-browser and plugin-config DTOs, the "
+     "chat/death events, PluginSdk command suggestions, and plugin info), the entity-browser and plugin-config DTOs, the "
      "`WebServiceDiscoveryManifest` used to locate a running supervisor, the `IQuasarConfigProvider` "
      "bridge, and runtime helpers (`MagnetarPaths`, `QuasarActiveReleasePointer`, "
      "`QuasarReleaseVersion`, `QuasarWebReleaseLayout`). It has zero external "

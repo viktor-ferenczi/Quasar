@@ -3,7 +3,7 @@
 **Module:** Quasar.Agent  **Kind:** class  **Tier:** 1
 
 ## Summary
-`GameBridge` is the central game-thread façade for `AgentConnection`. It collects session telemetry (metrics, current profiler mode/snapshot, human players, hidden NPC/bot player ids, kicked players, chat, deaths, plugins), builds `AgentHello` / `AgentSnapshot` wire messages, and executes server commands (chat, blocking save, save-and-stop, profiler mode change, kick, ban, promote, clear-kick-cooldown, entity list/delete) by marshalling work onto the game thread via `MySandboxGame.Invoke`. Save/stop commands route through Magnetar PluginSdk `ServerControl` so Quasar observes completed disk saves before treating the command as successful. Metrics include process CPU derived from `Process.TotalProcessorTime`, simspeed/sim CPU from `Sync`, memory, human player count, PCU, active entities/grids, total blocks, floating objects, latest world-save time, and unsaved game-time progress since the last checkpoint. It enumerates loaded plugins from `MyPlugins.Plugins` (including Pulsar child plugins) for runtime inventory, dedupes configured fallback plugin paths against loaded plugins by path stem, parent dev-folder name, manifest `<Id>`, and manifest `<FriendlyName>`, and exposes plugin configuration through `IQuasarConfigProvider` or Magnetar PluginSdk `PluginConfig` reflection. Chat history normalizes dedicated-server/Good.bot messages to author `Server` and marks `ChatMessageSnapshot.IsServerMessage`.
+`GameBridge` is the central game-thread façade for `AgentConnection`. It collects session telemetry (metrics, current profiler mode/snapshot, human players, hidden NPC/bot player ids, kicked players, chat, registered PluginSdk chat commands, deaths, plugins), builds `AgentHello` / `AgentSnapshot` wire messages, and executes server commands (chat, blocking save, save-and-stop, profiler mode change, kick, ban, promote, clear-kick-cooldown, entity list/delete) by marshalling work onto the game thread via `MySandboxGame.Invoke`. Save/stop commands route through Magnetar PluginSdk `ServerControl` so Quasar observes completed disk saves before treating the command as successful. Metrics include process CPU derived from `Process.TotalProcessorTime`, simspeed/sim CPU from `Sync`, memory, human player count, PCU, active entities/grids, total blocks, floating objects, latest world-save time, and unsaved game-time progress since the last checkpoint. It enumerates loaded plugins from `MyPlugins.Plugins` (including Pulsar child plugins) for runtime inventory, dedupes configured fallback plugin paths against loaded plugins by path stem, parent dev-folder name, manifest `<Id>`, and manifest `<FriendlyName>`, and exposes plugin configuration through `IQuasarConfigProvider` or Magnetar PluginSdk `PluginConfig` reflection. Chat history normalizes dedicated-server/Good.bot messages to author `Server` and marks `ChatMessageSnapshot.IsServerMessage`.
 
 ## Structure
 **Namespace:** `Quasar.Agent`  
@@ -39,10 +39,11 @@
 ## Dependencies
 - [`Quasar.Agent/EntityInspector.cs`](EntityInspector.cs.md)
 - `Magnetar.Protocol.Bridge` — `IQuasarConfigProvider`
-- `Magnetar.Protocol.Model` — `AgentHello`, `AgentSnapshot`, `ServerMetrics`, `PlayerSnapshot`, `ChatMessageSnapshot`, `DeathEventSnapshot`, `PluginConfigSnapshot`, `PluginConfigData`, `PluginRuntimeInfo`, `ServerCommandEnvelope`, `ServerCommandResult`, `ServerCommandType`
+- `Magnetar.Protocol.Model` — `AgentHello`, `AgentSnapshot`, `ServerMetrics`, `PlayerSnapshot`, `ChatMessageSnapshot`, `ChatCommandSnapshot`, `DeathEventSnapshot`, `PluginConfigSnapshot`, `PluginConfigData`, `PluginRuntimeInfo`, `ServerCommandEnvelope`, `ServerCommandResult`, `ServerCommandType`
 - [`Quasar.Agent/AgentProfiler.cs`](AgentProfiler.cs.md)
 - `Magnetar.Protocol.Transport` — wire transport types
 - `PluginSdk` — `ServerControl` blocking save / save-and-quit facade bound by Magnetar
+- `PluginSdk.Commands` — `ServerCommands.Registrar` reflection source for registered chat-command suggestions
 - `PluginSdk.Config` — `PluginConfig`, `ConfigStorage`, `ConfigOptionAttribute`
 - `VRage.Plugins` — `IPlugin`, `MyPlugins`
 - `Sandbox` — `MySandboxGame`
@@ -61,6 +62,7 @@
 - Plugin config reads (`GetPluginConfigs`) are intentionally off-thread for responsiveness; applies are marshalled to the game thread.
 - Private `GetKickedPlayers(MySession)` populates `AgentSnapshot.KickedPlayers` by reading `MyMultiplayer.Static.KickedClients` and `MyMultiplayerBase.KICK_TIMEOUT_MS` to compute the remaining cooldown per SteamId.
 - Private `GetRecentChat()` reads `MyDedicatedServer.GlobalChatHistory`; messages with SteamId 0, author `Good.bot`, or author `Server` are treated as server-authored, exposed as `Server`, and flagged with `IsServerMessage`.
+- Private `GetChatCommands()` reflects Magnetar's live `ServerCommands.Registrar`/`CommandRegistry` to emit `ChatCommandSnapshot` rows. It is best-effort and returns an empty list if the host registry shape is unavailable, keeping the agent compatible with older Magnetar builds.
 - `ConfigProviderAdapter` uses `MethodInfo` reflection to invoke generic `ConfigStorage.SaveJson<T>` / `LoadJson<T>` because `T` is only known at runtime.
 - `ApplyConfigJson` for SDK configs copies only properties decorated with `[ConfigOption]` to preserve non-option fields.
 - Runtime plugin inventory uses `EnumeratePlugins()` so Magnetar/Pulsar-loaded plugins appear even when `MySandboxGame.ConfigDedicated.Plugins` is empty; configured plugin paths are still added as `declared` fallback rows only when not already represented by a loaded plugin. XML manifest fallback rows are matched against loaded plugins by full path, path stem, parent dev-folder/source name, `<Id>`, and `<FriendlyName>`, preventing duplicate local dev-folder rows.

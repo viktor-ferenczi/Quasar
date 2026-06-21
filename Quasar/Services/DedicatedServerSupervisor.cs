@@ -210,6 +210,9 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
             if (!_states.TryGetValue(uniqueName, out state))
                 throw new InvalidOperationException($"Unknown Quasar server '{uniqueName}'.");
 
+            if (state.State == DedicatedServerProcessState.Stopping)
+                return;
+
             if (IsProcessActive(state.Process))
                 return;
 
@@ -300,6 +303,9 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
                 return;
 
             process = state.Process;
+            if (state.State == DedicatedServerProcessState.Stopping)
+                return;
+
             state.StopRequested = true;
             state.IsRestartPending = false;
             state.StartCancellation?.Cancel();
@@ -436,6 +442,17 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
         if (definition is null)
             throw new InvalidOperationException($"Unknown Quasar server '{uniqueName}'.");
 
+        lock (_sync)
+        {
+            if (_states.TryGetValue(uniqueName, out var state) &&
+                state.State is DedicatedServerProcessState.Starting
+                    or DedicatedServerProcessState.Stopping
+                    or DedicatedServerProcessState.Restarting)
+            {
+                return;
+            }
+        }
+
         var agentDeployment = _runtimePreparer.GetAgentDeploymentComparison(definition);
         if (agentDeployment.HasMismatch)
         {
@@ -450,6 +467,56 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
         await _catalog.UpsertAsync(definition, cancellationToken);
         await StopServerAsync(uniqueName, cancellationToken);
         await StartServerAsync(uniqueName, cancellationToken);
+    }
+
+    public async Task<bool> ClearErrorStatusAsync(string uniqueName, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(uniqueName))
+            return false;
+
+        var definition = _catalog.GetServer(uniqueName);
+        if (definition is null)
+            throw new InvalidOperationException($"Unknown Quasar server '{uniqueName}'.");
+
+        if (definition.GoalState != DedicatedServerGoalState.Off)
+            await _catalog.SetGoalStateAsync(uniqueName, DedicatedServerGoalState.Off, cancellationToken);
+
+        var changed = false;
+        lock (_sync)
+        {
+            if (!_states.TryGetValue(uniqueName, out var state))
+                return false;
+
+            if (IsProcessActive(state.Process))
+                return false;
+
+            if (state.State is not (DedicatedServerProcessState.Crashed or DedicatedServerProcessState.Faulted) &&
+                state.HealthState != DedicatedServerHealthState.Unhealthy)
+            {
+                return false;
+            }
+
+            state.Definition.GoalState = DedicatedServerGoalState.Off;
+            state.Process = null;
+            state.ProcessId = null;
+            state.State = DedicatedServerProcessState.Stopped;
+            state.StopRequested = false;
+            state.IsRestartPending = false;
+            state.StartCancellation?.Cancel();
+            state.RestartAttempts = 0;
+            state.AgentAttachRetryAttempts = 0;
+            state.LastExitCode = null;
+            state.StoppedAtUtc = DateTimeOffset.UtcNow;
+            state.LastMessage = "Error status cleared.";
+            state.ModDownloadFailures.Clear();
+            ResetHealthTracking(state);
+            changed = true;
+        }
+
+        if (changed)
+            NotifyChanged();
+
+        return changed;
     }
 
     public void Dispose()
@@ -518,6 +585,31 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
                 var processActive = IsProcessActive(state.Process);
                 var goalState = state.Definition.GoalState;
                 var agent = agents.TryGetValue(state.UniqueName, out var currentAgent) ? currentAgent : null;
+
+                if (!processActive &&
+                    !state.StartInProgress &&
+                    state.State == DedicatedServerProcessState.Stopping)
+                {
+                    state.State = DedicatedServerProcessState.Stopped;
+                    state.StopRequested = false;
+                    state.IsRestartPending = false;
+                    state.LastMessage = "Stopped.";
+                    ResetHealthTracking(state);
+                    healthChanged = true;
+                }
+
+                if (!processActive &&
+                    goalState == DedicatedServerGoalState.Off &&
+                    state.State == DedicatedServerProcessState.Restarting)
+                {
+                    state.State = DedicatedServerProcessState.Stopped;
+                    state.StopRequested = false;
+                    state.IsRestartPending = false;
+                    state.LastMessage = "Restart cancelled.";
+                    ResetHealthTracking(state);
+                    healthChanged = true;
+                }
+
                 var health = EvaluateHealth(
                     state,
                     agent,

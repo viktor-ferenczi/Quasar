@@ -143,8 +143,7 @@
         or DedicatedServerProcessState.Crashed
         or DedicatedServerProcessState.Faulted;
 
-    private bool CanStop => ProcessState is DedicatedServerProcessState.Starting
-        or DedicatedServerProcessState.Running;
+    private bool CanStop => ProcessState == DedicatedServerProcessState.Running;
 
     private bool CanKillStarting => ProcessState is DedicatedServerProcessState.Starting
         or DedicatedServerProcessState.Restarting;

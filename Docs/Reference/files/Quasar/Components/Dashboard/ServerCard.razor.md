@@ -26,7 +26,7 @@ No `@page` route — used as a child component.
 
 **Private helpers:**
 - `ProcessState` — derives `DedicatedServerProcessState` from `Runtime?.State`.
-- `IsProcessActive`, `CanStart`, `CanStop`, `CanKillStarting`, `CanRestart` — lifecycle button visibility logic. Start is shown only for `Stopped`, `Crashed`, and `Faulted`; Stop is shown for `Starting` (cancel launch) and `Running`; Kill is shown for `Starting`/`Restarting`; Restart is shown only for `Running`. No lifecycle button is shown during `Stopping`; Delete is disabled while the process is active.
+- `IsProcessActive`, `CanStart`, `CanStop`, `CanKillStarting`, `CanRestart` — lifecycle button visibility logic. Start is shown only for `Stopped`, `Crashed`, and `Faulted`; Stop is shown only for stable `Running`; Kill is shown for `Starting`/`Restarting`; Restart is shown only for `Running`. No lifecycle button is shown during `Stopping`; Delete is disabled while the process is active.
 - `CanCreateTemplate` — delegates to `ServerManagementActions.CanCreateWorldTemplate`.
 - `OpenConsoleAsync`, `CloneAsync`, `CreateTemplateAsync`, `EditAsync`, `DeleteAsync` — delegate to `ServerManagementActions`.
 - `GetDisplayName()` — prefers `Server.DisplayName`, falls back to `Agent.ServerDisplayName`, then `UniqueName`.

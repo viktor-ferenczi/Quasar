@@ -99,7 +99,6 @@ public sealed class QuasarBackupService
     public QuasarBackupService(
         ILogger<QuasarBackupService> logger,
         WebServiceOptions options,
-        IWebHostEnvironment environment,
         KnownPlayerCatalog knownPlayers,
         QuasarDevFolderCatalog devFolders,
         DedicatedServerCatalog servers,
@@ -114,10 +113,7 @@ public sealed class QuasarBackupService
         _supervisor = supervisor;
         _restoreCoordinator = restoreCoordinator;
 
-        var webRootPath = string.IsNullOrWhiteSpace(environment.WebRootPath)
-            ? Path.Combine(environment.ContentRootPath, "wwwroot")
-            : environment.WebRootPath;
-        _brandingAssetsDirectory = MagnetarPaths.GetQuasarBrandingDirectory(webRootPath);
+        _brandingAssetsDirectory = MagnetarPaths.GetQuasarBrandingDirectory();
     }
 
     /// <summary>Builds a backup archive in memory with a timestamped download name.</summary>

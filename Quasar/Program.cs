@@ -396,13 +396,9 @@ public class Program
 
             app.MapStaticAssets();
 
-            // Runtime-uploaded branding assets (logos, favicon) live outside the
-            // build-time static-asset manifest, so serve them with the classic
-            // static-file middleware from the physical branding directory.
-            var brandingWebRootPath = string.IsNullOrWhiteSpace(app.Environment.WebRootPath)
-                ? Path.Combine(app.Environment.ContentRootPath, "wwwroot")
-                : app.Environment.WebRootPath;
-            var brandingAssetsDirectory = MagnetarPaths.GetQuasarBrandingDirectory(brandingWebRootPath);
+            // Runtime-uploaded branding assets live in the Quasar data directory
+            // so web-service updates do not replace custom logos or favicons.
+            var brandingAssetsDirectory = MagnetarPaths.GetQuasarBrandingDirectory();
             Directory.CreateDirectory(brandingAssetsDirectory);
             app.UseStaticFiles(new StaticFileOptions
             {

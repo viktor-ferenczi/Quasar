@@ -15,6 +15,7 @@ using Magnetar.Protocol.Transport;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
 using PluginSdk;
+using PluginSdk.Commands;
 using PluginSdk.Config;
 using Sandbox;
 using Sandbox.Engine.Networking;
@@ -233,6 +234,7 @@ namespace Quasar.Agent
                 HiddenPlayerIdentityIds = GetHiddenPlayerIdentityIds(session),
                 KickedPlayers = GetKickedPlayers(session),
                 RecentChat = GetRecentChat(),
+                ChatCommands = GetChatCommands(),
                 RecentDeaths = GetRecentDeaths(),
                 Plugins = GetPlugins(),
             };
@@ -1026,6 +1028,130 @@ namespace Quasar.Agent
                     Version = string.Empty,
                     IsLoaded = false,
                 });
+            }
+
+            return result;
+        }
+
+        private List<ChatCommandSnapshot> GetChatCommands()
+        {
+            var result = new List<ChatCommandSnapshot>();
+
+            try
+            {
+                object registrar = ServerCommands.Registrar;
+                if (registrar == null)
+                    return result;
+
+                object registry = GetFieldValue(registrar, "registry");
+                if (registry == null)
+                    return result;
+
+                foreach (object root in EnumerateCommandRoots(registry))
+                {
+                    var prefix = GetStringProperty(root, "Prefix");
+                    var title = GetStringProperty(root, "Title");
+                    var ownerId = GetStringProperty(root, "OwnerId");
+
+                    AddChatCommandSnapshot(result, GetPropertyValue(root, "Default"), prefix, title, ownerId);
+
+                    var enumerateCommands = root.GetType().GetMethod(
+                        "EnumerateCommands",
+                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                    if (enumerateCommands?.Invoke(root, null) is IEnumerable commands)
+                    {
+                        foreach (object command in commands)
+                            AddChatCommandSnapshot(result, command, prefix, title, ownerId);
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return result
+                .Where(command => !string.IsNullOrWhiteSpace(command.Text))
+                .GroupBy(command => command.Text, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .OrderBy(command => command.Text, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private static IEnumerable<object> EnumerateCommandRoots(object registry)
+        {
+            object roots = GetFieldValue(registry, "roots");
+            if (roots is IDictionary dictionary)
+            {
+                foreach (object value in dictionary.Values)
+                    yield return value;
+            }
+        }
+
+        private static void AddChatCommandSnapshot(
+            List<ChatCommandSnapshot> result,
+            object command,
+            string fallbackPrefix,
+            string title,
+            string fallbackOwnerId)
+        {
+            if (command == null)
+                return;
+
+            var prefix = GetStringProperty(command, "Prefix");
+            if (string.IsNullOrWhiteSpace(prefix))
+                prefix = fallbackPrefix;
+
+            if (string.IsNullOrWhiteSpace(prefix))
+                return;
+
+            var segments = GetStringListProperty(command, "Path");
+            var path = string.Join(" ", segments);
+            var text = "!" + prefix + (path.Length == 0 ? string.Empty : " " + path);
+
+            result.Add(new ChatCommandSnapshot
+            {
+                Text = text,
+                Syntax = GetStringProperty(command, "Syntax"),
+                Prefix = prefix,
+                Path = path,
+                Description = GetStringProperty(command, "Description"),
+                HelpText = GetStringProperty(command, "HelpText"),
+                Title = title,
+                OwnerId = FirstNonEmpty(GetStringProperty(command, "OwnerId"), fallbackOwnerId),
+                MinimumPromoteLevel = GetPropertyValue(command, "MinPromoteLevel")?.ToString() ?? string.Empty,
+                PathSegments = segments,
+            });
+        }
+
+        private static object GetFieldValue(object instance, string fieldName)
+        {
+            return instance.GetType()
+                .GetField(fieldName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                ?.GetValue(instance);
+        }
+
+        private static object GetPropertyValue(object instance, string propertyName)
+        {
+            return instance.GetType()
+                .GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                ?.GetValue(instance, null);
+        }
+
+        private static string GetStringProperty(object instance, string propertyName)
+        {
+            return GetPropertyValue(instance, propertyName) as string ?? string.Empty;
+        }
+
+        private static List<string> GetStringListProperty(object instance, string propertyName)
+        {
+            var result = new List<string>();
+            if (GetPropertyValue(instance, propertyName) is not IEnumerable values)
+                return result;
+
+            foreach (object value in values)
+            {
+                if (value is string text && !string.IsNullOrWhiteSpace(text))
+                    result.Add(text);
             }
 
             return result;

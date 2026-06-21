@@ -853,8 +853,7 @@
     private bool CanStopServer(string uniqueName)
     {
         var state = GetRuntime(uniqueName)?.State ?? DedicatedServerProcessState.Stopped;
-        return state is DedicatedServerProcessState.Starting
-            or DedicatedServerProcessState.Running;
+        return state == DedicatedServerProcessState.Running;
     }
 
     private bool CanKillStartingServer(string uniqueName)

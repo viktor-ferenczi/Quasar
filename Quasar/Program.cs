@@ -411,6 +411,13 @@ public class Program
             if (authOptions.Enabled)
                 razorComponents.RequireAuthorization(QuasarPolicyNames.CanView);
 
+            app.Services.GetRequiredService<ILogger<Program>>().LogInformation(
+                "Quasar {Version} starting. BootstrapVersion={BootstrapVersion}; HostId={HostId}; DataDirectory={DataDirectory}.",
+                webServiceOptions.Version,
+                string.IsNullOrWhiteSpace(webServiceOptions.BootstrapVersion) ? "none" : webServiceOptions.BootstrapVersion,
+                webServiceOptions.HostId,
+                MagnetarPaths.GetQuasarDirectory());
+
             using var gracefulShutdownSignals = RegisterGracefulShutdownSignals(app.Services);
             app.Run();
         }

@@ -127,6 +127,21 @@ they differ, Quasar warns that a manual server restart is required. It does not
 auto-schedule that restart; the operator-triggered stop/start path runs launch
 preparation and injects the bundled deployable DLL before relaunch.
 
+## Managed Runtime Update Checks
+
+The Updates page always shows the currently installed Quasar, Bootstrap,
+Magnetar, and Space Engineers Dedicated Server versions when Quasar can resolve
+them from release metadata or executable file versions. It also shows the
+managed runtime install paths and the most recent managed-runtime check time.
+
+Quasar UI worker and Bootstrap checks use the Quasar release checker interval
+(15 minutes by default) and the page's **Check Quasar** button. Managed Magnetar
+checks run during startup readiness and then every hour while Quasar is running;
+the page's **Check Magnetar** button runs the same check immediately. Managed DS
+checks run during startup readiness; **Check Dedicated Server** runs SteamCMD
+`app_update 298740 validate` immediately so an operator does not need to wait
+for a restart to verify or refresh the DS install.
+
 ## Bootstrap Updates
 
 Bootstrap checks the primary Quasar release stream every 15 minutes by default.

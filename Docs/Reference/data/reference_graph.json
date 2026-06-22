@@ -8,6 +8,7 @@
     "Magnetar.Protocol/Transport/AgentWireMessage.cs"
   ],
   "Magnetar.Protocol/Model/AgentSnapshot.cs": [
+    "Magnetar.Protocol/Model/ChatCommandSnapshot.cs",
     "Magnetar.Protocol/Model/ChatMessageSnapshot.cs",
     "Magnetar.Protocol/Model/DeathEventSnapshot.cs",
     "Magnetar.Protocol/Model/KickedPlayerSnapshot.cs",
@@ -16,6 +17,9 @@
     "Magnetar.Protocol/Model/ProfilerSnapshot.cs",
     "Magnetar.Protocol/Model/ServerMetrics.cs",
     "Magnetar.Protocol/Transport/AgentWireMessage.cs"
+  ],
+  "Magnetar.Protocol/Model/ChatCommandSnapshot.cs": [
+    "Magnetar.Protocol/Model/AgentSnapshot.cs"
   ],
   "Magnetar.Protocol/Model/ChatMessageSnapshot.cs": [
     "Magnetar.Protocol/Model/AgentSnapshot.cs"
@@ -175,6 +179,7 @@
   ],
   "Quasar/Components/Dashboard/ServerCard.razor": [
     "Quasar/Components/Dashboard/ServerDetailPanel.razor",
+    "Quasar/Services/QuasarConfigProfileCatalog.cs",
     "Quasar/Services/ServerManagementActions.cs"
   ],
   "Quasar/Components/Dashboard/ServerDetailPanel.razor": [
@@ -245,6 +250,7 @@
     "Quasar/Services/WebServiceOptions.cs"
   ],
   "Quasar/Components/Pages/Chat.razor": [
+    "Magnetar.Protocol/Model/ChatCommandSnapshot.cs",
     "Magnetar.Protocol/Model/ChatMessageSnapshot.cs",
     "Magnetar.Protocol/Transport/ServerCommandEnvelope.cs",
     "Magnetar.Protocol/Transport/ServerCommandType.cs",
@@ -301,6 +307,7 @@
     "Quasar/Components/Pages/FolderPickerDialog.razor"
   ],
   "Quasar/Components/Pages/Home.razor": [
+    "Quasar/Components/Dashboard/ServerCard.razor",
     "Quasar/Components/Pages/ConfigsPageDialog.razor",
     "Quasar/Components/Pages/Servers.razor",
     "Quasar/Components/Shared/CopyablePath.razor",
@@ -384,6 +391,7 @@
   "Quasar/Components/Pages/SteamWorkshopApiKeyDialog.razor": [],
   "Quasar/Components/Pages/Updates.razor": [
     "Quasar/Components/Shared/CopyablePath.razor",
+    "Quasar/Services/ManagedRuntimeWarmupService.cs",
     "Quasar/Services/Updates/QuasarUpdateOptions.cs",
     "Quasar/Services/Updates/QuasarUpdateService.cs",
     "Quasar/Services/Updates/QuasarUpdateSnapshot.cs",

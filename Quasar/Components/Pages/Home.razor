@@ -10,6 +10,7 @@
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @inject NavigationManager Navigation
+@inject ILocalStorageService LocalStorage
 
 <PageTitle>@(IsListView ? "Servers" : "Dashboard")</PageTitle>
 
@@ -474,16 +475,25 @@
 <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Spacing="2" Class="mb-3">
     <MudText Typo="Typo.h6">Servers</MudText>
     <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Spacing="1">
+        @if (IsCardsView)
+        {
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Add"
+                       OnClick="OpenCreateServerDialogAsync">
+                Create Server
+            </MudButton>
+        }
         <MudButton Variant="@(IsCardsView ? Variant.Filled : Variant.Outlined)"
                    Color="Color.Primary"
                    StartIcon="@Icons.Material.Filled.Dashboard"
-                   OnClick="@(() => SetServerView(DashboardServerView.Cards))">
+                   OnClick="@(() => SetServerViewAsync(DashboardServerView.Cards))">
             Cards
         </MudButton>
         <MudButton Variant="@(IsListView ? Variant.Filled : Variant.Outlined)"
                    Color="Color.Primary"
                    StartIcon="@Icons.Material.Filled.ViewList"
-                   OnClick="@(() => SetServerView(DashboardServerView.List))">
+                   OnClick="@(() => SetServerViewAsync(DashboardServerView.List))">
             List
         </MudButton>
     </MudStack>
@@ -521,7 +531,8 @@ else
                             StartRequested="StartAsync"
                             StopRequested="StopAsync"
                             KillStartingRequested="KillStartingAsync"
-                            RestartRequested="RestartAsync" />
+                            RestartRequested="RestartAsync"
+                            ConfigProfileSelected="OpenConfigProfileFromServerListAsync" />
             </MudItem>
         }
     </MudGrid>
@@ -529,6 +540,8 @@ else
 
 @code
 {
+    private const string ServerViewStorageKey = "quasar.dashboard.serverView";
+
     private enum DashboardServerView
     {
         Cards,
@@ -552,9 +565,9 @@ else
     private IReadOnlyList<DedicatedServerDefinition> LaunchedServers => Servers.Where(server => IsRunning(server.UniqueName)).ToList();
     private bool IsLaunchBlocked => RuntimeWarmupSnapshot.State != ManagedRuntimeWarmupState.Complete;
     private bool ShowDataHandlingConsentPrompt => DataHandlingConsent.GetSettings().ConsentGranted is null;
-    private DashboardServerView ServerView => string.Equals(ServerViewQuery, "list", StringComparison.OrdinalIgnoreCase)
-        ? DashboardServerView.List
-        : DashboardServerView.Cards;
+    private DashboardServerView _serverView = DashboardServerView.Cards;
+    private bool _serverViewLoadedFromStorage;
+    private DashboardServerView ServerView => _serverView;
     private bool IsCardsView => ServerView == DashboardServerView.Cards;
     private bool IsListView => ServerView == DashboardServerView.List;
 
@@ -705,6 +718,39 @@ else
         _setupWizardActive = ConfiguredServerCount == 0;
     }
 
+    protected override void OnParametersSet()
+    {
+        if (TryParseServerView(ServerViewQuery, out var queryView))
+        {
+            _serverView = queryView;
+            _serverViewLoadedFromStorage = true;
+            _ = SaveServerViewPreferenceAsync(queryView);
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _serverViewLoadedFromStorage || TryParseServerView(ServerViewQuery, out _))
+            return;
+
+        _serverViewLoadedFromStorage = true;
+        try
+        {
+            var stored = await LocalStorage.GetItemAsync<string>(ServerViewStorageKey);
+            if (TryParseServerView(stored, out var storedView) && storedView != _serverView)
+            {
+                _serverView = storedView;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (InvalidOperationException)
+        {
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
     public void Dispose()
     {
         Registry.Changed -= HandleRegistryChanged;
@@ -769,8 +815,15 @@ else
     private Task OpenImportWorldTemplateDialogAsync() =>
         ShowFullScreenPageDialogAsync<WorldTemplatesPageDialog>("World Templates");
 
-    private Task OpenCreateServerDialogAsync() =>
-        ShowFullScreenPageDialogAsync<ServersPageDialog>("Servers");
+    private Task OpenCreateServerDialogAsync()
+    {
+        var parameters = new DialogParameters
+        {
+            [nameof(ServersPageDialog.OpenCreateOnStart)] = true,
+        };
+
+        return ShowFullScreenPageDialogAsync<ServersPageDialog>("Servers", parameters);
+    }
 
     private Task OpenConfigProfileFromServerListAsync(string configProfileId)
     {
@@ -782,10 +835,44 @@ else
         return ShowFullScreenPageDialogAsync<ConfigsPageDialog>("Config Profiles", parameters);
     }
 
-    private void SetServerView(DashboardServerView view)
+    private async Task SetServerViewAsync(DashboardServerView view)
     {
+        _serverView = view;
+        await SaveServerViewPreferenceAsync(view);
         var target = view == DashboardServerView.List ? "/?view=list" : "/";
         Navigation.NavigateTo(target, replace: true);
+    }
+
+    private async Task SaveServerViewPreferenceAsync(DashboardServerView view)
+    {
+        try
+        {
+            await LocalStorage.SetItemAsync(ServerViewStorageKey, view == DashboardServerView.List ? "list" : "cards");
+        }
+        catch (InvalidOperationException)
+        {
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+    }
+
+    private static bool TryParseServerView(string? value, out DashboardServerView view)
+    {
+        if (string.Equals(value, "list", StringComparison.OrdinalIgnoreCase))
+        {
+            view = DashboardServerView.List;
+            return true;
+        }
+
+        if (string.Equals(value, "cards", StringComparison.OrdinalIgnoreCase))
+        {
+            view = DashboardServerView.Cards;
+            return true;
+        }
+
+        view = DashboardServerView.Cards;
+        return false;
     }
 
     private async Task ShowFullScreenPageDialogAsync<TDialog>(string title, DialogParameters? parameters = null) where TDialog : ComponentBase

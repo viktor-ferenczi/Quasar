@@ -4,7 +4,7 @@ namespace Quasar.Services;
 
 public sealed class ManagedRuntimeWarmupService : BackgroundService
 {
-    private static readonly TimeSpan MagnetarUpdateCheckInterval = TimeSpan.FromHours(1);
+    public static readonly TimeSpan MagnetarUpdateCheckPeriod = TimeSpan.FromHours(1);
     private readonly ManagedDedicatedServerRuntimeResolver _runtimeResolver;
     private readonly ILogger<ManagedRuntimeWarmupService> _logger;
     private readonly object _sync = new();
@@ -25,7 +25,7 @@ public sealed class ManagedRuntimeWarmupService : BackgroundService
     {
         lock (_sync)
         {
-            return _snapshot.Copy();
+            return ApplyInstalledVersions(_snapshot.Copy(), _runtimeResolver.GetInstalledVersions());
         }
     }
 
@@ -56,11 +56,17 @@ public sealed class ManagedRuntimeWarmupService : BackgroundService
     public Task RetryAsync(CancellationToken cancellationToken = default) =>
         RunWarmupAsync(cancellationToken);
 
+    public Task CheckMagnetarNowAsync(CancellationToken cancellationToken = default) =>
+        RunMagnetarUpdateCheckAsync(cancellationToken);
+
+    public Task CheckDedicatedServerNowAsync(CancellationToken cancellationToken = default) =>
+        RunDedicatedServerUpdateCheckAsync(cancellationToken);
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await RunWarmupAsync(stoppingToken);
 
-        using var timer = new PeriodicTimer(MagnetarUpdateCheckInterval);
+        using var timer = new PeriodicTimer(MagnetarUpdateCheckPeriod);
         try
         {
             while (await timer.WaitForNextTickAsync(stoppingToken))
@@ -133,6 +139,33 @@ public sealed class ManagedRuntimeWarmupService : BackgroundService
         }
     }
 
+    private async Task RunDedicatedServerUpdateCheckAsync(CancellationToken stoppingToken)
+    {
+        if (!await _runLock.WaitAsync(0, stoppingToken))
+            return;
+
+        try
+        {
+            var progress = new Progress<ManagedRuntimeInstallProgress>(ApplyProgress);
+            await _runtimeResolver.EnsureManagedDedicatedServerCurrentAsync(progress, stoppingToken);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(exception, "Managed Dedicated Server update check failed.");
+            ApplyProgress(new ManagedRuntimeInstallProgress(
+                ManagedRuntimeInstallComponent.DedicatedServer,
+                ManagedRuntimeInstallPhase.Failed,
+                exception.Message));
+        }
+        finally
+        {
+            _runLock.Release();
+        }
+    }
+
     private void SetState(ManagedRuntimeWarmupState state, string message)
     {
         lock (_sync)
@@ -175,6 +208,12 @@ public sealed class ManagedRuntimeWarmupService : BackgroundService
                 Message = progress.Message,
                 Percent = progress.Percent,
                 Path = progress.Path,
+                Version = string.IsNullOrWhiteSpace(progress.Version) ? component.Version : progress.Version,
+                LastCheckedUtc = progress.Phase is ManagedRuntimeInstallPhase.Checking
+                    or ManagedRuntimeInstallPhase.Ready
+                    or ManagedRuntimeInstallPhase.Failed
+                    ? DateTimeOffset.UtcNow
+                    : component.LastCheckedUtc,
             }) with
             {
                 Message = state is ManagedRuntimeComponentState.Checking
@@ -187,6 +226,41 @@ public sealed class ManagedRuntimeWarmupService : BackgroundService
         }
 
         Changed?.Invoke();
+    }
+
+    private static ManagedRuntimeWarmupSnapshot ApplyInstalledVersions(
+        ManagedRuntimeWarmupSnapshot snapshot,
+        ManagedRuntimeVersionSnapshot versions) =>
+        snapshot.WithComponents(component => component.Component switch
+        {
+            ManagedRuntimeInstallComponent.SteamCmd => ApplyInstalledVersion(
+                component,
+                versions.SteamCmdPath,
+                versions.SteamCmdVersion),
+            ManagedRuntimeInstallComponent.Magnetar => ApplyInstalledVersion(
+                component,
+                versions.MagnetarPath,
+                versions.MagnetarVersion),
+            ManagedRuntimeInstallComponent.DedicatedServer => ApplyInstalledVersion(
+                component,
+                versions.DedicatedServer64Path,
+                versions.DedicatedServerVersion),
+            _ => component,
+        });
+
+    private static ManagedRuntimeComponentSnapshot ApplyInstalledVersion(
+        ManagedRuntimeComponentSnapshot component,
+        string path,
+        string version)
+    {
+        if (string.IsNullOrWhiteSpace(path) && string.IsNullOrWhiteSpace(version))
+            return component;
+
+        return component with
+        {
+            Path = string.IsNullOrWhiteSpace(component.Path) ? path : component.Path,
+            Version = string.IsNullOrWhiteSpace(component.Version) ? version : component.Version,
+        };
     }
 
     private static ManagedRuntimeComponentState MapState(ManagedRuntimeInstallPhase phase) => phase switch
@@ -289,4 +363,8 @@ public sealed record ManagedRuntimeComponentSnapshot
     public int? Percent { get; init; }
 
     public string Path { get; init; } = string.Empty;
+
+    public string Version { get; init; } = string.Empty;
+
+    public DateTimeOffset? LastCheckedUtc { get; init; }
 }

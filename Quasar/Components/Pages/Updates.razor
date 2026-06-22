@@ -4,6 +4,7 @@
 @inject QuasarUpdateService UpdateService
 @inject QuasarUpdateOptions Options
 @inject WebServiceOptions WebOptions
+@inject ManagedRuntimeWarmupService RuntimeWarmup
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
 @inject IJSRuntime JS
@@ -19,7 +20,7 @@
                    StartIcon="@Icons.Material.Filled.Upgrade"
                    Disabled="_busy"
                    OnClick="CheckNowAsync">
-            Check now
+            Check Quasar
         </MudButton>
     </MudStack>
 
@@ -193,6 +194,63 @@
 
         <MudItem xs="12">
             <MudPaper Class="pa-4">
+                <MudStack Spacing="3">
+                    <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Spacing="2">
+                        <div>
+                            <MudText Typo="Typo.h6">Managed Runtime</MudText>
+                            <MudText Typo="Typo.body2">
+                                Magnetar checks run every @ManagedRuntimeWarmupService.MagnetarUpdateCheckPeriod.TotalMinutes.ToString("0") min. Dedicated Server checks run at startup and when requested here.
+                            </MudText>
+                        </div>
+                        <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.Refresh"
+                                       Disabled="_runtimeBusy"
+                                       OnClick="CheckMagnetarNowAsync">
+                                Check Magnetar
+                            </MudButton>
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.Refresh"
+                                       Disabled="_runtimeBusy"
+                                       OnClick="CheckDedicatedServerNowAsync">
+                                Check Dedicated Server
+                            </MudButton>
+                        </MudStack>
+                    </MudStack>
+
+                    <MudTable Items="@ManagedRuntimeRows" Dense="true" Hover="true">
+                        <HeaderContent>
+                            <MudTh>Component</MudTh>
+                            <MudTh>Installed version</MudTh>
+                            <MudTh>Status</MudTh>
+                            <MudTh>Path</MudTh>
+                            <MudTh>Last check</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Component">@context.DisplayName</MudTd>
+                            <MudTd DataLabel="Installed version">@FormatRuntimeVersion(context)</MudTd>
+                            <MudTd DataLabel="Status">@context.Message</MudTd>
+                            <MudTd DataLabel="Path">
+                                @if (!string.IsNullOrWhiteSpace(context.Path))
+                                {
+                                    <CopyablePath Value="@context.Path" Inline="true" TextClass="" />
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.body2">-</MudText>
+                                }
+                            </MudTd>
+                            <MudTd DataLabel="Last check">@FormatTimestamp(context.LastCheckedUtc)</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                </MudStack>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12">
+            <MudPaper Class="pa-4">
                 <MudStack Spacing="2">
                     <MudText Typo="Typo.h6">Source</MudText>
                     <MudText Typo="Typo.body2">
@@ -238,7 +296,9 @@
 
 @code {
     private QuasarUpdateSnapshot _snapshot = new();
+    private ManagedRuntimeWarmupSnapshot _runtimeSnapshot = ManagedRuntimeWarmupSnapshot.CreateInitial();
     private bool _busy;
+    private bool _runtimeBusy;
     private bool _includePrerelease;
     private bool _autoStageWebUpdates = true;
     private bool _bootstrapActivationRequested;
@@ -248,10 +308,12 @@
     protected override void OnInitialized()
     {
         _snapshot = UpdateService.GetSnapshot();
+        _runtimeSnapshot = RuntimeWarmup.GetSnapshot();
         _includePrerelease = Options.IncludePrerelease;
         _autoStageWebUpdates = Options.AutoStageWebUpdates;
         _selectedWebVersion = _snapshot.SelectedWebVersion;
         UpdateService.Changed += OnUpdatesChanged;
+        RuntimeWarmup.Changed += OnRuntimeWarmupChanged;
         if (_snapshot.AppSettingsConflict)
             _ = LoadAppSettingsConflictAsync();
     }
@@ -259,6 +321,7 @@
     public void Dispose()
     {
         UpdateService.Changed -= OnUpdatesChanged;
+        RuntimeWarmup.Changed -= OnRuntimeWarmupChanged;
     }
 
     private void OnUpdatesChanged() => _ = InvokeAsync(() =>
@@ -274,6 +337,17 @@
         StateHasChanged();
         if (_snapshot.AppSettingsConflict)
             _ = LoadAppSettingsConflictAsync();
+    });
+
+    private IReadOnlyList<ManagedRuntimeComponentSnapshot> ManagedRuntimeRows => _runtimeSnapshot.Components
+        .Where(component => component.Component is ManagedRuntimeInstallComponent.Magnetar
+            or ManagedRuntimeInstallComponent.DedicatedServer)
+        .ToList();
+
+    private void OnRuntimeWarmupChanged() => _ = InvokeAsync(() =>
+    {
+        _runtimeSnapshot = RuntimeWarmup.GetSnapshot();
+        StateHasChanged();
     });
 
     private async Task CheckNowAsync()
@@ -352,6 +426,22 @@
         {
             _busy = false;
         }
+    }
+
+    private async Task CheckMagnetarNowAsync()
+    {
+        await RunRuntimeBusyAsync(
+            () => RuntimeWarmup.CheckMagnetarNowAsync(),
+            "Magnetar update check complete.",
+            "Magnetar update check failed");
+    }
+
+    private async Task CheckDedicatedServerNowAsync()
+    {
+        await RunRuntimeBusyAsync(
+            () => RuntimeWarmup.CheckDedicatedServerNowAsync(),
+            "Dedicated Server update check complete.",
+            "Dedicated Server update check failed");
     }
 
     private async Task HandleSelectedWebVersionChanged(string? version)
@@ -500,6 +590,25 @@
         }
     }
 
+    private async Task RunRuntimeBusyAsync(Func<Task> action, string successMessage, string failurePrefix)
+    {
+        _runtimeBusy = true;
+        try
+        {
+            await action();
+            _runtimeSnapshot = RuntimeWarmup.GetSnapshot();
+            Snackbar.Add(successMessage, Severity.Success);
+        }
+        catch (Exception exception)
+        {
+            Snackbar.Add($"{failurePrefix}: {exception.Message}", Severity.Error);
+        }
+        finally
+        {
+            _runtimeBusy = false;
+        }
+    }
+
     private Severity GetStatusSeverity() => _snapshot.Status switch
     {
         _ when _snapshot.AppSettingsConflict => Severity.Warning,
@@ -511,6 +620,14 @@
 
     private static string FormatTimestamp(DateTimeOffset? timestamp) =>
         timestamp is null ? "never" : timestamp.Value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+
+    private static string FormatRuntimeVersion(ManagedRuntimeComponentSnapshot component)
+    {
+        if (!string.IsNullOrWhiteSpace(component.Version))
+            return component.Version;
+
+        return string.IsNullOrWhiteSpace(component.Path) ? "not installed" : "installed (version unknown)";
+    }
 
     private string FormatBootstrapVersion() =>
         string.IsNullOrWhiteSpace(_snapshot.CurrentBootstrapVersion)

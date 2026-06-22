@@ -19,10 +19,11 @@ Namespace `Magnetar.Protocol.Transport`; `public static class WireMessageKind`. 
 | `PluginConfigSnapshot` | `"plugin-config-snapshot"` | Agent→Quasar | Current plugin config state. |
 | `PluginConfigUpdate` | `"plugin-config-update"` | Quasar→Agent | Apply updated plugin config values. |
 | `AdminStop` | `"admin-stop"` | Agent→Quasar | Admin/console-initiated stop Quasar did not request. |
+| `AdminRestart` | `"admin-restart"` | Agent→Quasar | Admin-initiated in-game restart Quasar should track and relaunch. |
 | `PluginLogs` | `"plugin-logs"` | Agent→Quasar | Batch of streamed plugin log lines. |
 
 ## Dependencies
 - [`Magnetar.Protocol/Transport/AgentWireMessage.cs`](AgentWireMessage.cs.md) — `Kind` is set to one of these constants.
 
 ## Notes
-`PluginLogs` is the newer kind backing the live plugin-log streaming channel (pairs with `AgentWireMessage.PluginLogs`); it replaces stdout capture for the log panel and tolerates Quasar restarts/reconnects. Renaming any value is a breaking protocol change.
+`AdminStop` and `AdminRestart` are intentionally separate so Quasar can distinguish "stay off" from "save, exit, and supervisor-relaunch". `PluginLogs` backs the live plugin-log streaming channel (pairs with `AgentWireMessage.PluginLogs`); it replaces stdout capture for the log panel and tolerates Quasar restarts/reconnects. Renaming any value is a breaking protocol change.

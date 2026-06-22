@@ -36,6 +36,13 @@
       "summary": "Periodic snapshot pushed by `Quasar.Agent` to the Quasar supervisor containing the full observable state of one running SE dedicated server: identity fields, runtime status, scalar performance metrics, current profiler mode, optional profiler timing data, online human players, hidden NPC/bot player ids, kicked players (serving a kick cooldown), recent chat, registered PluginSdk chat commands, recent deaths, and loaded plugin list."
     },
     {
+      "path": "Magnetar.Protocol/Model/ChatCommandSnapshot.cs",
+      "name": "ChatCommandSnapshot.cs",
+      "kind": "class",
+      "tier": 1,
+      "summary": "DTO describing one registered PluginSdk chat command reported by `Quasar.Agent` in `AgentSnapshot.ChatCommands`. Carries the full command text (`!prefix path`), generated syntax including arguments, help/description text, owner id, root title, minimum promote level, and path segments so Quasar can offer command autocomplete without referencing `PluginSdk`."
+    },
+    {
       "path": "Magnetar.Protocol/Model/ChatMessageSnapshot.cs",
       "name": "ChatMessageSnapshot.cs",
       "kind": "class",
@@ -210,14 +217,14 @@
       "name": "AdminPlugin.cs",
       "kind": "class",
       "tier": 1,
-      "summary": "`AdminPlugin` is the Magnetar `IPlugin` entry point for the Quasar agent that runs inside the Space Engineers dedicated server. On `Init` it reads `AgentOptions`, configures and applies profiler Harmony patches, registers Quasar's admin chat commands (including the root `!stop` override), builds the `GameBridge`, starts a `PluginLogOutbox` (begun before the connection so startup log lines are buffered), wires `StopCommand` to report an admin stop before `!stop` quits the server, and starts an `AgentConnection`. It drives the game-thread snapshot/profiler refresh on each `Update`, refreshes per-character death subscriptions so respawned players are re-hooked, and handles server termination by sending an `AdminStop` signal to Quasar when shutdown was admin-initiated."
+      "summary": "`AdminPlugin` is the Magnetar `IPlugin` entry point for the Quasar agent that runs inside the Space Engineers dedicated server. On `Init` it logs Magnetar/Quasar.Agent versions, reads `AgentOptions`, applies profiler Harmony patches, registers Quasar's root admin chat commands (`!stop`, `!restart`, `!quit`), builds the `GameBridge`, starts `PluginLogOutbox`, wires command hooks to early `AdminStop` / `AdminRestart` signals, and starts `AgentConnection`. It drives snapshot/profiler refresh on each `Update`, refreshes death subscriptions, and reports fallback admin shutdown intent when the server terminates outside a Quasar-requested stop."
     },
     {
       "path": "Quasar.Agent/AgentConnection.cs",
       "name": "AgentConnection.cs",
       "kind": "class",
       "tier": 1,
-      "summary": "`AgentConnection` manages the WebSocket connection from the in-DS agent to the Quasar supervisor. It runs a reconnect loop on a background task, sends a `Hello` handshake plus periodic `Snapshot` messages, streams buffered plugin log batches from a `PluginLogOutbox`, receives and dispatches `Command` / `PluginConfigUpdate` / `Ping` messages from Quasar, and performs an autonomous save-and-stop if Quasar stays unreachable past a configurable window."
+      "summary": "`AgentConnection` manages the WebSocket connection from the in-DS agent to the Quasar supervisor. It runs a reconnect loop on a background task, sends `Hello` plus periodic `Snapshot` messages, streams buffered plugin log batches, receives and dispatches `Command` / `PluginConfigUpdate` / `Ping` messages from Quasar, sends best-effort admin stop/restart signals before command-triggered exits, and performs an autonomous save-and-stop if Quasar stays unreachable past a configurable window."
     },
     {
       "path": "Quasar.Agent/AgentOptions.cs",
@@ -287,7 +294,7 @@
       "name": "StopCommand.cs",
       "kind": "class",
       "tier": 1,
-      "summary": "`StopCommand` is a Quasar-owned PluginSdk command module for the root `!stop` in-game admin command. It overrides Magnetar's earlier `stop` root by being registered later from `AdminPlugin`, acknowledges the caller, reports an admin stop to Quasar through a static hook wired by `AdminPlugin`, then calls `ServerControl.SaveAndQuit()` on a worker task so the world is saved and the dedicated server process exits."
+      "summary": "Quasar-owned PluginSdk command modules for root in-game admin lifecycle commands. `StopCommand` handles `!stop` by reporting `AdminStop` and calling `ServerControl.SaveAndQuit()`. `RestartCommand` handles `!restart` by reporting `AdminRestart` and then using save-and-quit so Quasar tracks `Restarting` and performs the relaunch. `QuitCommand` handles `!quit` by reporting `AdminStop` and calling `ServerControl.QuitWithoutSaving()` for immediate no-save shutdown."
     },
     {
       "path": "Quasar.Agent/WebServiceLocator.cs",
@@ -333,7 +340,7 @@
       "name": "ServerCard.razor",
       "kind": "Blazor component",
       "tier": 2,
-      "summary": "Card component for a single managed server shown on the Dashboard card layout. Displays the server display name, status chip (OFF / STARTING / CONNECTING / OPEN / STOPPING / RESTARTING / CRASHED / FAULTED), host/world caption, last message or health summary, management icon buttons (console, clone, template, edit, delete), lifecycle action buttons, and `ServerDetailPanel` body content. The Start button can be disabled by the dashboard while managed runtime prerequisites are still preparing."
+      "summary": "Card component for a single managed server shown on the Dashboard card layout. Displays the server display name, status chip (OFF / STARTING / CONNECTING / OPEN / STOPPING / RESTARTING / CRASHED / FAULTED), host/world caption, last message or health summary, port/direct-connect chip, config-profile chip, management icon buttons (console, clone, template, edit, delete), lifecycle action buttons, and `ServerDetailPanel` body content. The Start button can be disabled by the dashboard while managed runtime prerequisites are still preparing."
     },
     {
       "path": "Quasar/Components/Dashboard/ServerDetailPanel.razor",
@@ -536,7 +543,7 @@
       "name": "Home.razor",
       "kind": "Blazor component",
       "tier": 2,
-      "summary": "Routable dashboard and primary server control surface at `/`. Shows a top-of-dashboard data handling consent prompt until YES/NO is stored, a five-step first-run setup wizard that auto-opens only while no dedicated server has been created yet, a Managed Runtime panel with SteamCMD, Magnetar, and Dedicated Server readiness/download/update progress, summary KPI cards (online servers, players online, health warnings, errors), an optional problem banner, and a switchable server section. The default card view renders `ServerCard`s for live operations; `?view=list` embeds the `Servers` table without MudBlazor's responsive card layout. Only the selected server view is generated, so the landing page does not build hidden list/table DOM. Servers can be started, stopped, restarted, and opened in the log dialog directly from the dashboard; Stop and Kill actions require confirmation. The wizard opens full-screen page dialogs for config-template, world-template, and server creation."
+      "summary": "Routable dashboard and primary server control surface at `/`. Shows data-handling consent, the first-run setup wizard, managed-runtime readiness/update progress, KPI cards, a problem banner, and a switchable server section whose Cards/List selection persists in browser local storage. The default card view renders `ServerCard`s in the same unique-name catalog order as the list, includes a Create Server button that opens the server editor immediately through `ServersPageDialog`, and passes config-profile click callbacks to cards; `?view=list` embeds the `Servers` table without MudBlazor's responsive card layout. Only the selected server view is generated. Servers can be started, stopped, restarted, and opened in the log dialog directly from the dashboard; Stop and Kill actions require confirmation."
     },
     {
       "path": "Quasar/Components/Pages/Home.razor.css",
@@ -634,14 +641,14 @@
       "name": "Servers.razor",
       "kind": "Blazor component",
       "tier": 2,
-      "summary": "Embeddable server-management component used by the dashboard list view and full-screen server dialog. Renders a sortable table of `DedicatedServerDefinition`s with live process/agent status and a rightmost action column for lifecycle, console, clone, template, edit, and delete commands; destructive Stop/Kill/Delete actions require confirmation. Clone asks whether to copy world state or leave the clone without a world, always clears path overrides so the clone gets independent DS/config/world paths, and refuses explicit path reuse. Expanded rows embed a `ServerDetailPanel` with the server definition, runtime snapshot, and live agent data. A separate panel lists \"unmanaged\" agents that report in without a matching server definition."
+      "summary": "Embeddable server-management component used by the dashboard list view and full-screen server dialog. Renders a sortable table of `DedicatedServerDefinition`s with live process/agent status, clickable config-profile names, copyable direct-connect ports, and a rightmost action column for lifecycle, console, clone, template, edit, and delete commands; destructive Stop/Kill/Delete actions require confirmation. Clone asks whether to copy world state or leave the clone without a world, always clears path overrides so the clone gets independent DS/config/world paths, and refuses explicit path reuse. Expanded rows embed a `ServerDetailPanel`; a separate panel lists unmanaged agents."
     },
     {
       "path": "Quasar/Components/Pages/ServersPageDialog.razor",
       "name": "ServersPageDialog.razor",
       "kind": "Blazor component",
       "tier": 2,
-      "summary": "Thin MudBlazor full-screen dialog wrapper around the `<Servers>` page component, used from dashboard-style views that want to open server management without navigating away. When the user clicks a config profile link inside the embedded Servers view, the dialog closes itself and opens `ConfigsPageDialog` in its place."
+      "summary": "Thin MudBlazor full-screen dialog wrapper around the `<Servers>` page component, used from dashboard-style views that want to open server management without navigating away. It can optionally ask the embedded Servers component to open the Create Server editor immediately. When the user clicks a config profile link inside the embedded Servers view, the dialog closes itself and opens `ConfigsPageDialog` in its place."
     },
     {
       "path": "Quasar/Components/Pages/SteamWorkshopApiKeyDialog.razor",
@@ -655,7 +662,7 @@
       "name": "Updates.razor",
       "kind": "component",
       "tier": 2,
-      "summary": "Routable MudBlazor page at `/settings/updates` for checking, staging, activating, and rolling back Quasar UI worker releases. It shows current update status from `QuasarUpdateService`, separates selectable Quasar UI releases from launcher candidates, exposes manual check/stage/activate actions for the selected UI worker version, can force a detected Bootstrap launcher update to activate immediately when running under Bootstrap, displays configured GitHub release source and asset names, provides controls for including prerelease versions plus choosing automatic or manual UI staging, and renders a git-style `appsettings.json` conflict editor with a copyable conflict-file path when staging cannot auto-merge settings."
+      "summary": "Routable MudBlazor page at `/settings/updates` for checking, staging, activating, and rolling back Quasar UI worker releases plus inspecting/updating managed runtime components. It shows current Quasar update status from `QuasarUpdateService`, separates selectable Quasar UI releases from launcher candidates, exposes manual Quasar check/stage/activate actions, can force a detected Bootstrap launcher update, displays installed Magnetar and Space Engineers Dedicated Server versions/paths at all times, exposes separate manual Magnetar and DS checks, provides prerelease/auto-staging controls, and renders a git-style `appsettings.json` conflict editor when staging cannot auto-merge settings."
     },
     {
       "path": "Quasar/Components/Pages/WorldTemplateFromServerDialog.razor",
@@ -841,7 +848,7 @@
       "name": "Program.cs",
       "kind": "class",
       "tier": 1,
-      "summary": "The ASP.NET Core / Blazor Server entry point for the Quasar supervisor host. `Program.Main` builds the `WebApplication`, registers every DI service, configures authentication and authorization, wires the middleware pipeline, maps HTTP/WebSocket endpoints, and runs the app. It is the system wiring hub \u2014 essentially every service in the process is registered here."
+      "summary": "The ASP.NET Core / Blazor Server entry point for the Quasar supervisor host. `Program.Main` builds the `WebApplication`, registers every DI service, configures authentication and authorization, wires the middleware pipeline, maps HTTP/WebSocket endpoints, logs Quasar startup version/host/data-directory details, and runs the app. It is the system wiring hub \u2014 essentially every service in the process is registered here."
     },
     {
       "path": "Quasar/Properties/launchSettings.json",
@@ -920,7 +927,7 @@
       "name": "AgentSocketHandler.cs",
       "kind": "class",
       "tier": 1,
-      "summary": "`AgentSocketHandler` is the HTTP/WebSocket entry point for incoming Quasar.Agent connections. It accepts the `quasar.agent.v1` sub-protocol, drives the per-connection read loop, dispatches each `AgentWireMessage` to the appropriate service, and marks the connection disconnected in the registry on teardown. It is the bridge between the raw WebSocket transport and the rest of the supervisor stack."
+      "summary": "`AgentSocketHandler` is the HTTP/WebSocket entry point for incoming Quasar.Agent connections. It accepts the `quasar.agent.v1` sub-protocol, drives the per-connection read loop, dispatches each `AgentWireMessage` to the appropriate service, handles agent-originated admin stop/restart lifecycle signals, and marks the connection disconnected in the registry on teardown."
     },
     {
       "path": "Quasar/Services/AtomicFileWriter.cs",
@@ -1011,7 +1018,7 @@
       "name": "DedicatedServerSupervisor.cs",
       "kind": "class",
       "tier": 1,
-      "summary": "`DedicatedServerSupervisor` is the heart of Quasar's process management. It is an `IHostedService` that maintains in-memory `ManagedServerState` for every configured dedicated server, runs a 2-second reconcile loop that starts/stops/restarts processes to match goal state, evaluates server health (agent heartbeat, simulation frame progress, uptime thresholds), rotates and prunes Quasar-captured DS stdout/stderr logs, captures mod-download failure lines for dashboard surfacing, persists runtime state across Quasar worker restarts and **adopts surviving detached processes by PID on startup**, carries per-server advertised server/world names into launch preparation, warns when the bundled Quasar.Agent DLL hash differs from a running server's deployed Magnetar local DLL, and coordinates graceful stop (save + stop commands to the agent before kill) plus scheduled and maximum-uptime restarts."
+      "summary": "`DedicatedServerSupervisor` is the heart of Quasar's process management. It is an `IHostedService` that maintains in-memory `ManagedServerState` for every configured dedicated server, runs a 2-second reconcile loop that starts/stops/restarts processes to match goal state, evaluates server health (agent heartbeat, simulation frame progress, uptime thresholds), rotates and prunes Quasar-captured DS stdout/stderr logs, captures mod-download failure lines for dashboard surfacing, persists runtime state across Quasar worker restarts and **adopts surviving detached processes by PID on startup**, carries per-server advertised server/world names into launch preparation, warns when the bundled Quasar.Agent DLL hash differs from a running server's deployed Magnetar local DLL, coordinates graceful stop (save + stop commands to the agent before kill), and tracks admin-requested `!restart` as a supervisor-owned restart instead of a crash/reconnect wait."
     },
     {
       "path": "Quasar/Services/EntityService.cs",
@@ -1046,7 +1053,7 @@
       "name": "ManagedDedicatedServerRuntimeResolver.cs",
       "kind": "class",
       "tier": 1,
-      "summary": "`ManagedDedicatedServerRuntimeResolver` resolves the paths needed to launch a dedicated server \u2014 the Magnetar launcher executable, its working directory, the `DedicatedServer64` directory, and any native-library search paths required by the child process \u2014 and auto-installs Magnetar, SteamCMD, and the DS itself when absent. It also exposes a startup readiness workflow that reports SteamCMD, Magnetar, and Dedicated Server check/download/install progress before managed launches are allowed. It supports `.zip`, `.tar.gz`, and `.7z` archives for both Magnetar and SteamCMD downloads, guarded by per-component `SemaphoreSlim` install locks. Managed Magnetar installs are tracked by a `.quasar-magnetar-release.json` marker, so launch-time and background checks compare the installed GitHub release tag + asset name with the latest full release and skip archive downloads when that identity is unchanged. Successful GitHub release resolutions are cached in memory for five minutes so a burst of managed server starts does not repeatedly call GitHub. The Magnetar install path branches by OS: Windows ships both runtime builds (`MagnetarInterim.exe` on .NET 10 and `MagnetarLegacy.exe` on .NET Framework 4.8) side-by-side and honors the per-server `DedicatedServerDefinition.ManagedRuntime` selection, while Linux ships a single Interim build behind a top-level wrapper with the apphost under `Bin/`."
+      "summary": "`ManagedDedicatedServerRuntimeResolver` resolves the paths needed to launch a dedicated server \u2014 the Magnetar launcher executable, its working directory, the `DedicatedServer64` directory, and any native-library search paths required by the child process \u2014 and auto-installs Magnetar, SteamCMD, and the DS itself when absent. It exposes startup readiness plus separate manual/current checks for Magnetar and the Dedicated Server, reports installed versions/paths to the warmup/update UI, and includes versions in progress events. It supports `.zip`, `.tar.gz`, and `.7z` archives for both Magnetar and SteamCMD downloads, guarded by per-component `SemaphoreSlim` install locks. Managed Magnetar installs are tracked by a `.quasar-magnetar-release.json` marker, so launch-time/background checks compare installed GitHub release tag + asset name with the latest full release and skip archive downloads when unchanged. Successful GitHub release resolutions are cached in memory for five minutes. Windows ships both runtime builds side-by-side; Linux ships a single Interim build behind a top-level wrapper with the apphost under `Bin/`."
     },
     {
       "path": "Quasar/Services/ManagedRuntimeOptions.cs",
@@ -1060,7 +1067,7 @@
       "name": "ManagedRuntimeWarmupService.cs",
       "kind": "class",
       "tier": 1,
-      "summary": "`ManagedRuntimeWarmupService` is a `BackgroundService` that immediately checks and prepares the managed SteamCMD, Magnetar, and Space Engineers Dedicated Server installs at Quasar startup, so managed launches are blocked until those prerequisites are ready. After the startup warmup, it checks the managed Magnetar install for updates every hour and feeds Magnetar checking/download/install progress into the visible component snapshot. It exposes a component-level `ManagedRuntimeWarmupSnapshot` for dashboard progress display and fires a `Changed` event on every status update."
+      "summary": "`ManagedRuntimeWarmupService` is a `BackgroundService` that immediately checks and prepares the managed SteamCMD, Magnetar, and Space Engineers Dedicated Server installs at Quasar startup, so managed launches are blocked until prerequisites are ready. After startup it checks the managed Magnetar install for updates every hour, exposes manual Magnetar and Dedicated Server check methods for the Updates page, enriches snapshots with installed versions/paths, and fires `Changed` on every status update."
     },
     {
       "path": "Quasar/Services/PluginCatalogRefreshService.cs",

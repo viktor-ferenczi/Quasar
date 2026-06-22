@@ -1,5 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Reflection;
 using Magnetar.Protocol.Model;
 using PluginSdk;
 using PluginSdk.Commands;
@@ -7,6 +11,7 @@ using Sandbox.Game;
 using Sandbox.Game.World;
 using VRage.Game.ModAPI;
 using VRage.Plugins;
+using VRage.Utils;
 
 namespace Quasar.Agent
 {
@@ -21,15 +26,19 @@ namespace Quasar.Agent
         private AgentConnection _connection;
         private PluginLogOutbox _outbox;
         private readonly object _adminStopSync = new object();
+        private readonly object _adminRestartSync = new object();
         private bool _adminStopReported;
+        private bool _adminRestartRequested;
+        private bool _adminRestartReported;
         private DateTime _lastDeathSubscriptionRefreshUtc = DateTime.MinValue;
 
         public void Init(object gameServer)
         {
             var options = AgentOptions.FromEnvironment();
+            LogStartupVersions();
             AgentProfiler.Configure(options);
             AgentProfilerPatches.Apply(options);
-            ServerCommands.Register(typeof(AdminPlugin).Assembly, typeof(StopCommand));
+            ServerCommands.Register(typeof(AdminPlugin).Assembly, typeof(StopCommand), typeof(RestartCommand), typeof(QuitCommand));
             _bridge = new GameBridge(gameServer);
 
             // Start capturing plugin log lines before the connection loop so any
@@ -39,6 +48,8 @@ namespace Quasar.Agent
 
             _connection = new AgentConnection(_bridge, new WebServiceLocator(), options, _outbox);
             StopCommand.AdminStopRequested = ReportAdminStop;
+            QuitCommand.AdminStopRequested = ReportAdminStop;
+            RestartCommand.AdminRestartRequested = ReportAdminRestart;
             _connection.Start();
             MyVisualScriptLogicProvider.PlayerDied += OnPlayerDied;
             ServerControl.Terminating += OnServerTerminating;
@@ -54,6 +65,8 @@ namespace Quasar.Agent
         {
             ServerControl.Terminating -= OnServerTerminating;
             StopCommand.AdminStopRequested = null;
+            QuitCommand.AdminStopRequested = null;
+            RestartCommand.AdminRestartRequested = null;
             MyVisualScriptLogicProvider.PlayerDied -= OnPlayerDied;
             UnsubscribeDeathHandlers();
             _connection?.Stop();
@@ -74,7 +87,8 @@ namespace Quasar.Agent
         {
             if (kind == ServerTerminationKind.Shutdown &&
                 _bridge != null &&
-                !_bridge.QuasarRequestedStop)
+                !_bridge.QuasarRequestedStop &&
+                !IsAdminRestartRequested())
             {
                 ReportAdminStop();
             }
@@ -82,6 +96,9 @@ namespace Quasar.Agent
 
         private void ReportAdminStop()
         {
+            if (IsAdminRestartRequested())
+                return;
+
             lock (_adminStopSync)
             {
                 if (_adminStopReported)
@@ -89,6 +106,113 @@ namespace Quasar.Agent
 
                 _adminStopReported = _connection?.TrySendAdminStop() == true;
             }
+        }
+
+        private void ReportAdminRestart()
+        {
+            lock (_adminRestartSync)
+            {
+                _adminRestartRequested = true;
+                if (_adminRestartReported)
+                    return;
+
+                _adminRestartReported = _connection?.TrySendAdminRestart() == true;
+            }
+        }
+
+        private bool IsAdminRestartRequested()
+        {
+            lock (_adminRestartSync)
+            {
+                return _adminRestartRequested;
+            }
+        }
+
+        private static void LogStartupVersions()
+        {
+            var magnetarVersion = ResolveMagnetarVersion();
+            var agentVersion = GetAssemblyVersion(typeof(AdminPlugin).Assembly);
+            var message = $"Quasar.Agent startup: Magnetar={magnetarVersion}; Quasar.Agent={agentVersion}.";
+
+            try
+            {
+                MyLog.Default?.WriteLineAndConsole(message);
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                Console.WriteLine($"[Quasar.Agent] {message}");
+            }
+            catch
+            {
+            }
+        }
+
+        private static string ResolveMagnetarVersion()
+        {
+            var entryAssembly = Assembly.GetEntryAssembly();
+            if (entryAssembly != null && IsMagnetarAssembly(entryAssembly))
+                return GetAssemblyVersion(entryAssembly);
+
+            var loadedMagnetarAssembly = AppDomain.CurrentDomain.GetAssemblies()
+                .Where(IsMagnetarAssembly)
+                .OrderBy(assembly => assembly.GetName().Name, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault();
+            if (loadedMagnetarAssembly != null)
+                return GetAssemblyVersion(loadedMagnetarAssembly);
+
+            return GetMagnetarProcessVersion();
+        }
+
+        private static bool IsMagnetarAssembly(Assembly assembly)
+        {
+            var name = assembly.GetName().Name;
+            return !string.IsNullOrWhiteSpace(name) &&
+                   name.StartsWith("Magnetar", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string GetAssemblyVersion(Assembly assembly)
+        {
+            return assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+                   ?? assembly.GetName().Version?.ToString()
+                   ?? "unknown";
+        }
+
+        private static string GetMagnetarProcessVersion()
+        {
+            try
+            {
+                using (var process = Process.GetCurrentProcess())
+                {
+                    var fileName = process.MainModule?.FileName;
+                    if (string.IsNullOrWhiteSpace(fileName) ||
+                        !Path.GetFileName(fileName).StartsWith("Magnetar", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return "unknown";
+                    }
+
+                    var version = FileVersionInfo.GetVersionInfo(fileName);
+                    return FirstNonEmpty(version.ProductVersion, version.FileVersion, "unknown");
+                }
+            }
+            catch
+            {
+                return "unknown";
+            }
+        }
+
+        private static string FirstNonEmpty(params string[] values)
+        {
+            foreach (var value in values)
+            {
+                if (!string.IsNullOrWhiteSpace(value))
+                    return value;
+            }
+
+            return string.Empty;
         }
 
         private void OnPlayerDied(long identityId)

@@ -3,7 +3,7 @@
 **Module:** Quasar.Host  **Kind:** class  **Tier:** 1
 
 ## Summary
-The ASP.NET Core / Blazor Server entry point for the Quasar supervisor host. `Program.Main` builds the `WebApplication`, registers every DI service, configures authentication and authorization, wires the middleware pipeline, maps HTTP/WebSocket endpoints, and runs the app. It is the system wiring hub — essentially every service in the process is registered here.
+The ASP.NET Core / Blazor Server entry point for the Quasar supervisor host. `Program.Main` builds the `WebApplication`, registers every DI service, configures authentication and authorization, wires the middleware pipeline, maps HTTP/WebSocket endpoints, logs Quasar startup version/host/data-directory details, and runs the app. It is the system wiring hub — essentially every service in the process is registered here.
 
 ## Structure
 Namespace `Quasar`; `public class Program` with `static void Main(string[] args)`.
@@ -30,6 +30,8 @@ Namespace `Quasar`; `public class Program` with `static void Main(string[] args)
 ### Middleware + endpoints
 Pipeline: exception handler (prod) → forwarded headers (`X-Forwarded-For` / proto / host from loopback or configured `TrustedProxies`) → status-code re-execute (`/not-found`) → `UseWebSockets` (30 s keep-alive) → `UseAuthentication` → inline trusted-network principal injection → `UseAuthorization` → `UseAntiforgery`.
 Endpoints: `GET /api/health` (status/worker/host/version/baseUrl/connectedAgents/configuredServers/runningServers), `GET /api/discovery` (manifest), `GET /api/analytics/series` (browser-fetched chart series), `GET /api/servers/{uniqueName}/logs/server/download` (streams the newest `SpaceEngineersDedicated*.log` for a configured server), `GET /api/servers/{uniqueName}/logs/magnetar/download` (streams that server's Magnetar `info.log`), `GET /api/discord/log/download` (streams the dedicated Discord integration log) — server log downloads require `CanView` and the Discord log download requires `CanManageDiscord` when auth is enabled, `GET /login` (Steam challenge or unavailable page), `GET /logout`, `GET /access-denied` (standalone branded 403 page for authenticated users lacking a Quasar role), `POST /api/internal/drain` (launcher-token + trusted-network gated; `delaySeconds`/`stopServers` params), `GET /api/backup/download` (`QuasarBackupService.CreateBackup` -> streams a fresh ZIP), `GET /api/backup/download/{name}` (downloads an existing stored backup by name from the configured backup directory) — both `RequireAuthorization(CanManageSecurity)` when auth enabled, `Map /ws/agent` -> `AgentSocketHandler`, `MapStaticAssets()`, `/branding` physical static files served from the persistent Quasar data directory, `MapRazorComponents<App>()` (interactive server; `RequireAuthorization(CanView)` when auth enabled).
+
+Startup log: after the app is built and before `Run()`, the host logger writes the Quasar worker version, Bootstrap version (or `none`), host id, and data directory to the Quasar log file.
 
 ### POSIX signals + helpers
 On Linux/macOS, SIGINT/SIGTERM handlers either `StopApplication` (when preserving managed servers) or `QuasarShutdownService.ShutdownAsync`. Helpers: `CreateForwardedHeadersOptions`, `AddTrustedProxy`, `DownloadLogFile`, `ResolveLatestDedicatedServerLogPath`, `ResolveMagnetarInfoLogPath`, `CompositeDisposable`, `EmptyDisposable`, `SanitizeReturnUrl`, `ExtractSteamId`, `AddOrReplaceClaim`, `ShouldUseSourceStaticWebAssets`, `ShouldListenOnAnyInterface`.

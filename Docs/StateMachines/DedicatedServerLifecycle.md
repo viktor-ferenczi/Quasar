@@ -21,17 +21,21 @@ observed state.
 ## Goal state
 
 The desired state. Operator actions usually mutate goal state first, then let
-reconciliation perform the transition. An in-game admin `!quit` or Quasar Agent
-`!stop` is reported by the agent as an `AdminStop` signal so Quasar flips the
-goal to `Off` (and therefore does **not** treat the shutdown as a crash to
-restart).
+reconciliation perform the transition. Quasar Agent owns the in-game `!stop`,
+`!quit`, and `!restart` roots for managed servers. `!stop` saves and reports
+`AdminStop`; `!quit` reports `AdminStop` and exits immediately without saving.
+Both flip the goal to `Off` (and therefore do **not** treat the shutdown as a
+crash to restart). `!restart` reports `AdminRestart`, keeps the goal `On`, moves
+the observed process to `Restarting`, and lets Quasar relaunch after the process
+exits.
 
 ```mermaid
 stateDiagram-v2
     [*] --> Off
     Off --> On: operator Start / SetGoalStateAsync(On)
     On --> Off: operator Stop / SetGoalStateAsync(Off)
-    On --> Off: in-game admin !quit / Quasar !stop (AdminStop signal)
+    On --> Off: Quasar Agent !stop / !quit (AdminStop signal)
+    On --> On: Quasar Agent !restart (AdminRestart signal)
     On --> Off: Discord !stop command
 ```
 
@@ -41,7 +45,8 @@ stateDiagram-v2
 | --- | --- | --- |
 | `Off → On` | Operator/API `SetGoalStateAsync(On)` | `DedicatedServerSupervisor.SetGoalStateAsync` |
 | `On → Off` | Operator/API `SetGoalStateAsync(Off)` | `DedicatedServerSupervisor.SetGoalStateAsync` |
-| `On → Off` | In-game admin `!quit` / Quasar Agent `!stop` → agent `AdminStop` | `AgentSocketHandler.ProcessMessageAsync` (`AdminStop` case) |
+| `On → Off` | Quasar Agent `!stop` / `!quit` → agent `AdminStop` | `AgentSocketHandler.ProcessMessageAsync` (`AdminStop` case) |
+| `On → On` | Quasar Agent `!restart` → agent `AdminRestart` | `AgentSocketHandler.ProcessMessageAsync` (`AdminRestart` case), `DedicatedServerSupervisor.BeginAdminRestartAsync` |
 | `On → Off` | Discord `!stop` command | `DiscordCommandDispatcher.DispatchAsync` |
 
 ---
@@ -127,8 +132,11 @@ stateDiagram-v2
   `AgentAttachRetryAttempts` consecutive attach retries, the server becomes
   `Faulted`.
 - Planned restarts come from the health policy (`Unhealthy` +
-  `AutoRestartOnUnhealthy`), `MaximumUptime`, and `DailyRestartTimeLocal`
-  (optionally staggered by `AvoidSimultaneousScheduledRestarts`).
+  `AutoRestartOnUnhealthy`), `MaximumUptime`, `DailyRestartTimeLocal`
+  (optionally staggered by `AvoidSimultaneousScheduledRestarts`), and the
+  Quasar Agent `!restart` command. Agent-requested restart is tracked as
+  `Restarting` before the process exits; the subsequent clean exit is relaunched
+  without consuming crash-restart budget.
 
 ---
 
@@ -169,6 +177,9 @@ The simulation-frame check mirrors the dedicated server's own watcher:
 `frameProgressScore = deltaFrames / (elapsedSeconds * 60)` is compared against a
 configurable minimum, with save-in-progress windows resetting the baseline
 instead of counting as a stall (`EvaluateSimulationProgress`).
+Collecting the first simulation-progress baseline is `Unknown`, not `Warning`;
+the card can show the state, but it does not raise a dashboard warning
+notification.
 
 ---
 

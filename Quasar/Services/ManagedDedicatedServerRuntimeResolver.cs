@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO.Compression;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
@@ -148,7 +149,8 @@ public sealed class ManagedDedicatedServerRuntimeResolver
             ManagedRuntimeInstallComponent.SteamCmd,
             ManagedRuntimeInstallPhase.Ready,
             "SteamCMD installed.",
-            Path: steamCmdPath));
+            Path: steamCmdPath,
+            Version: GetFileVersion(steamCmdPath)));
 
         var dedicatedServer64Path = Path.Combine(_options.DedicatedServerInstallDirectory, "DedicatedServer64");
         var dedicatedServerReady = IsValidDedicatedServer64Directory(dedicatedServer64Path);
@@ -206,12 +208,15 @@ public sealed class ManagedDedicatedServerRuntimeResolver
             OperatingSystem.IsLinux()
                 ? "SteamCMD and linux64 native runtime ready."
                 : "SteamCMD ready.",
-            Path: OperatingSystem.IsLinux() ? steamCmdRuntimePath : steamCmdPath));
+            Path: OperatingSystem.IsLinux() ? steamCmdRuntimePath : steamCmdPath,
+            Version: GetFileVersion(steamCmdPath)));
+        var dedicatedServerVersion = GetDedicatedServerVersion(dedicatedServer64Path);
         progress?.Report(new ManagedRuntimeInstallProgress(
             ManagedRuntimeInstallComponent.DedicatedServer,
             ManagedRuntimeInstallPhase.Ready,
-            "Space Engineers Dedicated Server ready.",
-            Path: dedicatedServer64Path));
+            BuildDedicatedServerReadyMessage(dedicatedServerVersion),
+            Path: dedicatedServer64Path,
+            Version: dedicatedServerVersion));
 
         await EnsureManagedMagnetarInstallAsync(ManagedServerRuntime.DotNet10, progress, cancellationToken);
 
@@ -227,6 +232,58 @@ public sealed class ManagedDedicatedServerRuntimeResolver
         IProgress<ManagedRuntimeInstallProgress>? progress = null,
         CancellationToken cancellationToken = default) =>
         EnsureManagedMagnetarInstallAsync(ManagedServerRuntime.DotNet10, progress, cancellationToken);
+
+    public async Task EnsureManagedDedicatedServerCurrentAsync(
+        IProgress<ManagedRuntimeInstallProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        progress?.Report(new ManagedRuntimeInstallProgress(
+            ManagedRuntimeInstallComponent.SteamCmd,
+            ManagedRuntimeInstallPhase.Checking,
+            "Checking SteamCMD install."));
+
+        var steamCmdPath = await EnsureManagedSteamCmdInstallAsync(progress, cancellationToken);
+        if (string.IsNullOrWhiteSpace(steamCmdPath))
+            throw new InvalidOperationException("SteamCMD is not installed and could not be downloaded.");
+
+        progress?.Report(new ManagedRuntimeInstallProgress(
+            ManagedRuntimeInstallComponent.SteamCmd,
+            ManagedRuntimeInstallPhase.Ready,
+            "SteamCMD installed.",
+            Path: steamCmdPath,
+            Version: GetFileVersion(steamCmdPath)));
+
+        var dedicatedServer64Path = await TryEnsureManagedDedicatedServerInstallAsync(
+            cancellationToken,
+            steamCmdPath,
+            progress);
+        if (!IsValidDedicatedServer64Directory(dedicatedServer64Path))
+            throw new InvalidOperationException("Space Engineers Dedicated Server is not installed and could not be updated.");
+
+        var version = GetDedicatedServerVersion(dedicatedServer64Path);
+        progress?.Report(new ManagedRuntimeInstallProgress(
+            ManagedRuntimeInstallComponent.DedicatedServer,
+            ManagedRuntimeInstallPhase.Ready,
+            BuildDedicatedServerReadyMessage(version),
+            Path: dedicatedServer64Path,
+            Version: version));
+    }
+
+    public ManagedRuntimeVersionSnapshot GetInstalledVersions()
+    {
+        var steamCmdPath = ResolveInstalledSteamCmdPath();
+        var magnetarPath = ResolveInstalledMagnetarPath();
+        var dedicatedServer64Path = ResolveInstalledDedicatedServer64Path();
+        var installedMagnetar = ReadInstalledMagnetarRelease(_options.MagnetarInstallDirectory);
+
+        return new ManagedRuntimeVersionSnapshot(
+            SteamCmdPath: steamCmdPath,
+            SteamCmdVersion: GetFileVersion(steamCmdPath),
+            MagnetarPath: magnetarPath,
+            MagnetarVersion: installedMagnetar?.DisplayName ?? GetFileVersion(magnetarPath),
+            DedicatedServer64Path: dedicatedServer64Path,
+            DedicatedServerVersion: GetDedicatedServerVersion(dedicatedServer64Path));
+    }
 
     private Task<string> EnsureManagedMagnetarInstallAsync(
         ManagedServerRuntime runtime,
@@ -272,7 +329,8 @@ public sealed class ManagedDedicatedServerRuntimeResolver
                     ManagedRuntimeInstallComponent.Magnetar,
                     ManagedRuntimeInstallPhase.Ready,
                     BuildMagnetarReadyMessage(archive),
-                    Path: binaryLauncherPath));
+                    Path: binaryLauncherPath,
+                    Version: GetMagnetarVersion(archive)));
                 return binaryLauncherPath;
             }
 
@@ -321,7 +379,8 @@ public sealed class ManagedDedicatedServerRuntimeResolver
                     ManagedRuntimeInstallComponent.Magnetar,
                     ManagedRuntimeInstallPhase.Ready,
                     BuildMagnetarReadyMessage(archive),
-                    Path: binaryLauncherPath));
+                    Path: binaryLauncherPath,
+                    Version: GetMagnetarVersion(archive)));
                 return binaryLauncherPath;
             }
             catch (Exception exception) when (!cancellationToken.IsCancellationRequested &&
@@ -337,7 +396,8 @@ public sealed class ManagedDedicatedServerRuntimeResolver
                     ManagedRuntimeInstallComponent.Magnetar,
                     ManagedRuntimeInstallPhase.Ready,
                     "Using existing Magnetar runtime after update failure.",
-                    Path: binaryLauncherPath));
+                    Path: binaryLauncherPath,
+                    Version: DescribeInstalledMagnetarRelease(installDirectory)));
                 return binaryLauncherPath;
             }
             finally
@@ -381,7 +441,8 @@ public sealed class ManagedDedicatedServerRuntimeResolver
                     ManagedRuntimeInstallComponent.Magnetar,
                     ManagedRuntimeInstallPhase.Ready,
                     BuildMagnetarReadyMessage(archive),
-                    Path: launcherPath));
+                    Path: launcherPath,
+                    Version: GetMagnetarVersion(archive)));
                 return launcherPath;
             }
 
@@ -428,7 +489,8 @@ public sealed class ManagedDedicatedServerRuntimeResolver
                     ManagedRuntimeInstallComponent.Magnetar,
                     ManagedRuntimeInstallPhase.Ready,
                     BuildMagnetarReadyMessage(archive),
-                    Path: launcherPath));
+                    Path: launcherPath,
+                    Version: GetMagnetarVersion(archive)));
                 return launcherPath;
             }
             catch (Exception exception) when (!cancellationToken.IsCancellationRequested && File.Exists(launcherPath))
@@ -442,7 +504,8 @@ public sealed class ManagedDedicatedServerRuntimeResolver
                     ManagedRuntimeInstallComponent.Magnetar,
                     ManagedRuntimeInstallPhase.Ready,
                     "Using existing Magnetar runtime after update failure.",
-                    Path: launcherPath));
+                    Path: launcherPath,
+                    Version: DescribeInstalledMagnetarRelease(installDirectory)));
                 return launcherPath;
             }
             finally
@@ -637,6 +700,104 @@ public sealed class ManagedDedicatedServerRuntimeResolver
         archive.SourceKind == MagnetarArchiveSourceKinds.ExistingUnknown
             ? "Magnetar runtime ready."
             : $"Magnetar runtime {archive.DisplayName} ready.";
+
+    private static string GetMagnetarVersion(MagnetarArchiveReference archive) =>
+        archive.SourceKind == MagnetarArchiveSourceKinds.ExistingUnknown
+            ? string.Empty
+            : archive.DisplayName;
+
+    private static string BuildDedicatedServerReadyMessage(string version) =>
+        string.IsNullOrWhiteSpace(version)
+            ? "Space Engineers Dedicated Server ready."
+            : $"Space Engineers Dedicated Server {version} ready.";
+
+    private string ResolveInstalledSteamCmdPath()
+    {
+        if (!string.IsNullOrWhiteSpace(_options.SteamCmdPath) && File.Exists(_options.SteamCmdPath))
+            return _options.SteamCmdPath;
+
+        var managedPath = FindSteamCmdExecutable(_options.SteamCmdInstallDirectory);
+        if (!string.IsNullOrWhiteSpace(managedPath))
+            return managedPath;
+
+        return ResolveSteamCmdPathFromEnvironment();
+    }
+
+    private string ResolveInstalledMagnetarPath()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            var interimPath = Path.Combine(_options.MagnetarInstallDirectory, GetWindowsMagnetarLauncherFileName(ManagedServerRuntime.DotNet10));
+            if (File.Exists(interimPath))
+                return interimPath;
+
+            var legacyPath = Path.Combine(_options.MagnetarInstallDirectory, GetWindowsMagnetarLauncherFileName(ManagedServerRuntime.NetFramework48));
+            return File.Exists(legacyPath) ? legacyPath : string.Empty;
+        }
+
+        return FindImmediateFile(Path.Combine(_options.MagnetarInstallDirectory, "Bin"), MagnetarLauncherFileNames) ?? string.Empty;
+    }
+
+    private string ResolveInstalledDedicatedServer64Path()
+    {
+        if (IsValidDedicatedServer64Directory(_options.DedicatedServer64OverridePath))
+            return _options.DedicatedServer64OverridePath;
+
+        var managedPath = Path.Combine(_options.DedicatedServerInstallDirectory, "DedicatedServer64");
+        if (IsValidDedicatedServer64Directory(managedPath))
+            return managedPath;
+
+        return EnumerateDedicatedServer64Candidates().FirstOrDefault(IsValidDedicatedServer64Directory) ?? string.Empty;
+    }
+
+    private static string GetDedicatedServerVersion(string dedicatedServer64Path)
+    {
+        if (!IsValidDedicatedServer64Directory(dedicatedServer64Path))
+            return string.Empty;
+
+        return FirstNonEmpty(
+            GetFileVersion(Path.Combine(dedicatedServer64Path, DedicatedServerExecutableName + ".exe")),
+            GetFileVersion(Path.Combine(dedicatedServer64Path, DedicatedServerExecutableName)),
+            GetFileVersion(Path.Combine(dedicatedServer64Path, "SpaceEngineers.Game.dll")),
+            GetFileVersion(Path.Combine(dedicatedServer64Path, "Sandbox.Game.dll")));
+    }
+
+    private static string GetFileVersion(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            return string.Empty;
+
+        try
+        {
+            var version = FileVersionInfo.GetVersionInfo(path);
+            var fileVersion = FirstNonEmpty(version.ProductVersion, version.FileVersion);
+            if (!string.IsNullOrWhiteSpace(fileVersion))
+                return fileVersion;
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            return AssemblyName.GetAssemblyName(path).Version?.ToString() ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static string FirstNonEmpty(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+                return value;
+        }
+
+        return string.Empty;
+    }
 
     private static InstalledMagnetarRelease? ReadInstalledMagnetarRelease(string installDirectory)
     {
@@ -1675,12 +1836,21 @@ public sealed record ManagedRuntimeReadiness(
         new(false, steamCmdPath, steamCmdRuntimePath, dedicatedServer64Path, failureMessage);
 }
 
+public sealed record ManagedRuntimeVersionSnapshot(
+    string SteamCmdPath,
+    string SteamCmdVersion,
+    string MagnetarPath,
+    string MagnetarVersion,
+    string DedicatedServer64Path,
+    string DedicatedServerVersion);
+
 public sealed record ManagedRuntimeInstallProgress(
     ManagedRuntimeInstallComponent Component,
     ManagedRuntimeInstallPhase Phase,
     string Message,
     int? Percent = null,
-    string Path = "");
+    string Path = "",
+    string Version = "");
 
 public enum ManagedRuntimeInstallComponent
 {

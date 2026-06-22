@@ -436,6 +436,43 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
             SetStopped(uniqueName, "Start cancelled.");
     }
 
+    public async Task BeginAdminRestartAsync(string uniqueName, CancellationToken cancellationToken = default)
+    {
+        var definition = _catalog.GetServer(uniqueName);
+        if (definition is null)
+            throw new InvalidOperationException($"Unknown Quasar server '{uniqueName}'.");
+
+        if (definition.GoalState != DedicatedServerGoalState.On || !definition.AutoStart)
+        {
+            definition.GoalState = DedicatedServerGoalState.On;
+            definition.AutoStart = true;
+            await _catalog.UpsertAsync(definition, cancellationToken);
+        }
+
+        var changed = false;
+        var startNow = false;
+        lock (_sync)
+        {
+            if (!_states.TryGetValue(uniqueName, out var state))
+                return;
+
+            startNow = !IsProcessActive(state.Process) && !state.StartInProgress;
+            state.Definition.GoalState = DedicatedServerGoalState.On;
+            state.Definition.AutoStart = true;
+            state.StopRequested = false;
+            state.IsRestartPending = true;
+            state.State = DedicatedServerProcessState.Restarting;
+            state.LastMessage = "Restart requested from in-game command.";
+            changed = true;
+        }
+
+        if (changed)
+            NotifyChanged();
+
+        if (startNow)
+            await StartServerAsync(uniqueName, cancellationToken);
+    }
+
     public async Task RestartServerAsync(string uniqueName, CancellationToken cancellationToken = default)
     {
         var definition = _catalog.GetServer(uniqueName);
@@ -1455,6 +1492,7 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
         DedicatedServerDefinition definition;
         int exitCode;
         bool stopRequested;
+        bool restartRequested;
         bool shouldRestart = false;
         int restartDelaySeconds = 0;
         DateTimeOffset now = DateTimeOffset.UtcNow;
@@ -1467,6 +1505,7 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
             definition = Clone(state.Definition);
             exitCode = SafeGetExitCode(state.Process);
             stopRequested = state.StopRequested || _isStopping;
+            restartRequested = state.IsRestartPending && state.State == DedicatedServerProcessState.Restarting;
 
             if (state.StartedAtUtc.HasValue && (now - state.StartedAtUtc.Value) >= RestartCounterResetWindow)
                 state.RestartAttempts = 0;
@@ -1480,6 +1519,17 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
             ResetHealthTracking(state);
 
             if (!stopRequested &&
+                restartRequested &&
+                definition.GoalState == DedicatedServerGoalState.On)
+            {
+                state.RestartAttempts = 0;
+                state.IsRestartPending = true;
+                state.State = DedicatedServerProcessState.Restarting;
+                state.LastMessage = $"Restart command exited with code {exitCode}. Starting.";
+                shouldRestart = true;
+                restartDelaySeconds = Math.Max(0, definition.RestartDelaySeconds);
+            }
+            else if (!stopRequested &&
                 definition.GoalState == DedicatedServerGoalState.On &&
                 definition.RestartOnCrash)
             {
@@ -2298,7 +2348,13 @@ public sealed class DedicatedServerSupervisor : IHostedService, IDisposable
             !state.SimulationProgressWindowSeconds.HasValue ||
             !state.SimulationFramesAdvanced.HasValue)
         {
-            return new ServerHealthAssessment(DedicatedServerHealthState.Warning, waitingSummary);
+            var waitingState = string.Equals(
+                waitingSummary,
+                "Collecting simulation progress baseline.",
+                StringComparison.Ordinal)
+                ? DedicatedServerHealthState.Unknown
+                : DedicatedServerHealthState.Warning;
+            return new ServerHealthAssessment(waitingState, waitingSummary);
         }
 
         if (state.SimulationProgressScore.Value < state.Definition.MinimumSimulationProgressScore)

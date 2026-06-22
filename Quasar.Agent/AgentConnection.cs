@@ -226,6 +226,21 @@ namespace Quasar.Agent
         /// </summary>
         public bool TrySendAdminStop()
         {
+            return TrySendAdminSignal(WireMessageKind.AdminStop, "admin-stop");
+        }
+
+        /// <summary>
+        /// Best-effort signal sent when an admin requested an in-game restart.
+        /// Quasar keeps the goal state On and moves the server into Restarting
+        /// before the process exits.
+        /// </summary>
+        public bool TrySendAdminRestart()
+        {
+            return TrySendAdminSignal(WireMessageKind.AdminRestart, "admin-restart");
+        }
+
+        private bool TrySendAdminSignal(string kind, string label)
+        {
             var socket = _socket;
             if (socket == null || socket.State != WebSocketState.Open)
                 return false;
@@ -234,12 +249,12 @@ namespace Quasar.Agent
             {
                 return SendAsync(socket, new AgentWireMessage
                 {
-                    Kind = WireMessageKind.AdminStop,
+                    Kind = kind,
                 }, CancellationToken.None).Wait(TimeSpan.FromSeconds(2));
             }
             catch (Exception exception)
             {
-                Log($"Failed sending admin-stop signal: {exception.Message}");
+                Log($"Failed sending {label} signal: {exception.Message}");
                 return false;
             }
         }

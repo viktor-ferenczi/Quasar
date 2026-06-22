@@ -3,7 +3,7 @@
 **Module:** Quasar.Agent  **Kind:** class  **Tier:** 1
 
 ## Summary
-`AgentConnection` manages the WebSocket connection from the in-DS agent to the Quasar supervisor. It runs a reconnect loop on a background task, sends a `Hello` handshake plus periodic `Snapshot` messages, streams buffered plugin log batches from a `PluginLogOutbox`, receives and dispatches `Command` / `PluginConfigUpdate` / `Ping` messages from Quasar, and performs an autonomous save-and-stop if Quasar stays unreachable past a configurable window.
+`AgentConnection` manages the WebSocket connection from the in-DS agent to the Quasar supervisor. It runs a reconnect loop on a background task, sends `Hello` plus periodic `Snapshot` messages, streams buffered plugin log batches, receives and dispatches `Command` / `PluginConfigUpdate` / `Ping` messages from Quasar, sends best-effort admin stop/restart signals before command-triggered exits, and performs an autonomous save-and-stop if Quasar stays unreachable past a configurable window.
 
 ## Structure
 **Namespace:** `Quasar.Agent`  **Modifiers:** public, concrete
@@ -15,6 +15,8 @@ Notable fields: `_bridge`, `_locator`, `_options`, `_outbox` (`PluginLogOutbox`)
 | `AgentConnection(GameBridge, WebServiceLocator, AgentOptions, PluginLogOutbox)` | Stores dependencies (outbox now injected). |
 | `Start()` / `Stop()` | Spawn / cancel-and-join (5 s) the background `RunAsync` loop. |
 | `TrySendAdminStop()` | Best-effort synchronous `AdminStop` send (≤2 s) while the socket is still open; reads `_socket` (volatile) from the game thread and returns whether the signal was sent before timeout/failure. |
+| `TrySendAdminRestart()` | Best-effort synchronous `AdminRestart` send before `!restart` exits the process; Quasar uses it to keep goal `On` and enter `Restarting`. |
+| `TrySendAdminSignal(kind, label)` | Shared signal helper for admin stop/restart wire messages. |
 | `RunAsync` (private) | Reconnect loop: locate service, connect (`wss`/`ws`, sub-protocol `quasar.agent.v1`, 20 s keep-alive), send `Hello`, force-send plugin configs, run snapshot + receive loops concurrently. |
 | `HandleDisconnectedAndDelayAsync` (private) | Tracks outage; once armed (`_hasConnected`) and past the window, calls `ServerControl.SaveAndQuit()`; else waits a jittered delay. |
 | `ShouldSelfStop` / `NextReconnectDelay` (private) | Offline-window check (`<=0` means stop promptly); jittered reconnect interval (≥1 s). |
@@ -35,6 +37,6 @@ Notable fields: `_bridge`, `_locator`, `_options`, `_outbox` (`PluginLogOutbox`)
 - `Newtonsoft.Json` — camelCase + null-ignore serialization
 
 ## Notes
-- Sends are serialized via `_sendLock` to prevent concurrent WebSocket writes (snapshot loop, log flush, and `TrySendAdminStop` can all send). `TrySendAdminStop()` returns `false` when the socket is missing, closed, times out, or throws so `AdminPlugin` can leave the termination fallback eligible to retry.
+- Sends are serialized via `_sendLock` to prevent concurrent WebSocket writes (snapshot loop, log flush, and admin signal sends can all write). Admin signal methods return `false` when the socket is missing, closed, times out, or throws so `AdminPlugin` can keep fallback reporting eligible where appropriate.
 - Plugin-log streaming: `FlushPluginLogsAsync` flushes a backlog promptly on reconnect in `MaxBatchLines`-sized chunks; a failed batch is returned to the outbox so no lines are lost.
 - The autonomous self-stop only arms after at least one successful connection (`_hasConnected`), so a server that never reached Quasar is never auto-stopped. Reconnect uses jitter to spread reconnect storms.

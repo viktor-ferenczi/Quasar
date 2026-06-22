@@ -8,6 +8,7 @@
 @inject WebServiceOptions Options
 @inject ISnackbar Snackbar
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
 
 @if (!Embedded)
 {
@@ -65,7 +66,16 @@
                     </MudChip>
                 </MudTd>
                 <MudTd DataLabel="Unique name" Class="mono">@context.UniqueName</MudTd>
-                <MudTd DataLabel="Port" Class="mono">@context.ServerPort</MudTd>
+                <MudTd DataLabel="Port" Class="mono">
+                    <MudTooltip Text="@GetDirectConnectTooltip(context)">
+                        <MudLink Typo="Typo.body2"
+                                 Color="Color.Primary"
+                                 Underline="Underline.Hover"
+                                 @onclick="@(() => CopyDirectConnectAsync(context))">
+                            @context.ServerPort
+                        </MudLink>
+                    </MudTooltip>
+                </MudTd>
                 <MudTd DataLabel="Config">
                     @if (CanOpenConfigProfile(context.ConfigProfileId))
                     {
@@ -169,6 +179,7 @@
 {
     private readonly HashSet<string> _expanded = new(StringComparer.OrdinalIgnoreCase);
     private bool _creatingWorldTemplate;
+    private bool _createOpenedFromParameter;
 
     private enum CloneWorldMode
     {
@@ -178,6 +189,9 @@
 
     [Parameter]
     public EventCallback<string> ConfigProfileSelected { get; set; }
+
+    [Parameter]
+    public bool OpenCreateOnStart { get; set; }
 
     [Parameter]
     public bool Embedded { get; set; }
@@ -232,6 +246,15 @@
         Registry.Changed += HandleChanged;
         ConfigProfiles.Changed += HandleChanged;
         WorldTemplates.Changed += HandleChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!OpenCreateOnStart || _createOpenedFromParameter)
+            return;
+
+        _createOpenedFromParameter = true;
+        await OpenCreateDialogAsync();
     }
 
     public void Dispose()
@@ -333,6 +356,15 @@
         }
 
         Navigation.NavigateTo($"/configs?profileId={Uri.EscapeDataString(configProfileId)}");
+    }
+
+    private async Task CopyDirectConnectAsync(DedicatedServerDefinition definition)
+    {
+        var address = GetDirectConnectAddress(definition);
+        var ok = await JS.InvokeAsync<bool>("quasarConfigs.copyText", address);
+        Snackbar.Add(
+            ok ? $"Copied {address} to clipboard." : "Copy failed - select and copy the port manually.",
+            ok ? Severity.Info : Severity.Warning);
     }
 
     private async Task OpenConsoleDialogAsync(string uniqueName)
@@ -811,6 +843,45 @@
     private bool CanOpenConfigProfile(string configProfileId) =>
         !string.IsNullOrWhiteSpace(configProfileId) &&
         ConfigProfiles.GetProfile(configProfileId) is not null;
+
+    private string GetDirectConnectTooltip(DedicatedServerDefinition definition) =>
+        $"Copy direct connect address {GetDirectConnectAddress(definition)}";
+
+    private string GetDirectConnectAddress(DedicatedServerDefinition definition)
+    {
+        var fallbackHost = Navigation.ToAbsoluteUri(Navigation.BaseUri).Host;
+        var host = ResolveDirectConnectHost(definition.ServerIP, fallbackHost);
+        if (host.Contains(':', StringComparison.Ordinal) &&
+            !host.StartsWith("[", StringComparison.Ordinal) &&
+            !host.EndsWith("]", StringComparison.Ordinal))
+        {
+            host = $"[{host}]";
+        }
+
+        return $"{host}:{definition.ServerPort}";
+    }
+
+    private static string ResolveDirectConnectHost(string? configuredHost, string fallbackHost)
+    {
+        var host = configuredHost?.Trim() ?? string.Empty;
+        if (IsAnyAddress(host))
+            host = fallbackHost?.Trim() ?? string.Empty;
+
+        if (IsAnyAddress(host) || string.IsNullOrWhiteSpace(host))
+            return "127.0.0.1";
+
+        return host;
+    }
+
+    private static bool IsAnyAddress(string value)
+    {
+        var normalized = value.Trim().Trim('[', ']');
+        return string.IsNullOrWhiteSpace(normalized) ||
+               string.Equals(normalized, "0.0.0.0", StringComparison.Ordinal) ||
+               string.Equals(normalized, "::", StringComparison.Ordinal) ||
+               string.Equals(normalized, "*", StringComparison.Ordinal) ||
+               string.Equals(normalized, "+", StringComparison.Ordinal);
+    }
 
     private string GetStateText(string uniqueName)
     {

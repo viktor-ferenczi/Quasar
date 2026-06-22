@@ -18,6 +18,7 @@ let transparentMaterialDefinitionsPromise = null;
 let transparentMaterialDefinitions = new Map();
 const MAX_CONCURRENT_MODEL_RESOLVES = 48;
 const MODEL_REBUILD_THROTTLE_MS = 100;
+const LCD_SURFACE_NORMAL_OFFSET_METERS = 0.003;
 
 export async function renderGridScene(scene) {
     const renderToken = ++modelRenderToken;
@@ -439,7 +440,6 @@ function modelBatchUsesInstanceColor(materials) {
 
 function modelBatchRenderOrder(materials) {
     if (materials.some(material => material.userData.seRenderMode === "blended")) return 2;
-    if (materials.some(material => material.userData.seRenderMode === "lcd")) return 1.5;
     if (materials.some(material => material.userData.seRenderMode === "decal" || material.userData.seRenderMode === "decal-cutout")) return 1;
     return 0;
 }
@@ -449,7 +449,7 @@ function sharedModelGeometry(model, patternOffset, renderContext, groups = model
     if (renderContext.geometries.has(key)) return renderContext.geometries.get(key);
 
     const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.BufferAttribute(model.positions, 3));
+    geometry.setAttribute("position", new THREE.BufferAttribute(modelPositionsForRenderLayer(model, layer), 3));
     if (model.normals) geometry.setAttribute("normal", new THREE.BufferAttribute(model.normals, 3));
     if (model.uvs) geometry.setAttribute("uv", new THREE.BufferAttribute(transformModelUvs(model.uvs, patternOffset), 2));
     geometry.setIndex(new THREE.BufferAttribute(model.indices, 1));
@@ -459,6 +459,18 @@ function sharedModelGeometry(model, patternOffset, renderContext, groups = model
     geometry.userData.renderCacheKey = key;
     renderContext.geometries.set(key, geometry);
     return geometry;
+}
+
+function modelPositionsForRenderLayer(model, layer) {
+    if (layer !== "lcd" || !model.normals) return model.positions;
+
+    const positions = new Float32Array(model.positions.length);
+    for (let i = 0; i < positions.length; i += 3) {
+        positions[i] = model.positions[i] + model.normals[i] * LCD_SURFACE_NORMAL_OFFSET_METERS;
+        positions[i + 1] = model.positions[i + 1] + model.normals[i + 1] * LCD_SURFACE_NORMAL_OFFSET_METERS;
+        positions[i + 2] = model.positions[i + 2] + model.normals[i + 2] * LCD_SURFACE_NORMAL_OFFSET_METERS;
+    }
+    return positions;
 }
 
 function modelGeometryGroupsKey(groups) {
@@ -548,10 +560,7 @@ function sharedLcdMaterial(model, group, block, lcdSurface, renderContext, techn
         emissiveIntensity: 0.65,
         transparent: transparentSurface,
         opacity: transparentSurface ? transparentLcdSurfaceOpacity(lcdSurface) : 1,
-        depthWrite: false,
-        polygonOffset: true,
-        polygonOffsetFactor: -4,
-        polygonOffsetUnits: -4,
+        depthWrite: !transparentSurface,
         side: modelMaterialSide(technique, { blended: false, decal: false, cutout: false }),
     });
     material.userData.renderCacheKey = key;

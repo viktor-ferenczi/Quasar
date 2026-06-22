@@ -382,6 +382,7 @@ function createModelMeshes(assetId, block, matrix, patternOffset = null, renderC
 
 function modelMaterialRenderLayer(material) {
     const mode = material.userData.seRenderMode;
+    if (mode === "lcd") return "lcd";
     if (mode === "blended") return "blended";
     if (mode === "decal" || mode === "decal-cutout") return "decal";
     return "base";
@@ -431,6 +432,7 @@ function flushModelBatches(group, renderContext) {
 
 function modelBatchRenderOrder(materials) {
     if (materials.some(material => material.userData.seRenderMode === "blended")) return 2;
+    if (materials.some(material => material.userData.seRenderMode === "lcd")) return 1.5;
     if (materials.some(material => material.userData.seRenderMode === "decal" || material.userData.seRenderMode === "decal-cutout")) return 1;
     return 0;
 }
@@ -535,10 +537,14 @@ function sharedLcdMaterial(model, group, block, lcdSurface, renderContext, techn
         metalness: 0,
         emissive: 0xffffff,
         emissiveIntensity: 0.65,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -4,
+        polygonOffsetUnits: -4,
         side: modelMaterialSide(technique, { blended: false, decal: false, cutout: false }),
     });
     material.userData.renderCacheKey = key;
-    material.userData.seRenderMode = "opaque";
+    material.userData.seRenderMode = "lcd";
     applyLcdSurfaceTexture(material, lcdSurface, renderContext.textureToken);
     renderContext.materials.set(key, material);
     return material;

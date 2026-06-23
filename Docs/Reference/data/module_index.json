@@ -480,7 +480,7 @@
       "name": "Configs.razor",
       "kind": "Blazor component",
       "tier": 2,
-      "summary": "The `/configs` page: a full editor for reusable Magnetar config templates (`QuasarConfigProfile`) that are applied to assigned dedicated servers at startup. A sidebar lists/creates/clones/deletes templates; the main column edits World settings, Plugins, Mods, and Developer dev-folders across tabbed and collapsible panels, generating only the active tab and opened panel bodies. QoL features include searchable/jump-to world options, a refreshable plugin catalog, Steam Workshop search, world-template mod merge, dead Workshop mod cleanup, unsaved-change guarding, and integration with the plugin-manifest picker dialog for registering local dev folders. (This page has no charts; the analytics charting work lives in `Analytics.razor`.)"
+      "summary": "The `/configs` page: a full editor for reusable Magnetar config templates (`QuasarConfigProfile`) that are applied to assigned dedicated servers at startup. A sidebar lists/creates/clones/deletes templates; the main column edits World settings, Plugins, Mods, and Developer dev-folders across tabbed and collapsible panels, generating only the active tab and opened panel bodies. QoL features include searchable/jump-to world options, a refreshable plugin catalog, Steam Workshop search, world-template mod merge, all-mod clearing, crossplay-safe profile cloning, dead Workshop mod cleanup, unsaved-change guarding, and integration with the plugin-manifest picker dialog for registering local dev folders. (This page has no charts; the analytics charting work lives in `Analytics.razor`.)"
     },
     {
       "path": "Quasar/Components/Pages/Configs.razor.css",

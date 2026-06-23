@@ -674,8 +674,8 @@
       "path": "Quasar/Components/Pages/Configs.razor",
       "name": "Configs.razor",
       "ext": ".razor",
-      "size": 123364,
-      "sha256": "c999ded09f440b060b223af442160854670e195864310b2ae1ff4cf91353a952",
+      "size": 127286,
+      "sha256": "b3cac12e7199df4789422b204be50dd02ac3b40a36eab4e9d9dcef4d611d00ee",
       "module": "Quasar.Components",
       "tier": 2,
       "status": "pending"

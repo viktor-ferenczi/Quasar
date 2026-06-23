@@ -857,7 +857,7 @@ function drawLcdText(context, text, font, color, scale, alignment = "LEFT", padd
     const fontSize = Math.max(8, Math.min(180, (Number(scale) || 1) * Math.min(scaleCanvas.width, scaleCanvas.height) / 16));
     ctx.save();
     ctx.font = `${fontSize}px ${lcdCanvasFont(font)}`;
-    const lines = wrapLcdText(ctx, String(text || ""), boxSize.x, fontSize);
+    const lines = splitLcdTextLines(String(text || ""));
 
     ctx.fillStyle = `rgba(${normalized.r}, ${normalized.g}, ${normalized.b}, ${normalized.a})`;
     ctx.textBaseline = "top";
@@ -887,21 +887,8 @@ function lcdTextTopLeft(position, size, alignment, hasExplicitPosition, useSurfa
     return { x: position.x, y: position.y };
 }
 
-function wrapLcdText(ctx, text, maxWidth, fontSize) {
-    const lines = [];
-    for (const sourceLine of text.replace(/\r\n/g, "\n").split("\n")) {
-        let line = "";
-        for (const word of sourceLine.split(/(\s+)/)) {
-            const next = line + word;
-            if (line && ctx.measureText(next).width > maxWidth) {
-                lines.push(line.trimEnd());
-                line = word.trimStart();
-            } else {
-                line = next;
-            }
-        }
-        lines.push(line);
-    }
+function splitLcdTextLines(text) {
+    const lines = text.replace(/\r\n/g, "\n").split("\n");
     return lines.length ? lines : [""];
 }
 

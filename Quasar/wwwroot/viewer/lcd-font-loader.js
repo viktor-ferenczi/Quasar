@@ -1,7 +1,6 @@
-import * as THREE from "three";
 import { state } from "./state.js";
 import { getContentFolderCacheGeneration, resolveContentFile } from "./content-folder.js";
-import { loadTexture } from "./texture-loader.js";
+import { loadTexture, textureToCanvas } from "./texture-loader.js";
 
 const GAME_GUI_TEXT_SCALE = 144 / 185;
 const WHITE_PATH = "Fonts/white/FontDataPA.xml";
@@ -215,56 +214,6 @@ async function loadBitmapCanvas(font, bitmap) {
     const canvas = textureToCanvas(texture, bitmap.width, bitmap.height);
     bitmap.canvas = canvas;
     bitmap.imageData = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
-}
-
-function textureToCanvas(texture, width, height) {
-    if (!state.renderer) throw new Error("LCD font atlas decode requires an active WebGL renderer.");
-    const renderer = state.renderer;
-    const renderTarget = new THREE.WebGLRenderTarget(width, height, {
-        depthBuffer: false,
-        stencilBuffer: false,
-        format: THREE.RGBAFormat,
-        type: THREE.UnsignedByteType,
-        colorSpace: THREE.SRGBColorSpace,
-    });
-    renderTarget.texture.name = `decoded:${texture.name || "lcd-font-atlas"}`;
-
-    const scene = new THREE.Scene();
-    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-    const geometry = new THREE.PlaneGeometry(2, 2);
-    const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, blending: THREE.NoBlending });
-    scene.add(new THREE.Mesh(geometry, material));
-
-    const previousTarget = renderer.getRenderTarget();
-    const previousClearAlpha = renderer.getClearAlpha();
-    const previousClearColor = renderer.getClearColor(new THREE.Color());
-    const pixels = new Uint8Array(width * height * 4);
-    try {
-        renderer.setRenderTarget(renderTarget);
-        renderer.setClearColor(0x000000, 0);
-        renderer.clear(true, false, false);
-        renderer.render(scene, camera);
-        renderer.readRenderTargetPixels(renderTarget, 0, 0, width, height, pixels);
-    } finally {
-        renderer.setRenderTarget(previousTarget);
-        renderer.setClearColor(previousClearColor, previousClearAlpha);
-        geometry.dispose();
-        material.dispose();
-        renderTarget.dispose();
-    }
-
-    const canvas = document.createElement("canvas");
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext("2d");
-    const imageData = ctx.createImageData(width, height);
-    for (let y = 0; y < height; y++) {
-        const sourceOffset = y * width * 4;
-        const targetOffset = y * width * 4;
-        imageData.data.set(pixels.subarray(sourceOffset, sourceOffset + width * 4), targetOffset);
-    }
-    ctx.putImageData(imageData, 0, 0);
-    return canvas;
 }
 
 function tintedBitmapCanvas(bitmap, color) {

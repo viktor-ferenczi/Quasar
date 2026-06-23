@@ -224,6 +224,78 @@ function configureTexture(texture, logicalPath, slot) {
         : THREE.NoColorSpace;
 }
 
+export function textureToCanvas(texture, width = 0, height = 0) {
+    const image = texture && texture.image;
+    width = Math.max(1, Math.round(Number(width) || Number(image && image.width) || 1));
+    height = Math.max(1, Math.round(Number(height) || Number(image && image.height) || 1));
+
+    if (isCanvasDrawable(image)) {
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(image, 0, 0, width, height);
+        return canvas;
+    }
+
+    if (!state.renderer) throw new Error("Texture canvas decode requires an active WebGL renderer.");
+    const renderer = state.renderer;
+    const renderTarget = new THREE.WebGLRenderTarget(width, height, {
+        depthBuffer: false,
+        stencilBuffer: false,
+        format: THREE.RGBAFormat,
+        type: THREE.UnsignedByteType,
+        colorSpace: THREE.SRGBColorSpace,
+    });
+    renderTarget.texture.name = `decoded:${texture.name || "texture"}`;
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const geometry = new THREE.PlaneGeometry(2, 2);
+    const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, blending: THREE.NoBlending });
+    scene.add(new THREE.Mesh(geometry, material));
+
+    const previousTarget = renderer.getRenderTarget();
+    const previousClearAlpha = renderer.getClearAlpha();
+    const previousClearColor = renderer.getClearColor(new THREE.Color());
+    const pixels = new Uint8Array(width * height * 4);
+    try {
+        renderer.setRenderTarget(renderTarget);
+        renderer.setClearColor(0x000000, 0);
+        renderer.clear(true, false, false);
+        renderer.render(scene, camera);
+        renderer.readRenderTargetPixels(renderTarget, 0, 0, width, height, pixels);
+    } finally {
+        renderer.setRenderTarget(previousTarget);
+        renderer.setClearColor(previousClearColor, previousClearAlpha);
+        geometry.dispose();
+        material.dispose();
+        renderTarget.dispose();
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    const imageData = ctx.createImageData(width, height);
+    for (let y = 0; y < height; y++) {
+        const sourceOffset = y * width * 4;
+        const targetOffset = y * width * 4;
+        imageData.data.set(pixels.subarray(sourceOffset, sourceOffset + width * 4), targetOffset);
+    }
+    ctx.putImageData(imageData, 0, 0);
+    return canvas;
+}
+
+function isCanvasDrawable(value) {
+    return (typeof HTMLCanvasElement !== "undefined" && value instanceof HTMLCanvasElement) ||
+        (typeof HTMLImageElement !== "undefined" && value instanceof HTMLImageElement) ||
+        (typeof HTMLVideoElement !== "undefined" && value instanceof HTMLVideoElement) ||
+        (typeof ImageBitmap !== "undefined" && value instanceof ImageBitmap) ||
+        (typeof OffscreenCanvas !== "undefined" && value instanceof OffscreenCanvas) ||
+        (typeof SVGImageElement !== "undefined" && value instanceof SVGImageElement) ||
+        (typeof VideoFrame !== "undefined" && value instanceof VideoFrame);
+}
+
 function validateCompressedTextureUpload(texture, info) {
     if (!compressedTextureExtension(info.extensionName)) throw new Error(`${info.extensionName} is not available in this browser/GPU.`);
     if (typeof state.renderer.initTexture !== "function") throw new Error("three.js renderer cannot preflight texture uploads.");

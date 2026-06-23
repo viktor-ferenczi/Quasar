@@ -4,7 +4,7 @@ import { blockBox, boundsToBox3 } from "./geometry.js";
 import { colorFromHash, matrixDtoToThree, num, vec3 } from "./math.js";
 import { disposeObjectTree, fitCameraToScene, updateLighting, updateSceneBounds, updateSunLightPosition } from "./scene.js";
 import { resolveModelAsset } from "./mwm-loader.js";
-import { loadTexture } from "./texture-loader.js";
+import { loadTexture, textureToCanvas } from "./texture-loader.js";
 import { log } from "./logging.js";
 import { getContentFolderCacheGeneration, resolveContentFile } from "./content-folder.js";
 import { drawLcdBitmapText, getLoadedLcdBitmapFont, lcdBitmapTextScale, loadLcdBitmapFont, supportedLcdFontId } from "./lcd-font-loader.js";
@@ -721,7 +721,7 @@ function lcdLayoutCanvas(surface, textureCanvas) {
 function loadLcdCanvasImages(context, textureToken) {
     for (const path of lcdCanvasTexturePaths(context.surface)) {
         loadTrackedTexture({ slot: "LcdTexture", path }, textureToken).then(texture => {
-            context.images.set(path, texture);
+            context.images.set(path, textureToCanvas(texture));
             renderLcdCanvas(context);
             context.texture.needsUpdate = true;
             context.material.needsUpdate = true;
@@ -802,7 +802,7 @@ function drawLcdSprite(context, sprite) {
 
 function drawLcdTexture(context, path, position, size, alignment = "CENTER", rotation = 0, preserveAspect = false, color = null) {
     const image = context.images.get(path);
-    if (!image || !image.image) return;
+    if (!image) return;
 
     const ctx = context.ctx;
     const targetSize = normalizeCanvasVector(size, { x: context.canvas.width, y: context.canvas.height });
@@ -812,10 +812,10 @@ function drawLcdTexture(context, path, position, size, alignment = "CENTER", rot
     let height = targetSize.y;
     let x = aligned.x;
     let y = aligned.y;
-    if (preserveAspect && image.image.width && image.image.height) {
-        const scale = Math.min(width / image.image.width, height / image.image.height);
-        width = image.image.width * scale;
-        height = image.image.height * scale;
+    if (preserveAspect && image.width && image.height) {
+        const scale = Math.min(width / image.width, height / image.height);
+        width = image.width * scale;
+        height = image.height * scale;
         x = targetPosition.x - width / 2;
         y = targetPosition.y - height / 2;
     }
@@ -824,7 +824,7 @@ function drawLcdTexture(context, path, position, size, alignment = "CENTER", rot
     ctx.translate(x + width / 2, y + height / 2);
     if (rotation) ctx.rotate(rotation);
     ctx.globalAlpha = normalizedColor(color).a;
-    ctx.drawImage(image.image, -width / 2, -height / 2, width, height);
+    ctx.drawImage(image, -width / 2, -height / 2, width, height);
     ctx.restore();
 }
 

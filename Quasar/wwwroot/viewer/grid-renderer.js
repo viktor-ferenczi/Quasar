@@ -357,6 +357,7 @@ function createModelMeshes(assetId, block, matrix, patternOffset = null, renderC
     const groupsByLayer = new Map();
     for (const group of model.groups) {
         if (isOfflineHiddenLcdMaterial(block, group.materialName)) continue;
+        if (isResetLcdModelMaterialHidden(block, group.materialName)) continue;
         const material = sharedModelMaterial(model, group, block, renderContext);
         if (!material) continue;
         const layer = modelMaterialRenderLayer(material);
@@ -594,6 +595,12 @@ function isOfflineHiddenLcdMaterial(block, materialName) {
     if (!hidden.length) return false;
     if (!(block.lcdSurfaces || []).some(surface => surface && surface.isWorking === false)) return false;
     return hidden.some(name => String(name || "").trim().toLowerCase() === key);
+}
+
+function isResetLcdModelMaterialHidden(block, materialName) {
+    const surface = lcdSurfaceForMaterial(block, materialName);
+    if (!surface || lcdReplacementMode(surface) !== "model") return false;
+    return !isTransparentScreenAreaMaterialName(materialName);
 }
 
 function lcdReplacementMode(surface) {

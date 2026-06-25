@@ -5,6 +5,7 @@ export const state = {
     controls: null,
     ambientLight: null,
     sunLight: null,
+    sunLightTarget: null,
     sunMarker: null,
     sunMarkerLine: null,
     sunDirection: null,

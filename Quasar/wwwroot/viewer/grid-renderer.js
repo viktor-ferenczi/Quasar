@@ -537,6 +537,8 @@ function flushModelBatches(group, renderContext) {
         mesh.matrixAutoUpdate = false;
         mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
         mesh.renderOrder = modelBatchRenderOrder(batch.materials);
+        mesh.castShadow = modelBatchCastsShadow(batch.materials);
+        mesh.receiveShadow = true;
         mesh.userData.blocks = [];
         const useInstanceColor = modelBatchUsesInstanceColor(batch.materials);
 
@@ -563,6 +565,13 @@ function flushModelBatches(group, renderContext) {
 
 function modelBatchUsesInstanceColor(materials) {
     return materials.some(material => material.userData.seRenderMode !== "lcd");
+}
+
+function modelBatchCastsShadow(materials) {
+    return materials.some(material => {
+        const mode = material.userData.seRenderMode;
+        return mode !== "lcd" && mode !== "blended" && mode !== "decal";
+    });
 }
 
 function modelBatchRenderOrder(materials) {
@@ -1744,6 +1753,8 @@ function createProxyBatchMesh(geometry, batch) {
     mesh.name = `ProxyBatch:${batch.opacity}`;
     mesh.matrixAutoUpdate = false;
     mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
     mesh.userData.blocks = [];
     return mesh;
 }

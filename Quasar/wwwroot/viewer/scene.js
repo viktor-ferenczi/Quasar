@@ -17,6 +17,10 @@ const AMBIENT_WITHOUT_LIGHTING = 0.72;
 const ENVIRONMENT_WITH_LIGHTING = 0.08;
 const ENVIRONMENT_WITHOUT_LIGHTING = 0.18;
 const SUN_LIGHT_INTENSITY_SCALE = 3.2;
+const SUN_SHADOW_MAP_SIZE = 4096;
+const SUN_SHADOW_PADDING_SCALE = 0.08;
+const SUN_SHADOW_MIN_NORMAL_BIAS = 0.02;
+const SUN_SHADOW_TEXEL_NORMAL_BIAS = 2.0;
 
 export function initScene() {
     state.scene = new THREE.Scene();
@@ -29,6 +33,8 @@ export function initScene() {
     state.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     state.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
     state.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    state.renderer.shadowMap.enabled = true;
+    state.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     els.viewport.appendChild(state.renderer.domElement);
 
     const pmrem = new THREE.PMREMGenerator(state.renderer);
@@ -42,8 +48,16 @@ export function initScene() {
 
     state.ambientLight = new THREE.AmbientLight(0xffffff, AMBIENT_WITH_LIGHTING);
     state.scene.add(state.ambientLight);
-    state.sunLight = new THREE.PointLight(0xffffff, 1.9, 1000, 0);
+    state.sunLightTarget = new THREE.Object3D();
+    state.sunLightTarget.name = "SunLightTarget";
+    state.scene.add(state.sunLightTarget);
+    state.sunLight = new THREE.DirectionalLight(0xffffff, 1.9);
     state.sunLight.position.set(40, 70, 35);
+    state.sunLight.target = state.sunLightTarget;
+    state.sunLight.castShadow = true;
+    state.sunLight.shadow.mapSize.set(SUN_SHADOW_MAP_SIZE, SUN_SHADOW_MAP_SIZE);
+    state.sunLight.shadow.bias = 0;
+    state.sunLight.shadow.normalBias = SUN_SHADOW_MIN_NORMAL_BIAS;
     state.scene.add(state.sunLight);
 
     state.sunMarker = createSunMarker();
@@ -249,13 +263,16 @@ export function updateSunLightPosition() {
     const target = bounds ? bounds.getCenter(new THREE.Vector3()) : new THREE.Vector3();
     const direction = currentRelativeSunDirection();
     const markerDistance = bounds ? sunMarkerDistance(bounds) : 90;
-    const lightDistance = bounds ? sunPointLightDistance(bounds) : 1000;
+    const lightDistance = bounds ? sunDirectionalLightDistance(bounds) : 1000;
     const markerPosition = target.clone().addScaledVector(direction, markerDistance);
     const lightPosition = target.clone().addScaledVector(direction, lightDistance);
 
     state.sunLight.position.copy(lightPosition);
-    state.sunLight.distance = Math.max(lightDistance * 2, 1000);
-    state.sunLight.decay = 0;
+    if (state.sunLightTarget) {
+        state.sunLightTarget.position.copy(target);
+        state.sunLightTarget.updateMatrixWorld();
+    }
+    configureSunShadow(bounds, lightPosition, target);
     state.sunLight.updateMatrixWorld();
     updateSunMarker(markerPosition, target);
 }
@@ -350,9 +367,78 @@ function sunMarkerDistance(bounds) {
     return Math.max(size.x, size.y, size.z, state.currentGridSize * 8, 10);
 }
 
-function sunPointLightDistance(bounds) {
+function sunDirectionalLightDistance(bounds) {
     const size = bounds.getSize(new THREE.Vector3());
-    return Math.max(size.length() * 8, 1000);
+    return Math.max(size.length() * 2, 200);
+}
+
+function configureSunShadow(bounds, lightPosition, target) {
+    if (!state.sunLight || !state.sunLight.shadow || !state.sunLight.shadow.camera) return;
+    const camera = state.sunLight.shadow.camera;
+    const shadowBounds = bounds && !bounds.isEmpty()
+        ? bounds
+        : new THREE.Box3().setFromCenterAndSize(target, new THREE.Vector3(100, 100, 100));
+    const up = shadowCameraUp(lightPosition, target);
+    const lightView = new THREE.Matrix4().lookAt(lightPosition, target, up);
+    lightView.setPosition(lightPosition);
+    lightView.invert();
+    const points = boxCorners(shadowBounds);
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    let minDistance = Infinity;
+    let maxDistance = -Infinity;
+
+    for (const point of points) {
+        point.applyMatrix4(lightView);
+        minX = Math.min(minX, point.x);
+        maxX = Math.max(maxX, point.x);
+        minY = Math.min(minY, point.y);
+        maxY = Math.max(maxY, point.y);
+        const distance = -point.z;
+        minDistance = Math.min(minDistance, distance);
+        maxDistance = Math.max(maxDistance, distance);
+    }
+
+    const size = shadowBounds.getSize(new THREE.Vector3()).length();
+    const padding = Math.max(state.currentGridSize || 2.5, size * SUN_SHADOW_PADDING_SCALE);
+    camera.up.copy(up);
+    camera.left = minX - padding;
+    camera.right = maxX + padding;
+    camera.bottom = minY - padding;
+    camera.top = maxY + padding;
+    camera.near = Math.max(0.5, minDistance - padding);
+    camera.far = Math.max(camera.near + 1, maxDistance + padding);
+    configureSunShadowBias(camera);
+    camera.updateProjectionMatrix();
+}
+
+function configureSunShadowBias(camera) {
+    const shadowWidth = Math.max(camera.right - camera.left, camera.top - camera.bottom);
+    const texelSize = shadowWidth / SUN_SHADOW_MAP_SIZE;
+    const maxNormalBias = Math.max(SUN_SHADOW_MIN_NORMAL_BIAS, (state.currentGridSize || 2.5) * 0.25);
+    state.sunLight.shadow.bias = 0;
+    state.sunLight.shadow.normalBias = clamp(texelSize * SUN_SHADOW_TEXEL_NORMAL_BIAS, SUN_SHADOW_MIN_NORMAL_BIAS, maxNormalBias);
+}
+
+function shadowCameraUp(lightPosition, target) {
+    const direction = target.clone().sub(lightPosition).normalize();
+    const up = Math.abs(direction.y) > 0.92 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
+    return up;
+}
+
+function boxCorners(box) {
+    return [
+        new THREE.Vector3(box.min.x, box.min.y, box.min.z),
+        new THREE.Vector3(box.min.x, box.min.y, box.max.z),
+        new THREE.Vector3(box.min.x, box.max.y, box.min.z),
+        new THREE.Vector3(box.min.x, box.max.y, box.max.z),
+        new THREE.Vector3(box.max.x, box.min.y, box.min.z),
+        new THREE.Vector3(box.max.x, box.min.y, box.max.z),
+        new THREE.Vector3(box.max.x, box.max.y, box.min.z),
+        new THREE.Vector3(box.max.x, box.max.y, box.max.z),
+    ];
 }
 
 function updateSunMarker(position, target) {

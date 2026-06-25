@@ -12,6 +12,7 @@ using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Cube;
 using Sandbox.Game.EntityComponents;
 using Sandbox.Game.World;
+using SpaceEngineers.Game.EntityComponents.Blocks;
 using VRage.Game;
 using VRage.Game.Entity;
 using VRage.Game.GUI.TextPanel;
@@ -65,6 +66,7 @@ namespace Quasar.Agent
 
                 chunk.Include(block.Min, block.Max);
                 scene.BlockInstances.Add(ToBlockInstance(grid, block, definitionId, chunkId, catalog, scene.Warnings));
+                AddLightSources(grid, block, scene.LightSources, scene.Warnings);
             }
 
             scene.BlockDefinitions = definitions.Values.OrderBy(definition => definition.Id, StringComparer.Ordinal).ToList();
@@ -93,6 +95,210 @@ namespace Quasar.Agent
                 SunDirection = ToDto(direction),
                 SunIntensity = intensity,
             };
+        }
+
+        private static void AddLightSources(MyCubeGrid grid, MySlimBlock block, List<ViewerLightSource> lightSources, List<string> warnings)
+        {
+            var fatBlock = block.FatBlock;
+            if (fatBlock == null || fatBlock.MarkedForClose || fatBlock.Closed || fatBlock.IsPreview || grid.IsPreview)
+                return;
+
+            if (block.BuildLevelRatio <= 0.01f)
+                return;
+
+            try
+            {
+                var lightingBlock = fatBlock as MyLightingBlock;
+                if (lightingBlock != null)
+                {
+                    AddLightingBlockSource(grid, block, lightingBlock, lightSources);
+                    return;
+                }
+
+                MyLightingComponent lightingComponent;
+                if (fatBlock.Components != null && fatBlock.Components.TryGet(out lightingComponent))
+                    AddLightingComponentSource(grid, block, lightingComponent, lightSources);
+            }
+            catch (Exception exception)
+            {
+                warnings.Add("Failed to inspect light source for block " + block.Position + ": " + exception.Message);
+            }
+        }
+
+        private static void AddLightingBlockSource(MyCubeGrid grid, MySlimBlock block, MyLightingBlock lightingBlock, List<ViewerLightSource> lightSources)
+        {
+            var definition = block.BlockDefinition as MyLightingBlockDefinition;
+            var isReflector = lightingBlock is MyReflectorLight;
+            var power = ValidLightPower(lightingBlock.CurrentLightPower, lightingBlock.IsWorking ? 1f : 0f);
+            var enabled = lightingBlock.IsWorking && power > 0f && lightingBlock.Intensity > 0f;
+            var blockId = lightingBlock.EntityId.ToString();
+            var radius = ValidLightValue(lightingBlock.Radius, 0f);
+            var reflectorRadius = ValidLightValue(lightingBlock.ReflectorRadius, radius);
+            var falloff = ValidLightValue(lightingBlock.Falloff, 1f);
+            var coneDegrees = definition != null && definition.ReflectorConeDegrees > 0f ? definition.ReflectorConeDegrees : 52f;
+            var offset = definition != null ? definition.LightOffset.Default : 0f;
+            var position = LightPosition(block, offset);
+            var direction = LightDirection(block);
+            var up = LightUp(block);
+
+            if (isReflector)
+            {
+                var spotIntensity = ViewerLightIntensity(power, lightingBlock.Intensity, 8f);
+                if (reflectorRadius > 0f || spotIntensity > 0f)
+                {
+                    lightSources.Add(new ViewerLightSource
+                    {
+                        Id = blockId + ":spot",
+                        BlockId = blockId,
+                        Kind = "spot",
+                        Position = ToDto(position),
+                        Direction = ToDto(direction),
+                        Up = ToDto(up),
+                        Color = ToDto(lightingBlock.Color),
+                        Radius = radius,
+                        ReflectorRadius = reflectorRadius,
+                        Intensity = spotIntensity,
+                        Falloff = falloff,
+                        ConeDegrees = coneDegrees,
+                        Enabled = enabled && reflectorRadius > 0f && spotIntensity > 0f,
+                        BlinkIntervalSeconds = ValidLightValue(lightingBlock.BlinkIntervalSeconds, 0f),
+                        BlinkLength = ValidLightValue(lightingBlock.BlinkLength, 0f),
+                        BlinkOffset = ValidLightValue(lightingBlock.BlinkOffset, 0f),
+                    });
+                }
+
+                var companionIntensity = ViewerLightIntensity(power, lightingBlock.Intensity, 0.3f);
+                if (radius > 0f && companionIntensity > 0f)
+                {
+                    lightSources.Add(new ViewerLightSource
+                    {
+                        Id = blockId + ":point",
+                        BlockId = blockId,
+                        Kind = "point",
+                        Position = ToDto(position),
+                        Direction = ToDto(direction),
+                        Up = ToDto(up),
+                        Color = ToDto(lightingBlock.Color),
+                        Radius = radius,
+                        ReflectorRadius = reflectorRadius,
+                        Intensity = companionIntensity,
+                        Falloff = falloff,
+                        ConeDegrees = coneDegrees,
+                        Enabled = enabled && radius > 0f && companionIntensity > 0f,
+                        BlinkIntervalSeconds = ValidLightValue(lightingBlock.BlinkIntervalSeconds, 0f),
+                        BlinkLength = ValidLightValue(lightingBlock.BlinkLength, 0f),
+                        BlinkOffset = ValidLightValue(lightingBlock.BlinkOffset, 0f),
+                    });
+                }
+
+                return;
+            }
+
+            var intensity = ViewerLightIntensity(power, lightingBlock.Intensity, 2f);
+            if (radius <= 0f && intensity <= 0f)
+                return;
+
+            lightSources.Add(new ViewerLightSource
+            {
+                Id = blockId + ":point",
+                BlockId = blockId,
+                Kind = "point",
+                Position = ToDto(position),
+                Direction = ToDto(direction),
+                Up = ToDto(up),
+                Color = ToDto(lightingBlock.Color),
+                Radius = radius,
+                ReflectorRadius = reflectorRadius,
+                Intensity = intensity,
+                Falloff = falloff,
+                ConeDegrees = coneDegrees,
+                Enabled = enabled && radius > 0f && intensity > 0f,
+                BlinkIntervalSeconds = ValidLightValue(lightingBlock.BlinkIntervalSeconds, 0f),
+                BlinkLength = ValidLightValue(lightingBlock.BlinkLength, 0f),
+                BlinkOffset = ValidLightValue(lightingBlock.BlinkOffset, 0f),
+            });
+        }
+
+        private static void AddLightingComponentSource(MyCubeGrid grid, MySlimBlock block, MyLightingComponent lightingComponent, List<ViewerLightSource> lightSources)
+        {
+            var functionalBlock = block.FatBlock as MyFunctionalBlock;
+            var enabledByBlock = functionalBlock == null || functionalBlock.IsWorking;
+            var power = ValidLightPower(lightingComponent.CurrentLightPower, enabledByBlock ? 1f : 0f);
+            var radius = ValidLightValue(lightingComponent.Radius, 0f);
+            var intensity = ViewerLightIntensity(power, lightingComponent.Intensity, 2f);
+            if (radius <= 0f && intensity <= 0f)
+                return;
+
+            var blockId = block.FatBlock.EntityId.ToString();
+            var position = LightPosition(block, lightingComponent.Offset);
+            var direction = LightDirection(block);
+            var up = LightUp(block);
+            lightSources.Add(new ViewerLightSource
+            {
+                Id = blockId + ":component-light",
+                BlockId = blockId,
+                Kind = "point",
+                Position = ToDto(position),
+                Direction = ToDto(direction),
+                Up = ToDto(up),
+                Color = ToDto(lightingComponent.Color),
+                Radius = radius,
+                ReflectorRadius = ValidLightValue(lightingComponent.ReflectorRadius, radius),
+                Intensity = intensity,
+                Falloff = ValidLightValue(lightingComponent.Falloff, 1f),
+                ConeDegrees = 52f,
+                Enabled = enabledByBlock && power > 0f && radius > 0f && intensity > 0f,
+                BlinkIntervalSeconds = ValidLightValue(lightingComponent.BlinkIntervalSeconds, 0f),
+                BlinkLength = ValidLightValue(lightingComponent.BlinkLength, 0f),
+                BlinkOffset = ValidLightValue(lightingComponent.BlinkOffset, 0f),
+            });
+        }
+
+        private static Vector3 LightPosition(MySlimBlock block, float offset)
+        {
+            block.GetLocalMatrix(out var localMatrix);
+            if (offset.IsValid() && Math.Abs(offset) > 0.0001f)
+                return localMatrix.Translation + localMatrix.Forward * offset;
+
+            return localMatrix.Translation;
+        }
+
+        private static Vector3 LightDirection(MySlimBlock block)
+        {
+            block.GetLocalMatrix(out var localMatrix);
+            var direction = localMatrix.Forward;
+            if (!direction.IsValid() || direction.LengthSquared() < 0.0001f)
+                direction = Vector3.Forward;
+            direction.Normalize();
+            return direction;
+        }
+
+        private static Vector3 LightUp(MySlimBlock block)
+        {
+            block.GetLocalMatrix(out var localMatrix);
+            var up = localMatrix.Up;
+            if (!up.IsValid() || up.LengthSquared() < 0.0001f)
+                up = Vector3.Up;
+            up.Normalize();
+            return up;
+        }
+
+        private static float ViewerLightIntensity(float power, float intensity, float gameScale)
+        {
+            if (!power.IsValid() || !intensity.IsValid() || !gameScale.IsValid())
+                return 0f;
+
+            return Math.Min(80f, Math.Max(0f, power * intensity * gameScale));
+        }
+
+        private static float ValidLightPower(float value, float fallback)
+        {
+            return value.IsValid() ? Math.Min(1f, Math.Max(0f, value)) : fallback;
+        }
+
+        private static float ValidLightValue(float value, float fallback)
+        {
+            return value.IsValid() ? Math.Max(0f, value) : fallback;
         }
 
         private static ViewerGrid ToGrid(MyCubeGrid grid)

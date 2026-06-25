@@ -3,7 +3,7 @@
 **Module:** Quasar.Host  **Kind:** JS  **Tier:** 3
 
 ## Summary
-Three.js scene, camera, lighting, controls, animation, interaction, and render-stat runtime for the standalone grid viewer. It owns renderer setup, orbit/free-fly camera behavior, floor grid generation with per-axis block-boundary alignment, sun marker/lighting, object disposal, viewport resizing, hover readouts, and per-frame stats rendering.
+Three.js scene, camera, lighting, controls, animation, interaction, and render-stat runtime for the standalone grid viewer. It owns renderer setup, orbit/free-fly camera behavior, floor grid generation with per-axis block-boundary alignment, ambient/environment lighting fallback, sun point light and marker helpers, object disposal, viewport resizing, hover readouts, and per-frame stats rendering.
 
 ## Structure
 
@@ -16,8 +16,8 @@ Key exports:
 | `replaceFloorGrid(bounds, gridSize, alignment = null)` | Rebuilds the scaled floor grid using SE small/large grid cell semantics and optional per-axis lattice offsets. |
 | `fitCameraToScene()` | Frames the active grid bounds and updates camera clipping planes/orbit target. |
 | `updateSceneBounds(refit = false)` | Recomputes displayed bounds, floor grid, and sun marker placement. |
-| `updateLighting()` | Applies sun toggle state to ambient/environment/directional lighting. |
-| `updateSunLightPosition()` | Positions the sun light, target, marker, and ray indicator in relative-grid space. |
+| `updateLighting()` | Applies the lighting toggle state to ambient/environment fill, the sun point light, grid light group, and sun marker helpers. |
+| `updateSunLightPosition()` | Positions the far sun point light, marker, and ray indicator in relative-grid space. |
 | `disposeObjectTree(root)` | Disposes geometries and materials below a scene object. |
 | `setCameraMode(mode)` | Switches between orbit and free-fly camera modes. |
 

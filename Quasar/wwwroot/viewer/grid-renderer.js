@@ -19,6 +19,7 @@ let transparentMaterialDefinitionsPromise = null;
 let transparentMaterialDefinitions = new Map();
 const MAX_CONCURRENT_MODEL_RESOLVES = 48;
 const MODEL_REBUILD_THROTTLE_MS = 100;
+const MAX_VIEWER_LIGHTS = 128;
 
 export async function renderGridScene(scene) {
     const renderToken = ++modelRenderToken;
@@ -27,6 +28,8 @@ export async function renderGridScene(scene) {
     if (state.gridGroup) {
         state.scene.remove(state.gridGroup);
         disposeObjectTree(state.gridGroup);
+        state.gridLightGroup = null;
+        state.gridLights = [];
     }
     if (state.voxelGroup) {
         state.scene.remove(state.voxelGroup);
@@ -44,6 +47,7 @@ export async function renderGridScene(scene) {
     group.matrix.copy(gridViewMatrix(scene));
     state.gridGroup = group;
     state.scene.add(group);
+    buildGridLightGroup(scene, group);
 
     const definitions = new Map((scene.blockDefinitions || []).map(definition => [definition.id, definition]));
     const modelAssets = new Map((scene.modelAssets || []).map(asset => [asset.assetId, asset]));
@@ -68,6 +72,7 @@ export async function renderGridScene(scene) {
     state.stats["Voxel bodies"] = (scene.voxels || []).length;
     state.stats["Voxel proxies"] = state.sceneRenderCounts.voxelProxies;
     state.stats["LCD surfaces"] = countLcdSurfaces(scene);
+    updateGridLightStats(scene.lightSources || []);
     renderSummary(scene, resolutionStats, textureStats);
 
     await ensureArmorSkinDefinitionsLoaded();
@@ -262,6 +267,88 @@ function configureEnvironment(scene) {
     if (state.sunDirection.lengthSq() === 0) state.sunDirection.set(0.33946735, 0.70979536, -0.61721337).normalize();
     state.sunIntensity = Math.max(0.15, num(scene.environment && scene.environment.sunIntensity, 1));
     updateLighting();
+}
+
+function buildGridLightGroup(scene, gridGroup) {
+    state.gridLights = [];
+    const sources = scene.lightSources || [];
+    const lightGroup = new THREE.Group();
+    lightGroup.name = "QuasarGridLights";
+    gridGroup.add(lightGroup);
+    state.gridLightGroup = lightGroup;
+
+    const center = gridLocalCenter(scene);
+    const selectedSources = sources
+        .slice()
+        .sort((a, b) => lightSourceSortKey(b, center) - lightSourceSortKey(a, center))
+        .slice(0, MAX_VIEWER_LIGHTS);
+
+    for (const source of selectedSources) {
+        const light = createGridLight(source, lightGroup);
+        if (!light) continue;
+        light.userData.lightSource = source;
+        state.gridLights.push(light);
+    }
+
+    if (sources.length > selectedSources.length) log(`Grid lights capped at ${selectedSources.length} of ${sources.length}.`, "warn");
+    updateLighting();
+}
+
+function createGridLight(source, lightGroup) {
+    if (!source || source.enabled === false || num(source.intensity, 0) <= 0) return null;
+    const kind = String(source.kind || "point").toLowerCase();
+    const color = lightColor(source.color);
+    const position = vec3(source.position);
+    const intensity = Math.max(0, num(source.intensity, 0));
+    const radius = Math.max(0, num(source.radius, 0));
+    const reflectorRadius = Math.max(radius, num(source.reflectorRadius, 0));
+    const decay = lightDecay(source.falloff);
+
+    if (kind === "spot") {
+        const coneRadians = THREE.MathUtils.degToRad(Math.max(1, Math.min(179, num(source.coneDegrees, 52)))) * 0.5;
+        const light = new THREE.SpotLight(color, intensity, reflectorRadius || radius || 1, coneRadians, 0.35, decay);
+        light.name = `GridSpotLight:${source.id || source.blockId || "unknown"}`;
+        light.position.copy(position);
+        light.castShadow = false;
+
+        const direction = vec3(source.direction);
+        if (direction.lengthSq() === 0) direction.set(0, 0, -1);
+        direction.normalize();
+        light.target.position.copy(position).addScaledVector(direction, Math.max(reflectorRadius || radius || 1, 1));
+        lightGroup.add(light.target);
+        lightGroup.add(light);
+        return light;
+    }
+
+    const light = new THREE.PointLight(color, intensity, radius || 1, decay);
+    light.name = `GridPointLight:${source.id || source.blockId || "unknown"}`;
+    light.position.copy(position);
+    light.castShadow = false;
+    lightGroup.add(light);
+    return light;
+}
+
+function gridLocalCenter(scene) {
+    const bounds = gridLocalBounds(scene);
+    return bounds && !bounds.isEmpty() ? bounds.getCenter(new THREE.Vector3()) : new THREE.Vector3();
+}
+
+function lightSourceSortKey(source, center) {
+    const enabledWeight = source && source.enabled !== false ? 1_000_000_000 : 0;
+    const position = vec3(source && source.position);
+    const distancePenalty = Math.min(1_000_000, position.distanceTo(center));
+    const impact = Math.max(0, num(source && source.intensity, 0)) * Math.max(num(source && source.radius, 0), num(source && source.reflectorRadius, 0), 1);
+    return enabledWeight + impact * 1000 - distancePenalty;
+}
+
+function lightColor(color) {
+    if (!color) return new THREE.Color(1, 1, 1);
+    return new THREE.Color((Number(color.r) || 0) / 255, (Number(color.g) || 0) / 255, (Number(color.b) || 0) / 255);
+}
+
+function lightDecay(falloff) {
+    const value = num(falloff, 1);
+    return value > 0 ? Math.min(2, Math.max(0, value)) : 0;
 }
 
 function gridViewMatrix(scene) {
@@ -1868,6 +1955,16 @@ function updateModelRenderStats(renderStats) {
     state.stats["Model batches"] = renderStats.modelBatches;
     state.stats["Shared geometries"] = renderStats.sharedGeometries;
     state.stats["Shared materials"] = renderStats.sharedMaterials;
+}
+
+function updateGridLightStats(lightSources) {
+    const sources = lightSources || [];
+    state.stats["Grid light sources"] = sources.length;
+    state.stats["Active grid lights"] = sources.filter(source => source && source.enabled !== false && num(source.intensity, 0) > 0).length;
+    state.stats["Viewer grid lights"] = state.gridLights.length;
+    state.stats["Point lights"] = state.gridLights.filter(light => light.isPointLight).length;
+    state.stats["Spot lights"] = state.gridLights.filter(light => light.isSpotLight).length;
+    state.stats["Capped grid lights"] = Math.max(0, sources.length - state.gridLights.length);
 }
 
 function updateSummaryModelStats(resolutionStats) {

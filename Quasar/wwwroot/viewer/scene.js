@@ -12,11 +12,11 @@ const FLY_MOUSE_SENSITIVITY = 0.0022;
 const FLY_BASE_SPEED = 18;
 const FLY_FAST_MULTIPLIER = 3;
 const FLY_PITCH_LIMIT = Math.PI / 2 - 0.01;
-const AMBIENT_WITH_SUN = 0.16;
-const AMBIENT_WITHOUT_SUN = 0.72;
-const ENVIRONMENT_WITH_SUN = 0.08;
-const ENVIRONMENT_WITHOUT_SUN = 0.18;
-const SUN_LIGHT_INTENSITY_SCALE = 1.9;
+const AMBIENT_WITH_LIGHTING = 0.16;
+const AMBIENT_WITHOUT_LIGHTING = 0.72;
+const ENVIRONMENT_WITH_LIGHTING = 0.08;
+const ENVIRONMENT_WITHOUT_LIGHTING = 0.18;
+const SUN_LIGHT_INTENSITY_SCALE = 3.2;
 
 export function initScene() {
     state.scene = new THREE.Scene();
@@ -33,20 +33,18 @@ export function initScene() {
 
     const pmrem = new THREE.PMREMGenerator(state.renderer);
     state.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    state.scene.environmentIntensity = ENVIRONMENT_WITH_SUN;
+    state.scene.environmentIntensity = ENVIRONMENT_WITH_LIGHTING;
     pmrem.dispose();
 
     state.controls = new OrbitControls(state.camera, state.renderer.domElement);
     state.controls.enableDamping = true;
     state.controls.dampingFactor = 0.08;
 
-    state.ambientLight = new THREE.AmbientLight(0xffffff, AMBIENT_WITH_SUN);
+    state.ambientLight = new THREE.AmbientLight(0xffffff, AMBIENT_WITH_LIGHTING);
     state.scene.add(state.ambientLight);
-    state.sunLight = new THREE.DirectionalLight(0xffffff, 1.9);
+    state.sunLight = new THREE.PointLight(0xffffff, 1.9, 1000, 0);
     state.sunLight.position.set(40, 70, 35);
-    state.sunTarget = state.sunLight.target;
     state.scene.add(state.sunLight);
-    state.scene.add(state.sunTarget);
 
     state.sunMarker = createSunMarker();
     state.sunMarkerLine = createSunMarkerLine();
@@ -233,30 +231,33 @@ export function updateSceneBounds(refit = false) {
 }
 
 export function updateLighting() {
-    const sunEnabled = !els.showSun || els.showSun.checked;
-    if (state.ambientLight) state.ambientLight.intensity = sunEnabled ? AMBIENT_WITH_SUN : AMBIENT_WITHOUT_SUN;
-    if (state.scene) state.scene.environmentIntensity = sunEnabled ? ENVIRONMENT_WITH_SUN : ENVIRONMENT_WITHOUT_SUN;
+    const lightingEnabled = !els.showLighting || els.showLighting.checked;
+    if (state.ambientLight) state.ambientLight.intensity = lightingEnabled ? AMBIENT_WITH_LIGHTING : AMBIENT_WITHOUT_LIGHTING;
+    if (state.scene) state.scene.environmentIntensity = lightingEnabled ? ENVIRONMENT_WITH_LIGHTING : ENVIRONMENT_WITHOUT_LIGHTING;
     if (state.sunLight) {
-        state.sunLight.visible = sunEnabled;
-        state.sunLight.intensity = sunEnabled ? Math.max(0.15, state.sunIntensity || 1) * SUN_LIGHT_INTENSITY_SCALE : 0;
+        state.sunLight.visible = lightingEnabled;
+        state.sunLight.intensity = lightingEnabled ? Math.max(0.15, state.sunIntensity || 1) * SUN_LIGHT_INTENSITY_SCALE : 0;
     }
-    if (state.sunMarker) state.sunMarker.visible = sunEnabled;
-    if (state.sunMarkerLine) state.sunMarkerLine.visible = sunEnabled;
+    if (state.gridLightGroup) state.gridLightGroup.visible = lightingEnabled;
+    if (state.sunMarker) state.sunMarker.visible = lightingEnabled;
+    if (state.sunMarkerLine) state.sunMarkerLine.visible = lightingEnabled;
 }
 
 export function updateSunLightPosition() {
-    if (!state.sunLight || !state.sunTarget) return;
+    if (!state.sunLight) return;
     const bounds = objectWorldBounds(state.gridGroup) || state.currentBounds;
     const target = bounds ? bounds.getCenter(new THREE.Vector3()) : new THREE.Vector3();
     const direction = currentRelativeSunDirection();
-    const distance = bounds ? sunMarkerDistance(bounds) : 90;
-    const sunPosition = target.clone().addScaledVector(direction, distance);
+    const markerDistance = bounds ? sunMarkerDistance(bounds) : 90;
+    const lightDistance = bounds ? sunPointLightDistance(bounds) : 1000;
+    const markerPosition = target.clone().addScaledVector(direction, markerDistance);
+    const lightPosition = target.clone().addScaledVector(direction, lightDistance);
 
-    state.sunLight.position.copy(sunPosition);
-    state.sunTarget.position.copy(target);
-    state.sunTarget.updateMatrixWorld();
+    state.sunLight.position.copy(lightPosition);
+    state.sunLight.distance = Math.max(lightDistance * 2, 1000);
+    state.sunLight.decay = 0;
     state.sunLight.updateMatrixWorld();
-    updateSunMarker(sunPosition, target);
+    updateSunMarker(markerPosition, target);
 }
 
 export function disposeObjectTree(root) {
@@ -347,6 +348,11 @@ function currentRelativeSunDirection() {
 function sunMarkerDistance(bounds) {
     const size = bounds.getSize(new THREE.Vector3());
     return Math.max(size.x, size.y, size.z, state.currentGridSize * 8, 10);
+}
+
+function sunPointLightDistance(bounds) {
+    const size = bounds.getSize(new THREE.Vector3());
+    return Math.max(size.length() * 8, 1000);
 }
 
 function updateSunMarker(position, target) {

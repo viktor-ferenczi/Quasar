@@ -13,7 +13,7 @@ export function wireControls(actions) {
         if (state.voxelGroup) state.voxelGroup.visible = els.showVoxels.checked;
         updateSceneBounds(false);
     });
-    els.showSun.addEventListener("change", () => {
+    els.showLighting.addEventListener("change", () => {
         updateLighting();
     });
     window.addEventListener("keydown", event => {

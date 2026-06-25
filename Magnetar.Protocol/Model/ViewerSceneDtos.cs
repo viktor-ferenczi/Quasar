@@ -40,6 +40,8 @@ public class EntityRenderScene
 
     public List<ViewerVoxelBody> Voxels { get; set; } = new();
 
+    public List<ViewerLightSource> LightSources { get; set; } = new();
+
     public List<string> Warnings { get; set; } = new();
 
     public DateTimeOffset CapturedAtUtc { get; set; } = DateTimeOffset.UtcNow;
@@ -50,6 +52,41 @@ public class ViewerSceneEnvironment
     public ViewerVector3 SunDirection { get; set; } = new() { X = 0.33946735f, Y = 0.70979536f, Z = -0.61721337f };
 
     public float SunIntensity { get; set; } = 1.9f;
+}
+
+public class ViewerLightSource
+{
+    public string Id { get; set; } = string.Empty;
+
+    public string BlockId { get; set; } = string.Empty;
+
+    public string Kind { get; set; } = string.Empty;
+
+    public ViewerVector3 Position { get; set; } = new();
+
+    public ViewerVector3 Direction { get; set; } = new();
+
+    public ViewerVector3 Up { get; set; } = new();
+
+    public ViewerColor Color { get; set; } = new() { R = 255, G = 255, B = 255, A = 255 };
+
+    public float Radius { get; set; }
+
+    public float ReflectorRadius { get; set; }
+
+    public float Intensity { get; set; }
+
+    public float Falloff { get; set; }
+
+    public float ConeDegrees { get; set; }
+
+    public bool Enabled { get; set; }
+
+    public float BlinkIntervalSeconds { get; set; }
+
+    public float BlinkLength { get; set; }
+
+    public float BlinkOffset { get; set; }
 }
 
 public class ViewerGrid

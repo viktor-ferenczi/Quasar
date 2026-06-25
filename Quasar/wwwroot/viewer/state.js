@@ -5,7 +5,6 @@ export const state = {
     controls: null,
     ambientLight: null,
     sunLight: null,
-    sunTarget: null,
     sunMarker: null,
     sunMarkerLine: null,
     sunDirection: null,
@@ -13,6 +12,8 @@ export const state = {
     floorGrid: null,
     resizeObserver: null,
     gridGroup: null,
+    gridLightGroup: null,
+    gridLights: [],
     voxelGroup: null,
     voxelMeshes: [],
     raycaster: null,
@@ -44,7 +45,7 @@ export const els = {};
 
 export function cacheElements() {
     for (const id of [
-        "viewport", "sceneSummary", "reloadScene", "contentStatus", "pickContent", "folderPicker", "showGridHelper", "showVoxels", "showSun",
+        "viewport", "sceneSummary", "reloadScene", "contentStatus", "pickContent", "folderPicker", "showGridHelper", "showVoxels", "showLighting",
         "cameraMode", "resetCamera", "stats", "log", "downloadLog", "hoverReadout", "cameraHint"
     ]) {
         els[id] = document.getElementById(id);

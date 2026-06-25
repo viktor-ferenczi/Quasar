@@ -347,8 +347,8 @@ function lightColor(color) {
 }
 
 function lightDecay(falloff) {
-    const value = num(falloff, 1);
-    return value > 0 ? Math.min(2, Math.max(0, value)) : 0;
+    const value = num(falloff, 1.5);
+    return Math.min(2, Math.max(0, 3 - value));
 }
 
 function gridViewMatrix(scene) {

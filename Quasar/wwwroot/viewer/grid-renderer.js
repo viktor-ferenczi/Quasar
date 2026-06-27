@@ -575,7 +575,7 @@ function createVoxelDataChunkMesh(chunk, voxel, voxelMaterialsByIndex) {
 
     const mesh = new THREE.Mesh(geometry, meshMaterials);
     mesh.name = `VoxelData:${chunk.voxelBodyId || "unknown"}:${chunk.chunkId || "chunk"}`;
-    mesh.castShadow = false;
+    mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.userData.voxel = {
         id: chunk.voxelBodyId || "",
@@ -705,7 +705,7 @@ function createVoxelSurfaceVertex(aPosition, bPosition, aNormal, bNormal, t) {
 
 function addVoxelTriangle(a, b, c, material, positions, normals, uvs, indicesByMaterial, reverse, clipBounds) {
     const polygon = reverse ? [a, c, b] : [a, b, c];
-    const clipped = clipVoxelPolygonToFloor(polygon, clipBounds);
+    const clipped = orientVoxelPolygon(clipVoxelPolygonToFloor(polygon, clipBounds));
     if (clipped.length < 3) return;
 
     let indices = indicesByMaterial.get(material);
@@ -724,6 +724,19 @@ function addVoxelTriangle(a, b, c, material, positions, normals, uvs, indicesByM
     for (let i = 1; i < clipped.length - 1; i++) {
         indices.push(base, base + i, base + i + 1);
     }
+}
+
+function orientVoxelPolygon(polygon) {
+    if (polygon.length < 3) return polygon;
+
+    const faceNormal = voxelPolygonNormal(polygon);
+    const surfaceNormal = new THREE.Vector3();
+    for (const vertex of polygon) {
+        if (vertex.normal && vertex.normal.lengthSq() >= 0.000001) surfaceNormal.add(vertex.normal);
+    }
+
+    if (surfaceNormal.lengthSq() < 0.000001) return polygon;
+    return faceNormal.dot(surfaceNormal) < 0 ? polygon.slice().reverse() : polygon;
 }
 
 function voxelPolygonNormal(polygon) {

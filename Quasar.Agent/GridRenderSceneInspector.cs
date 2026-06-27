@@ -405,6 +405,33 @@ namespace Quasar.Agent
                     if (!TryWorldAabbToStorageRange(voxel, intersection, out var storageMin, out var storageMax))
                         continue;
 
+                    var bodyName = FirstNonEmpty(voxel.DisplayName, voxel.Name, voxel.EntityId.ToString());
+                    var bodyContentState = ClassifyVoxelChunk(voxel, storageMin, storageMax);
+                    if (bodyContentState == "empty")
+                    {
+                        warnings.Add("Skipped empty voxel data range for " + bodyName + ".");
+                        continue;
+                    }
+                    if (bodyContentState == "full")
+                    {
+                        warnings.Add("Skipped full voxel data range for " + bodyName + ".");
+                        continue;
+                    }
+
+                    var bodySampleCount = RangeSampleCount(storageMin, storageMax);
+                    var bodyRequiredBytes = checked(bodySampleCount * 2);
+                    if (bodyRequiredBytes <= MaxVoxelDataBytes - totalBytes)
+                    {
+                        var bodyChunk = TryBuildVoxelDataChunk(voxel, storageMin, storageMax, bodyContentState, warnings);
+                        if (bodyChunk != null)
+                        {
+                            totalBytes += bodyChunk.Content.Length + bodyChunk.Materials.Length;
+                            result.Add(bodyChunk);
+                        }
+
+                        continue;
+                    }
+
                     var skippedEmpty = 0;
                     var skippedFull = 0;
                     foreach (var chunkRange in SplitStorageRange(storageMin, storageMax, DefaultVoxelChunkSize))
@@ -444,7 +471,7 @@ namespace Quasar.Agent
                     }
 
                     if (skippedEmpty > 0 || skippedFull > 0)
-                        warnings.Add("Skipped " + skippedEmpty + " empty and " + skippedFull + " full voxel data chunks for " + FirstNonEmpty(voxel.DisplayName, voxel.Name, voxel.EntityId.ToString()) + ".");
+                        warnings.Add("Skipped " + skippedEmpty + " empty and " + skippedFull + " full voxel data chunks for " + bodyName + ".");
 
                     if (chunkBudgetReached)
                         break;
@@ -483,27 +510,12 @@ namespace Quasar.Agent
             var data = new MyStorageData(MyStorageDataTypeFlags.ContentAndMaterial);
             data.Resize(min, max);
             var flags = MyVoxelRequestFlags.ConsiderContent;
-            voxel.Storage.ReadRange(data, MyStorageDataTypeFlags.ContentAndMaterial, VoxelLod, min, max, ref flags);
+            voxel.Storage.ReadRange(data, MyStorageDataTypeFlags.Content, VoxelLod, min, max, ref flags);
 
-            var hasEmpty = false;
-            var hasFull = false;
-            var content = data[MyStorageDataTypeEnum.Content];
-            var count = data.Size3D.Size;
-            for (var i = 0; i < count; i++)
-            {
-                var value = content[i];
-                if (value == 0)
-                    hasEmpty = true;
-                else if (value == byte.MaxValue)
-                    hasFull = true;
-                else
-                    return "mixed";
-
-                if (hasEmpty && hasFull)
-                    return "mixed";
-            }
-
-            return hasFull ? "full" : "empty";
+            var constitution = data.ComputeContentConstitution();
+            if (constitution == MyVoxelContentConstitution.Empty) return "empty";
+            if (constitution == MyVoxelContentConstitution.Full) return "full";
+            return "mixed";
         }
 
         private static ViewerVoxelDataChunk TryBuildVoxelDataChunk(
@@ -517,7 +529,7 @@ namespace Quasar.Agent
             {
                 var data = new MyStorageData(MyStorageDataTypeFlags.ContentAndMaterial);
                 data.Resize(min, max);
-                var flags = MyVoxelRequestFlags.ConsiderContent;
+                var flags = MyVoxelRequestFlags.ConsiderContent | MyVoxelRequestFlags.SurfaceMaterial;
                 voxel.Storage.ReadRange(data, MyStorageDataTypeFlags.ContentAndMaterial, VoxelLod, min, max, ref flags);
                 return CopyVoxelDataChunk(voxel, min, max, contentState, data);
             }

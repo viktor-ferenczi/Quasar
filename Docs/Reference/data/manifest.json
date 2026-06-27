@@ -394,8 +394,8 @@
       "path": "Quasar.Agent/GridRenderSceneInspector.cs",
       "name": "GridRenderSceneInspector.cs",
       "ext": ".cs",
-      "size": 66793,
-      "sha256": "eeaf703cd0f8b44a0ee3d08779f11158d87bffc02581a52bc3a7872dceaf7ac8",
+      "size": 67728,
+      "sha256": "abfd70d3d722cbe8433a819516eae2bf85796a80626210a9fad9f111b426dbce",
       "module": "Quasar.Agent",
       "tier": 1,
       "status": "pending"
@@ -2174,8 +2174,8 @@
       "path": "Quasar/wwwroot/viewer/grid-renderer.js",
       "name": "grid-renderer.js",
       "ext": ".js",
-      "size": 104652,
-      "sha256": "bf45edb7a451bae0b7fd9a464334767d1dbc7caddd14bca333ec1d058f038662",
+      "size": 106447,
+      "sha256": "7d5ce4214359153980c183158ab0e84224a908d0dcd15ec4dee59d0db466055b",
       "module": "Quasar.Host",
       "tier": 3,
       "status": "pending"

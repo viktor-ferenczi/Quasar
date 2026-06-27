@@ -480,13 +480,25 @@ function renderVoxelBodies(voxels, voxelChunks) {
 
     const meshedBodyIds = new Set();
     const voxelBodiesById = new Map(voxels.map(voxel => [String(voxel.id || ""), voxel]));
+    let failedVoxelChunks = 0;
     for (const chunk of voxelChunks) {
-        const mesh = createVoxelDataChunkMesh(chunk, voxelBodiesById.get(String(chunk.voxelBodyId || "")));
-        if (!mesh) continue;
+        const voxel = voxelBodiesById.get(String(chunk.voxelBodyId || ""));
+        const mesh = createVoxelDataChunkMesh(chunk, voxel);
+        if (!mesh) {
+            failedVoxelChunks++;
+            if (failedVoxelChunks <= 5) log(`Voxel chunk ${chunk.chunkId || "chunk"} for ${chunk.voxelBodyId || "unknown"} produced no mesh: ${describeVoxelDataChunk(chunk, voxel)}.`, true);
+            continue;
+        }
         group.add(mesh);
         state.voxelMeshes.push(mesh);
         meshedBodyIds.add(String(chunk.voxelBodyId || ""));
         state.sceneRenderCounts.voxelMeshChunks++;
+    }
+
+    if (voxelChunks.length && state.sceneRenderCounts.voxelMeshChunks === 0) {
+        log(`Received ${voxelChunks.length} voxel data chunk(s), but none produced renderable terrain.`, true);
+    } else if (failedVoxelChunks > 0) {
+        log(`Skipped ${failedVoxelChunks} voxel data chunk(s) that produced no terrain triangles.`, true);
     }
 
     const proxyGroup = new THREE.Group();
@@ -516,9 +528,12 @@ function createVoxelDataChunkMesh(chunk, voxel) {
     if (sx < 2 || sy < 2 || sz < 2 || content.length < sx * sy * sz) return null;
 
     const storageMin = chunk.storageMin || {};
-    const localOrigin = new THREE.Vector3(num(storageMin.x, 0), num(storageMin.y, 0), num(storageMin.z, 0));
-    const voxelWorldMatrix = matrixDtoToThree(voxel && voxel.worldMatrix);
-    const worldTransform = (state.viewTransform || new THREE.Matrix4()).clone().multiply(voxelWorldMatrix);
+    const positionLeftBottomCorner = vec3(voxel && voxel.positionLeftBottomCorner);
+    const worldOrigin = new THREE.Vector3(
+        positionLeftBottomCorner.x + num(storageMin.x, 0),
+        positionLeftBottomCorner.y + num(storageMin.y, 0),
+        positionLeftBottomCorner.z + num(storageMin.z, 0));
+    const viewTransform = state.viewTransform || new THREE.Matrix4();
     const positions = [];
     const indicesByMaterial = new Map();
     const cube = createVoxelCubeScratch();
@@ -526,7 +541,7 @@ function createVoxelDataChunkMesh(chunk, voxel) {
     for (let z = 0; z < sz - 1; z++) {
         for (let y = 0; y < sy - 1; y++) {
             for (let x = 0; x < sx - 1; x++) {
-                fillVoxelCubeScratch(cube, x, y, z, sx, sy, content, materials, localOrigin, worldTransform);
+                fillVoxelCubeScratch(cube, x, y, z, sx, sy, content, materials, worldOrigin, viewTransform);
                 polygonizeVoxelCube(cube, positions, indicesByMaterial);
             }
         }
@@ -541,7 +556,7 @@ function createVoxelDataChunkMesh(chunk, voxel) {
     const allIndices = [];
     for (const [materialIndex, partIndices] of [...indicesByMaterial.entries()].sort((a, b) => a[0] - b[0])) {
         const start = allIndices.length;
-        allIndices.push(...partIndices);
+        appendArray(allIndices, partIndices);
         geometry.addGroup(start, partIndices.length, meshMaterials.length);
         meshMaterials.push(createVoxelMeshMaterial(materialIndex));
         state.sceneRenderCounts.voxelMeshParts++;
@@ -563,6 +578,24 @@ function createVoxelDataChunkMesh(chunk, voxel) {
     return mesh;
 }
 
+function describeVoxelDataChunk(chunk, voxel) {
+    const content = voxelByteArray(chunk && chunk.content);
+    const materials = voxelByteArray(chunk && chunk.materials);
+    const size = chunk && chunk.size || {};
+    let min = 255;
+    let max = 0;
+    let belowIso = false;
+    let aboveIso = false;
+    for (const value of content) {
+        min = Math.min(min, value);
+        max = Math.max(max, value);
+        if (value < VOXEL_ISO_LEVEL) belowIso = true;
+        else aboveIso = true;
+    }
+    const expected = Math.max(0, Math.floor(num(size.x, 0))) * Math.max(0, Math.floor(num(size.y, 0))) * Math.max(0, Math.floor(num(size.z, 0)));
+    return `size=${Math.floor(num(size.x, 0))}x${Math.floor(num(size.y, 0))}x${Math.floor(num(size.z, 0))}, content=${content.length}/${expected}, materials=${materials.length}, range=${content.length ? `${min}-${max}` : "empty"}, crossesIso=${belowIso && aboveIso}, hasVoxelMetadata=${!!voxel}`;
+}
+
 const VOXEL_ISO_LEVEL = 127.5;
 const VOXEL_TETRAHEDRA = [
     [0, 5, 1, 6], [0, 1, 2, 6], [0, 2, 3, 6],
@@ -577,14 +610,14 @@ function createVoxelCubeScratch() {
     return Array.from({ length: 8 }, () => ({ position: new THREE.Vector3(), value: 0, material: 0 }));
 }
 
-function fillVoxelCubeScratch(cube, x, y, z, sx, sy, content, materials, localOrigin, worldTransform) {
+function fillVoxelCubeScratch(cube, x, y, z, sx, sy, content, materials, worldOrigin, viewTransform) {
     for (let i = 0; i < VOXEL_CUBE_OFFSETS.length; i++) {
         const offset = VOXEL_CUBE_OFFSETS[i];
         const px = x + offset[0];
         const py = y + offset[1];
         const pz = z + offset[2];
         const index = px + sx * (py + sy * pz);
-        cube[i].position.set(localOrigin.x + px, localOrigin.y + py, localOrigin.z + pz).applyMatrix4(worldTransform);
+        cube[i].position.set(worldOrigin.x + px, worldOrigin.y + py, worldOrigin.z + pz).applyMatrix4(viewTransform);
         cube[i].value = num(content[index], 0);
         cube[i].material = num(materials[index], 0);
     }
@@ -638,6 +671,10 @@ function addVoxelTriangle(a, b, c, material, positions, indicesByMaterial, rever
         positions.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
     }
     indices.push(base, base + 1, base + 2);
+}
+
+function appendArray(target, source) {
+    for (let i = 0; i < source.length; i++) target.push(source[i]);
 }
 
 function dominantVoxelMaterial(vertices) {

@@ -3,7 +3,7 @@
 **Module:** Quasar.Host  **Kind:** JS  **Tier:** 3
 
 ## Summary
-Three.js scene, camera, lighting, controls, animation, interaction, and render-stat runtime for the standalone grid viewer. It owns renderer setup including shadow-map configuration, orbit/free-fly camera behavior, floor grid generation with per-axis block-boundary alignment, ambient/environment lighting fallback, directional sun/shadow-camera fitting with texel-scaled normal bias, marker helpers, object disposal, viewport resizing, hover readouts, and per-frame stats rendering.
+Three.js scene, camera, lighting, controls, animation, interaction, and render-stat runtime for the standalone grid viewer. It owns renderer setup including shadow-map configuration, orbit/free-fly camera behavior, floor grid generation with per-axis block-boundary alignment, diffuse-only ambient lighting fallback, directional sun/shadow-camera fitting with texel-scaled normal bias, marker helpers, object disposal, viewport resizing, hover readouts, and per-frame stats rendering.
 
 ## Structure
 
@@ -16,13 +16,13 @@ Key exports:
 | `replaceFloorGrid(bounds, gridSize, alignment = null)` | Rebuilds the scaled floor grid using SE small/large grid cell semantics and optional per-axis lattice offsets. |
 | `fitCameraToScene()` | Frames the active grid bounds and updates camera clipping planes/orbit target. |
 | `updateSceneBounds(refit = false)` | Recomputes displayed bounds, floor grid, and sun marker placement. |
-| `updateLighting()` | Applies the lighting toggle state to ambient/environment fill, the directional sun, grid light group, and sun marker helpers. |
+| `updateLighting()` | Applies the lighting toggle state to ambient fill, the directional sun, grid light group, and sun marker helpers. |
 | `updateSunLightPosition()` | Positions the directional sun, target, marker, ray indicator, and fitted orthographic shadow camera in relative-grid space. |
 | `disposeObjectTree(root)` | Disposes geometries and materials below a scene object. |
 | `setCameraMode(mode)` | Switches between orbit and free-fly camera modes. |
 
 ## Dependencies
-- `three`, `three/addons/environments/RoomEnvironment.js`, and `three/addons/controls/OrbitControls.js`.
+- `three` and `three/addons/controls/OrbitControls.js`.
 - [`Quasar/wwwroot/viewer/state.js`](state.js.md) for global viewer runtime state and cached DOM elements.
 - [`Quasar/wwwroot/viewer/geometry.js`](geometry.js.md) for bounds conversion.
 

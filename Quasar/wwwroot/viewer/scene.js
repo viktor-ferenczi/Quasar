@@ -1,5 +1,4 @@
 import * as THREE from "three";
-import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { els, state } from "./state.js";
 import { boundsToBox3 } from "./geometry.js";
@@ -13,10 +12,8 @@ const FLY_BASE_SPEED = 18;
 const FLY_FAST_MULTIPLIER = 3;
 const FLY_PITCH_LIMIT = Math.PI / 2 - 0.01;
 const AMBIENT_WITH_LIGHTING = 0.16;
-const AMBIENT_WITHOUT_LIGHTING = 0.72;
-const ENVIRONMENT_WITH_LIGHTING = 0.08;
-const ENVIRONMENT_WITHOUT_LIGHTING = 0.18;
-const SUN_LIGHT_INTENSITY_SCALE = 3.2;
+const AMBIENT_WITHOUT_LIGHTING = 1.0;
+const SUN_LIGHT_INTENSITY_SCALE = 2.7;
 const SUN_SHADOW_MAP_SIZE = 4096;
 const SUN_SHADOW_PADDING_SCALE = 0.08;
 const SUN_SHADOW_MIN_NORMAL_BIAS = 0.02;
@@ -36,11 +33,6 @@ export function initScene() {
     state.renderer.shadowMap.enabled = true;
     state.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     els.viewport.appendChild(state.renderer.domElement);
-
-    const pmrem = new THREE.PMREMGenerator(state.renderer);
-    state.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    state.scene.environmentIntensity = ENVIRONMENT_WITH_LIGHTING;
-    pmrem.dispose();
 
     state.controls = new OrbitControls(state.camera, state.renderer.domElement);
     state.controls.enableDamping = true;
@@ -247,7 +239,6 @@ export function updateSceneBounds(refit = false) {
 export function updateLighting() {
     const lightingEnabled = !els.showLighting || els.showLighting.checked;
     if (state.ambientLight) state.ambientLight.intensity = lightingEnabled ? AMBIENT_WITH_LIGHTING : AMBIENT_WITHOUT_LIGHTING;
-    if (state.scene) state.scene.environmentIntensity = lightingEnabled ? ENVIRONMENT_WITH_LIGHTING : ENVIRONMENT_WITHOUT_LIGHTING;
     if (state.sunLight) {
         state.sunLight.visible = lightingEnabled;
         state.sunLight.intensity = lightingEnabled ? Math.max(0.15, state.sunIntensity || 1) * SUN_LIGHT_INTENSITY_SCALE : 0;

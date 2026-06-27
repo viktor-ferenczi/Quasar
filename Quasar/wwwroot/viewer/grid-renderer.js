@@ -537,6 +537,7 @@ function createVoxelDataChunkMesh(chunk, voxel, voxelMaterialsByIndex) {
         positionLeftBottomCorner.z + num(storageMin.z, 0));
     const viewTransform = state.viewTransform || new THREE.Matrix4();
     const positions = [];
+    const normals = [];
     const uvs = [];
     const indicesByMaterial = new Map();
     const cube = createVoxelCubeScratch();
@@ -545,8 +546,8 @@ function createVoxelDataChunkMesh(chunk, voxel, voxelMaterialsByIndex) {
     for (let z = 0; z < sz - 1; z++) {
         for (let y = 0; y < sy - 1; y++) {
             for (let x = 0; x < sx - 1; x++) {
-                fillVoxelCubeScratch(cube, x, y, z, sx, sy, content, materials, worldOrigin, viewTransform);
-                polygonizeVoxelCube(cube, positions, uvs, indicesByMaterial, clipBounds);
+                fillVoxelCubeScratch(cube, x, y, z, sx, sy, sz, content, materials, worldOrigin, viewTransform);
+                polygonizeVoxelCube(cube, positions, normals, uvs, indicesByMaterial, clipBounds);
             }
         }
     }
@@ -556,6 +557,7 @@ function createVoxelDataChunkMesh(chunk, voxel, voxelMaterialsByIndex) {
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
     geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
     geometry.setAttribute("uv2", new THREE.Float32BufferAttribute(uvs, 2));
     const meshMaterials = [];
@@ -569,11 +571,12 @@ function createVoxelDataChunkMesh(chunk, voxel, voxelMaterialsByIndex) {
         state.sceneRenderCounts.voxelMeshTriangles += Math.floor(partIndices.length / 3);
     }
     geometry.setIndex(allIndices);
-    geometry.computeVertexNormals();
     geometry.computeBoundingSphere();
 
     const mesh = new THREE.Mesh(geometry, meshMaterials);
     mesh.name = `VoxelData:${chunk.voxelBodyId || "unknown"}:${chunk.chunkId || "chunk"}`;
+    mesh.castShadow = false;
+    mesh.receiveShadow = true;
     mesh.userData.voxel = {
         id: chunk.voxelBodyId || "",
         kind: "voxelData",
@@ -613,10 +616,10 @@ const VOXEL_CUBE_OFFSETS = [
 ];
 
 function createVoxelCubeScratch() {
-    return Array.from({ length: 8 }, () => ({ position: new THREE.Vector3(), value: 0, material: 0 }));
+    return Array.from({ length: 8 }, () => ({ position: new THREE.Vector3(), normal: new THREE.Vector3(), value: 0, material: 0 }));
 }
 
-function fillVoxelCubeScratch(cube, x, y, z, sx, sy, content, materials, worldOrigin, viewTransform) {
+function fillVoxelCubeScratch(cube, x, y, z, sx, sy, sz, content, materials, worldOrigin, viewTransform) {
     for (let i = 0; i < VOXEL_CUBE_OFFSETS.length; i++) {
         const offset = VOXEL_CUBE_OFFSETS[i];
         const px = x + offset[0];
@@ -624,19 +627,37 @@ function fillVoxelCubeScratch(cube, x, y, z, sx, sy, content, materials, worldOr
         const pz = z + offset[2];
         const index = px + sx * (py + sy * pz);
         cube[i].position.set(worldOrigin.x + px, worldOrigin.y + py, worldOrigin.z + pz).applyMatrix4(viewTransform);
+        setVoxelSampleNormal(cube[i].normal, px, py, pz, sx, sy, sz, content).transformDirection(viewTransform);
         cube[i].value = num(content[index], 0);
         cube[i].material = num(materials[index], 0);
     }
 }
 
-function polygonizeVoxelCube(cube, positions, uvs, indicesByMaterial, clipBounds) {
+function setVoxelSampleNormal(target, x, y, z, sx, sy, sz, content) {
+    const gx = sampleVoxelContent(content, x + 1, y, z, sx, sy, sz) - sampleVoxelContent(content, x - 1, y, z, sx, sy, sz);
+    const gy = sampleVoxelContent(content, x, y + 1, z, sx, sy, sz) - sampleVoxelContent(content, x, y - 1, z, sx, sy, sz);
+    const gz = sampleVoxelContent(content, x, y, z + 1, sx, sy, sz) - sampleVoxelContent(content, x, y, z - 1, sx, sy, sz);
+    target.set(-gx, -gy, -gz);
+    if (target.lengthSq() < 0.000001) target.set(0, 1, 0);
+    else target.normalize();
+    return target;
+}
+
+function sampleVoxelContent(content, x, y, z, sx, sy, sz) {
+    const px = clamp(Math.floor(x), 0, sx - 1);
+    const py = clamp(Math.floor(y), 0, sy - 1);
+    const pz = clamp(Math.floor(z), 0, sz - 1);
+    return num(content[px + sx * (py + sy * pz)], 0);
+}
+
+function polygonizeVoxelCube(cube, positions, normals, uvs, indicesByMaterial, clipBounds) {
     for (const tetra of VOXEL_TETRAHEDRA) {
         const vertices = tetra.map(index => cube[index]);
-        polygonizeVoxelTetra(vertices, positions, uvs, indicesByMaterial, clipBounds);
+        polygonizeVoxelTetra(vertices, positions, normals, uvs, indicesByMaterial, clipBounds);
     }
 }
 
-function polygonizeVoxelTetra(vertices, positions, uvs, indicesByMaterial, clipBounds) {
+function polygonizeVoxelTetra(vertices, positions, normals, uvs, indicesByMaterial, clipBounds) {
     const inside = [];
     const outside = [];
     for (const vertex of vertices) {
@@ -652,29 +673,37 @@ function polygonizeVoxelTetra(vertices, positions, uvs, indicesByMaterial, clipB
         const a = interpolateVoxelEdge(inside[0], outside[0]);
         const b = interpolateVoxelEdge(inside[0], outside[1]);
         const c = interpolateVoxelEdge(inside[0], outside[2]);
-        addVoxelTriangle(a, b, c, material, positions, uvs, indicesByMaterial, true, clipBounds);
+        addVoxelTriangle(a, b, c, material, positions, normals, uvs, indicesByMaterial, true, clipBounds);
     } else if (insideCount === 3) {
         const a = interpolateVoxelEdge(outside[0], inside[0]);
         const b = interpolateVoxelEdge(outside[0], inside[1]);
         const c = interpolateVoxelEdge(outside[0], inside[2]);
-        addVoxelTriangle(a, b, c, material, positions, uvs, indicesByMaterial, false, clipBounds);
+        addVoxelTriangle(a, b, c, material, positions, normals, uvs, indicesByMaterial, false, clipBounds);
     } else {
         const a = interpolateVoxelEdge(inside[0], outside[0]);
         const b = interpolateVoxelEdge(inside[1], outside[0]);
         const c = interpolateVoxelEdge(inside[1], outside[1]);
         const d = interpolateVoxelEdge(inside[0], outside[1]);
-        addVoxelTriangle(a, b, c, material, positions, uvs, indicesByMaterial, false, clipBounds);
-        addVoxelTriangle(a, c, d, material, positions, uvs, indicesByMaterial, false, clipBounds);
+        addVoxelTriangle(a, b, c, material, positions, normals, uvs, indicesByMaterial, false, clipBounds);
+        addVoxelTriangle(a, c, d, material, positions, normals, uvs, indicesByMaterial, false, clipBounds);
     }
 }
 
 function interpolateVoxelEdge(a, b) {
     const delta = b.value - a.value;
     const t = Math.abs(delta) > 0.0001 ? (VOXEL_ISO_LEVEL - a.value) / delta : 0.5;
-    return new THREE.Vector3().lerpVectors(a.position, b.position, clamp(t, 0, 1));
+    return createVoxelSurfaceVertex(a.position, b.position, a.normal, b.normal, clamp(t, 0, 1));
 }
 
-function addVoxelTriangle(a, b, c, material, positions, uvs, indicesByMaterial, reverse, clipBounds) {
+function createVoxelSurfaceVertex(aPosition, bPosition, aNormal, bNormal, t) {
+    const vertex = new THREE.Vector3().lerpVectors(aPosition, bPosition, t);
+    vertex.normal = new THREE.Vector3().lerpVectors(aNormal, bNormal, t);
+    if (vertex.normal.lengthSq() < 0.000001) vertex.normal.set(0, 1, 0);
+    else vertex.normal.normalize();
+    return vertex;
+}
+
+function addVoxelTriangle(a, b, c, material, positions, normals, uvs, indicesByMaterial, reverse, clipBounds) {
     const polygon = reverse ? [a, c, b] : [a, b, c];
     const clipped = clipVoxelPolygonToFloor(polygon, clipBounds);
     if (clipped.length < 3) return;
@@ -686,13 +715,30 @@ function addVoxelTriangle(a, b, c, material, positions, uvs, indicesByMaterial, 
     }
     const base = positions.length / 3;
     const projection = voxelUvProjection(clipped);
+    const fallbackNormal = voxelPolygonNormal(clipped);
     for (const vertex of clipped) {
         positions.push(vertex.x, vertex.y, vertex.z);
+        appendVoxelNormal(normals, vertex, fallbackNormal);
         appendVoxelUv(uvs, vertex, projection);
     }
     for (let i = 1; i < clipped.length - 1; i++) {
         indices.push(base, base + i, base + i + 1);
     }
+}
+
+function voxelPolygonNormal(polygon) {
+    const a = polygon[0];
+    const b = polygon[1];
+    const c = polygon[2];
+    const normal = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a));
+    if (normal.lengthSq() < 0.000001) return new THREE.Vector3(0, 1, 0);
+    return normal.normalize();
+}
+
+function appendVoxelNormal(normals, vertex, fallbackNormal) {
+    const normal = vertex.normal && vertex.normal.lengthSq() >= 0.000001 ? vertex.normal : fallbackNormal;
+    const direction = normal.dot(fallbackNormal) < 0 ? -1 : 1;
+    normals.push(normal.x * direction, normal.y * direction, normal.z * direction);
 }
 
 function voxelUvProjection(polygon) {
@@ -741,7 +787,7 @@ function clipVoxelPolygonAxis(polygon, axis, limit, keepGreater) {
 function intersectVoxelClipEdge(a, b, axis, limit) {
     const delta = b[axis] - a[axis];
     const t = Math.abs(delta) > 0.000001 ? (limit - a[axis]) / delta : 0;
-    return new THREE.Vector3().lerpVectors(a, b, clamp(t, 0, 1));
+    return createVoxelSurfaceVertex(a, b, a.normal || new THREE.Vector3(0, 1, 0), b.normal || new THREE.Vector3(0, 1, 0), clamp(t, 0, 1));
 }
 
 function voxelFloorClipBounds() {
@@ -866,6 +912,8 @@ function createVoxelProxy(voxel) {
     const mesh = new THREE.Mesh(geometry, material);
     mesh.name = `Voxel:${voxel.id || voxel.displayName || "unknown"}`;
     mesh.position.copy(center);
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
     mesh.userData.voxel = voxel;
     return mesh;
 }

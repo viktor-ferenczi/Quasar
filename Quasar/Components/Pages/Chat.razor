@@ -11,7 +11,7 @@
 <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween" Spacing="2" Class="mb-2">
     <div>
         <MudText Typo="Typo.h5" Class="mb-2">Chat</MudText>
-        <MudText Typo="Typo.body2">Select a server, watch live chat, send messages, and run chat-command text through the agent.</MudText>
+        <MudText Typo="Typo.body2">Select a server, watch live chat, send messages, and run !commands through the agent.</MudText>
     </div>
     <MudChip T="string" Variant="Variant.Outlined">@($"{ConnectedAgents.Count} connected")</MudChip>
 </MudStack>
@@ -85,44 +85,30 @@
         </div>
 
         <MudStack Row="true" Wrap="Wrap.Wrap" AlignItems="AlignItems.Start" Spacing="2">
-            <MudSwitch T="bool" @bind-Value="_commandMode" Label="Command mode" Color="Color.Primary" Class="mt-2" />
-            @if (_commandMode)
-            {
-                <MudAutocomplete T="string"
-                                 @bind-Value="_inputText"
-                                 SearchFunc="SearchCommandSuggestionsAsync"
-                                 Label="Command text"
-                                 Variant="Variant.Outlined"
-                                 FullWidth="true"
-                                 Immediate="true"
-                                 CoerceText="true"
-                                 CoerceValue="true"
-                                 ResetValueOnEmptyText="false"
-                                 MaxItems="8"
-                                 HelperText="Type the full chat command, including prefix."
-                                 OnKeyDown="HandleInputKeyDownAsync"
-                                 Disabled="@(!CanSendAgentCommand)" />
-            }
-            else
-            {
-                <MudTextField @bind-Value="_inputText"
-                              Label="Chat message"
-                              Variant="Variant.Outlined"
-                              FullWidth="true"
-                              Immediate="true"
-                              Lines="2"
-                              HelperText="Broadcasts to selected server chat."
-                              OnKeyDown="HandleInputKeyDownAsync"
-                              Disabled="@(!CanSendAgentCommand)" />
-            }
+            <MudAutocomplete T="string"
+                             @bind-Value="_inputText"
+                             SearchFunc="SearchCommandSuggestionsAsync"
+                             Label="@InputLabel"
+                             Variant="Variant.Outlined"
+                             FullWidth="true"
+                             Immediate="true"
+                             Lines="2"
+                             CoerceText="true"
+                             CoerceValue="true"
+                             ResetValueOnEmptyText="false"
+                             MinCharacters="1"
+                             MaxItems="8"
+                             HelperText="@InputHelperText"
+                             OnKeyDown="HandleInputKeyDownAsync"
+                             Disabled="@(!CanSendAgentCommand)" />
             <MudButton Variant="Variant.Filled"
-                       Color="@(_commandMode ? Color.Warning : Color.Success)"
-                       StartIcon="@(_commandMode ? Icons.Material.Filled.Terminal : Icons.Material.Filled.Send)"
+                       Color="@(IsCommandInput ? Color.Warning : Color.Success)"
+                       StartIcon="@(IsCommandInput ? Icons.Material.Filled.Terminal : Icons.Material.Filled.Send)"
                        Class="mt-3"
                        Style="height: 40px;"
                        OnClick="SendInputAsync"
                        Disabled="@(!CanSendAgentCommand || string.IsNullOrWhiteSpace(_inputText))">
-                @(_commandMode ? "Run" : "Send")
+                @(IsCommandInput ? "Run" : "Send")
             </MudButton>
         </MudStack>
 
@@ -145,7 +131,6 @@
     private readonly string _chatScrollContainerId = $"admin-chat-{Guid.NewGuid():N}";
     private string _selectedUniqueName = string.Empty;
     private string _inputText = string.Empty;
-    private bool _commandMode;
     private long _lastRenderedLatestMessageTicks;
     private bool _scrollPending;
 
@@ -182,6 +167,14 @@
     private bool CanRestartSelected => HasSelectedDefinition && !IsSelectedUnstable;
 
     private bool IsSelectedUnstable => IsUnstable(SelectedRuntime?.State ?? DedicatedServerProcessState.Stopped);
+
+    private bool IsCommandInput => IsCommandText(_inputText);
+
+    private string InputLabel => IsCommandInput ? "Command text" : "Chat message";
+
+    private string InputHelperText => IsCommandInput
+        ? "Select a suggestion or type the full command."
+        : "Broadcasts to selected server chat. Start with ! for commands.";
 
     protected override void OnInitialized()
     {
@@ -233,6 +226,9 @@
 
     private Task<IEnumerable<string>> SearchCommandSuggestionsAsync(string? value, CancellationToken cancellationToken)
     {
+        if (!IsCommandText(value))
+            return Task.FromResult(Enumerable.Empty<string>());
+
         var query = NormalizeCommandQuery(value);
         var suggestions = SelectedCommandSuggestions
             .Where(command => MatchesCommandSuggestion(command, query))
@@ -411,6 +407,11 @@
     {
         var query = value?.Trim() ?? string.Empty;
         return query.StartsWith('!') ? query[1..] : query;
+    }
+
+    private static bool IsCommandText(string? value)
+    {
+        return value?.TrimStart().StartsWith('!') == true;
     }
 
     private static bool MatchesCommandSuggestion(ChatCommandSnapshot command, string query)

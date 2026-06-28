@@ -3,7 +3,7 @@ import { Line2 } from "three/addons/lines/Line2.js";
 import { LineGeometry } from "three/addons/lines/LineGeometry.js";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import { els, state } from "./state.js";
-import { blockBox, boundsToBox3 } from "./geometry.js";
+import { blockBox, boundsToBox3, createBoxMesh } from "./geometry.js";
 import { colorFromHash, matrixDtoToThree, num, vec3 } from "./math.js";
 import { ASTEROID_GRID_CUBE_SIZE, LARGE_GRID_CUBE_SIZE, disposeObjectTree, fitCameraToScene, floorGridLayout, updateLighting, updateSceneBounds, updateSunLightPosition } from "./scene.js";
 import { resolveModelAsset } from "./mwm-loader.js";
@@ -383,6 +383,7 @@ function renderLogisticsOverlay(scene, gridGroups, definitions) {
     state.logisticsGroup = group;
 
     const primary = primaryGrid(scene) || scene.grid || {};
+    const logisticsGridSize = primary.gridSize || scene.grid && scene.grid.gridSize || LARGE_GRID_CUBE_SIZE;
     const parent = gridGroups.get(String(primary.id || "")) || state.gridGroup;
     parent.add(group);
 
@@ -398,26 +399,25 @@ function renderLogisticsOverlay(scene, gridGroups, definitions) {
     const blockById = new Map((scene.blockInstances || []).map(block => [String(block.id || ""), block]));
     const maskRenderContext = createRenderContext(textureStatsToken);
     for (const edge of edges) {
-        const line = createLogisticsEdge(edge);
+        const line = createLogisticsEdge(edge, logisticsGridSize);
         if (line) group.add(line);
     }
 
     for (const node of nodes) {
         const block = blockById.get(String(node.blockId || node.id || ""));
         const definition = block && definitions && definitions.get(block.blockTypeId);
-        const masks = createLogisticsNodeMasks(node, block, definition, maskRenderContext);
+        const masks = createLogisticsNodeMasks(node, block, definition, maskRenderContext, logisticsGridSize);
         for (const mask of masks) group.add(mask);
     }
 }
 
-function createLogisticsEdge(edge) {
+function createLogisticsEdge(edge, gridSize) {
     if (!edge) return null;
     const points = logisticsEdgePoints(edge);
     if (points.length < 2) return null;
 
     const color = colorFromHash(`logistics-system:${num(edge.systemId, -1)}`);
     const opacity = edge.isWorking === false ? 0.34 : 0.94;
-    const gridSize = state.currentGridSize || LARGE_GRID_CUBE_SIZE;
     const geometry = new LineGeometry();
     geometry.setPositions(points.flatMap(point => [point.x, point.y, point.z]));
     const material = new LineMaterial({
@@ -458,7 +458,7 @@ function totalPolylineLengthSquared(points) {
     return total;
 }
 
-function createLogisticsNodeMasks(node, block, definition, renderContext) {
+function createLogisticsNodeMasks(node, block, definition, renderContext, gridSize) {
     if (!node || !block) return [];
     const role = String(node.role || "other").toLowerCase();
     const color = logisticsRoleColor(role, node.systemId);
@@ -477,7 +477,21 @@ function createLogisticsNodeMasks(node, block, definition, renderContext) {
     for (const subpart of block.subparts || []) {
         masks.push(...createLogisticsModelMaskMeshes(subpart.modelAssetId, block, node, matrixDtoToThree(subpart.localMatrix), null, material, renderContext));
     }
-    return masks;
+    return masks.length ? masks : createLogisticsFallbackMask(node, block, material, gridSize);
+}
+
+function createLogisticsFallbackMask(node, block, material, gridSize) {
+    const box = blockBox(block, gridSize || LARGE_GRID_CUBE_SIZE);
+    if (box.isEmpty()) return [];
+    const mesh = createBoxMesh(box, material);
+    mesh.name = `LogisticsNodeFallbackMask:${node.id || block.id || "node"}`;
+    mesh.renderOrder = 27;
+    mesh.frustumCulled = false;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    mesh.userData.block = block;
+    mesh.userData.logisticsNode = node;
+    return [mesh];
 }
 
 function sharedLogisticsMaskMaterial(color, opacity, renderContext) {

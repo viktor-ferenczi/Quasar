@@ -37,7 +37,8 @@ async function reloadScene() {
         const scene = await fetchEntityScene();
         addTiming("sceneSnapshotFetch", performance.now() - fetchStart);
         await renderGridScene(scene);
-        log(`Loaded scene ${scene.grid && scene.grid.id}.`);
+        const firstVoxel = scene.voxels && scene.voxels[0];
+        log(`Loaded scene ${scene.grid && scene.grid.id || firstVoxel && (firstVoxel.displayName || firstVoxel.id) || "unknown"}.`);
     } catch (error) {
         log(error.message, true);
     } finally {

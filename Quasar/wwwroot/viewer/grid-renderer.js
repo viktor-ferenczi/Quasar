@@ -63,9 +63,13 @@ export async function renderGridScene(scene) {
     const progress = createProgressiveModelRender(scene, definitions, group, renderTextureToken, renderToken);
 
     const bounds = new THREE.Box3();
-    for (const block of scene.blockInstances || []) bounds.union(blockBox(block, scene.grid.gridSize || 2.5));
+    for (const block of scene.blockInstances || []) bounds.union(blockBox(block, scene.grid && scene.grid.gridSize || 2.5));
+    if (bounds.isEmpty()) {
+        const voxelBounds = standaloneVoxelViewBounds(scene);
+        if (voxelBounds) bounds.copy(voxelBounds);
+    }
     state.currentBounds = bounds;
-    state.currentGridSize = scene.grid.gridSize || 2.5;
+    state.currentGridSize = scene.grid && scene.grid.gridSize || 2.5;
     state.currentFloorGridAlignment = floorGridAlignment(scene);
     renderVoxelBodies(scene.voxels || [], scene.voxelDeformations || [], scene.voxelMaterials || []);
     progress.rebuild();
@@ -268,10 +272,24 @@ function createRenderContext(textureToken) {
 
 function configureRelativeView(scene) {
     const worldMatrix = matrixDtoToThree(scene.grid && scene.grid.worldMatrix);
-    const center = gridCenterWorld(scene, worldMatrix);
+    const voxel = standaloneVoxelBody(scene);
+    const voxelBounds = voxel && boundsToBox3(voxel.worldAabb);
+    const center = voxelBounds && !voxelBounds.isEmpty() ? voxelBounds.getCenter(new THREE.Vector3()) : gridCenterWorld(scene, worldMatrix);
     const inverseRotation = new THREE.Matrix4().extractRotation(worldMatrix).invert();
     state.viewRotation = inverseRotation;
     state.viewTransform = inverseRotation.clone().multiply(new THREE.Matrix4().makeTranslation(-center.x, -center.y, -center.z));
+}
+
+function standaloneVoxelBody(scene) {
+    if ((scene.blockInstances || []).length) return null;
+    return (scene.voxels || [])[0] || null;
+}
+
+function standaloneVoxelViewBounds(scene) {
+    const voxel = standaloneVoxelBody(scene);
+    const bounds = voxel && boundsToBox3(voxel.worldAabb);
+    if (!bounds || bounds.isEmpty()) return null;
+    return bounds.applyMatrix4(state.viewTransform || new THREE.Matrix4());
 }
 
 function configureEnvironment(scene) {
@@ -824,6 +842,7 @@ function intersectVoxelClipEdge(a, b, axis, limit) {
 }
 
 function voxelFloorClipBounds() {
+    if (state.lastScene && !(state.lastScene.blockInstances || []).length) return null;
     const bounds = state.currentBounds && state.currentBounds.clone();
     if (!bounds || bounds.isEmpty()) return null;
     if (state.gridGroup) {

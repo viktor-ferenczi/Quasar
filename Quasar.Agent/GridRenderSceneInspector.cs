@@ -34,6 +34,8 @@ namespace Quasar.Agent
         private const int DefaultVoxelChunkSize = 32;
         private const int MaxVoxelSceneChunks = 96;
         private const int MaxVoxelDataBytes = 8 * 1024 * 1024;
+        private const int MaxVoxelBodySceneChunks = 160;
+        private const int MaxVoxelBodyDataBytes = 12 * 1024 * 1024;
         private const int VoxelDataPadding = 1;
         private const int VoxelLod = 0;
         private const double SmallGridCubeSize = 0.5;
@@ -94,6 +96,40 @@ namespace Quasar.Agent
             }
             else
                 scene.Warnings.Add("Voxel data generation disabled by URL.");
+            return scene;
+        }
+
+        public static EntityRenderScene BuildVoxel(long entityId, string gameVersion, string pluginVersion, bool includeVoxels = true)
+        {
+            if (!MyEntities.TryGetEntityById<MyVoxelBase>(entityId, out var voxel) || voxel == null || voxel.MarkedForClose || voxel.Closed)
+                throw new InvalidOperationException("Voxel entity not found or not loaded on this server.");
+
+            var kind = VoxelKind(voxel);
+            if (kind == "voxelPhysics")
+                throw new InvalidOperationException("Voxel physics entities cannot be opened in the viewer.");
+            if (kind == "planet")
+                throw new InvalidOperationException("Planet viewer support is not available yet.");
+            if (voxel.Storage == null)
+                throw new InvalidOperationException("Voxel entity storage is not loaded on this server.");
+
+            var scene = new EntityRenderScene
+            {
+                GameVersion = gameVersion ?? string.Empty,
+                PluginVersion = pluginVersion ?? string.Empty,
+                Grid = ToSyntheticGrid(voxel),
+                Environment = ToEnvironment(),
+                CapturedAtUtc = DateTimeOffset.UtcNow,
+            };
+
+            scene.Voxels.Add(ToVoxelBody(voxel, kind));
+            if (includeVoxels)
+            {
+                scene.VoxelDeformations = BuildVoxelBodyDeformations(voxel, scene.Warnings);
+                scene.VoxelMaterials = BuildVoxelMaterials(scene.VoxelDeformations, scene.Warnings);
+            }
+            else
+                scene.Warnings.Add("Voxel data generation disabled by URL.");
+
             return scene;
         }
 
@@ -322,6 +358,21 @@ namespace Quasar.Agent
             };
         }
 
+        private static ViewerGrid ToSyntheticGrid(MyVoxelBase voxel)
+        {
+            return new ViewerGrid
+            {
+                Id = voxel.EntityId.ToString(),
+                DisplayName = FirstNonEmpty(voxel.DisplayName, voxel.Name, voxel.StorageName, "Voxel " + voxel.EntityId),
+                GridSize = (float)LargeGridCubeSize,
+                GridSpace = "voxel",
+                IsStatic = true,
+                BlockCount = 0,
+                WorldMatrix = ToDto(MatrixD.Identity),
+                Bounds = ToDto(voxel.PositionComp.WorldAABB),
+            };
+        }
+
         private static List<ViewerVoxelBody> LoadedVoxels()
         {
             var session = MySession.Static;
@@ -537,6 +588,63 @@ namespace Quasar.Agent
 
             if (chunkBudgetReached)
                 warnings.Add("Voxel data chunk budget reached; remaining voxel chunks were skipped.");
+
+            return result;
+        }
+
+        private static List<ViewerVoxelDataChunk> BuildVoxelBodyDeformations(MyVoxelBase voxel, List<string> warnings)
+        {
+            var result = new List<ViewerVoxelDataChunk>();
+            var totalBytes = 0;
+            var skippedEmpty = 0;
+            var skippedFull = 0;
+            var bodyName = FirstNonEmpty(voxel.DisplayName, voxel.Name, voxel.StorageName, voxel.EntityId.ToString());
+
+            foreach (var chunkRange in SplitStorageRange(voxel.StorageMin, voxel.StorageMax, DefaultVoxelChunkSize))
+            {
+                try
+                {
+                    if (result.Count >= MaxVoxelBodySceneChunks)
+                    {
+                        warnings.Add("Voxel data chunk budget reached for " + bodyName + "; remaining chunks were skipped.");
+                        break;
+                    }
+
+                    var contentState = ClassifyVoxelChunk(voxel, chunkRange.Min, chunkRange.Max);
+                    if (contentState == "empty")
+                    {
+                        skippedEmpty++;
+                        continue;
+                    }
+                    if (contentState == "full")
+                    {
+                        skippedFull++;
+                        continue;
+                    }
+
+                    var sampleCount = RangeSampleCount(chunkRange.Min, chunkRange.Max);
+                    var requiredBytes = checked(sampleCount * 2);
+                    if (totalBytes + requiredBytes > MaxVoxelBodyDataBytes)
+                    {
+                        warnings.Add("Voxel data safety limit reached for " + bodyName + "; remaining chunks were skipped.");
+                        break;
+                    }
+
+                    var chunk = TryBuildVoxelDataChunk(voxel, chunkRange.Min, chunkRange.Max, contentState, warnings);
+                    if (chunk == null)
+                        continue;
+
+                    totalBytes += chunk.Content.Length + chunk.Materials.Length;
+                    result.Add(chunk);
+                }
+                catch (Exception exception)
+                {
+                    warnings.Add("Failed to sample voxel chunk " + ChunkId(chunkRange.Min) + " for " + bodyName + ": " + exception.Message);
+                }
+            }
+
+            if (skippedEmpty > 0 || skippedFull > 0)
+                warnings.Add("Skipped " + skippedEmpty + " empty and " + skippedFull + " full voxel data chunks for " + bodyName + ".");
 
             return result;
         }

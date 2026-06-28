@@ -3,7 +3,7 @@
 **Module:** Quasar.Host  **Kind:** JS  **Tier:** 3
 
 ## Summary
-Entry point for the standalone grid viewer page. It initializes DOM references, parsed voxel URL support state, Three.js scene state, control wiring, persisted Content folder restoration, scene reloads, and high-level fetch timing for the stats panel.
+Entry point for the standalone grid/asteroid viewer page. It initializes DOM references, parsed voxel URL support state, Three.js scene state, control wiring, persisted Content folder restoration, scene reloads, high-level fetch timing for the stats panel, and scene-loaded logging that can identify grid or voxel-only snapshots.
 
 ## Structure
 

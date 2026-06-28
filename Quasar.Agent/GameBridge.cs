@@ -25,6 +25,7 @@ using Sandbox.Game.World;
 using VRage.Game;
 using VRage.Game.ModAPI;
 using VRage.Plugins;
+using VRage.Voxels;
 
 namespace Quasar.Agent
 {
@@ -1106,7 +1107,13 @@ namespace Quasar.Agent
                 return CreateResult(command, false, "Viewer scene request is missing an entity id.");
 
             var gameVersion = MySession.Static?.AppVersionFromSave.ToString() ?? string.Empty;
-            var scene = GridRenderSceneInspector.Build(request.EntityId, gameVersion, _pluginVersion, request.IncludeVoxels);
+            EntityRenderScene scene;
+            if (MyEntities.TryGetEntityById<MyCubeGrid>(request.EntityId, out var grid) && grid != null && !grid.MarkedForClose && !grid.Closed)
+                scene = GridRenderSceneInspector.Build(request.EntityId, gameVersion, _pluginVersion, request.IncludeVoxels);
+            else if (MyEntities.TryGetEntityById<MyVoxelBase>(request.EntityId, out var voxel) && voxel != null && !voxel.MarkedForClose && !voxel.Closed)
+                scene = GridRenderSceneInspector.BuildVoxel(request.EntityId, gameVersion, _pluginVersion, request.IncludeVoxels);
+            else
+                return CreateResult(command, false, "Viewer entity not found or not loaded on this server.");
             return CreateResult(command, true, "Viewer scene snapshot captured.", SerializePayload(scene));
         }
 

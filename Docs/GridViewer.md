@@ -1,13 +1,13 @@
 # Grid Viewer
 
-Quasar includes a first-pass browser grid viewer for live grid entities listed on the Entities page.
+Quasar includes a first-pass browser viewer for live grid and asteroid voxel entities listed on the Entities page.
 
 ## How to open it
 
 1. Open **Entities**.
 2. Select a connected server.
 3. Refresh the entity list.
-4. Click the eye icon beside a grid entity.
+4. Click the eye icon beside a grid or asteroid voxel entity.
 
 The viewer opens `/viewer/entity?agentId=...&entityId=...&voxels=1` and requests a scene snapshot from `/api/viewer/entities/{agentId}/{entityId}/scene`. Direct viewer URLs without a `voxels` parameter keep voxel data support disabled.
 
@@ -15,12 +15,12 @@ The viewer opens `/viewer/entity?agentId=...&entityId=...&voxels=1` and requests
 
 Quasar does not serve Space Engineers assets to the browser.
 
-The viewer endpoint returns scene metadata and, when explicitly requested with `voxels=1`, bounded voxel terrain content/material samples intersecting the selected grid bounds:
+The viewer endpoint returns scene metadata and, when explicitly requested with `voxels=1`, bounded voxel terrain content/material samples intersecting the selected grid bounds or the selected asteroid's live storage:
 
 - grid identity, transform, size, bounds, and static/dynamic state
 - scene lighting metadata, including the current in-game sun direction and captured block and runtime-subpart light sources
 - loaded voxel body metadata and world bounds for planets, asteroids, moons, and voxel maps
-- optional voxel data chunks bounded to the viewer floor-grid footprint, with matching X/Z padding and additional vertical padding; the browser procedurally meshes these chunks from the scalar field
+- optional voxel data chunks bounded to the viewer floor-grid footprint for grids, or split across the selected asteroid storage for standalone asteroid scenes; the browser procedurally meshes these chunks from the scalar field
 - voxel material definition metadata for sampled material indexes, including logical voxel texture paths
 - block definition IDs and block placement
 - block cell coordinates, orientation, color mask, skin ID, build state, and integrity
@@ -88,6 +88,8 @@ The stats panel exposes timing counters for the main asset pipeline: scene snaps
 Loaded voxel bodies can be shown as textured terrain mesh when the viewer URL includes `voxels=1`. The agent sends bounded voxel content/material chunks that intersect the same snapped X/Z footprint covered by the viewer floor grid, with matching two-major-square padding and additional vertical padding, and stops at conservative safety limits. When the whole bounded range fits the payload budget, it is sent as one range so terrain surfaces crossing internal chunk boundaries are preserved; larger ranges fall back to mixed chunk sampling and skip uniform empty/full chunks. The browser procedurally builds the terrain surface from those density samples, clips generated voxel polygons to the same snapped X/Z bounds used by the floor grid, groups triangles by material index, projects UVs from each generated polygon's dominant axis, and resolves the sampled voxel material `ColorMetal` and `NormalGloss` texture paths from the selected local `Content` folder. Generated voxel terrain writes normals from the scalar-field gradient and orients generated polygons to match those normals before indexing, so the normal-facing side is the shadow-casting side instead of alternating across tetrahedral mesh triangles. Voxel terrain is rendered visually double-sided for caves and overhangs without forcing separate reverse-face shadow rendering, matching Space Engineers' normal-facing voxel lighting convention while preserving shadows from hills, caves, and other relief. Voxel `ColorMetal` alpha drives metalness and `NormalGloss` alpha drives gloss-to-roughness conversion through the same Space Engineers shader approximation used for block materials. Missing or unloadable local voxel textures fall back to deterministic generated colors. If data chunks contain terrain but all generated polygons clip outside the viewer footprint, or if clipping leaves a one-sample-thick chunk that cannot form voxel cubes, the viewer increments clipped voxel statistics instead of writing warnings. If data chunks arrive but generate no triangles for another reason, the viewer logs chunk size, byte counts, content range, iso-crossing status, and voxel-metadata availability to aid diagnosis.
 
 Voxel mesh generation follows the game's coordinate convention: storage coordinates are first converted to absolute world positions with `PositionLeftBottomCorner + voxelCoord`, then transformed into the viewer's grid-relative coordinate space. The voxel entity `WorldMatrix` translation is the body center and must not be used as the storage-coordinate origin.
+
+Standalone asteroid scenes use the same live voxel storage sampling path with separate chunk and byte limits for the selected asteroid body. They skip uniform empty/full chunks, center the relative browser view on the asteroid `WorldAABB`, and disable floor-footprint clipping so the whole sampled asteroid mesh can render. Planets remain unsupported in this pass.
 
 The `Show voxels` control is disabled unless the URL includes a `voxels` parameter. `voxels=1`, `voxels=true`, `voxels=yes`, and an empty `voxels` value enable and check it by default. `voxels=0`, `voxels=false`, and `voxels=no` leave it enabled but unchecked and request the initial scene without voxel data. If a voxel body has no data chunk because it was skipped, capped, or failed, the viewer may still show the old metadata proxy as a fallback: planets use a wire sphere from radius metadata, and other voxel maps use their world bounds.
 

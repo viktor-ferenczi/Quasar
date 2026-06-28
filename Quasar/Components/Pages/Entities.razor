@@ -128,7 +128,7 @@ else
                                    Size="Size.Small"
                                    Disabled="@(!CanViewEntity(context))"
                                    OnClick="@(() => OpenViewer(context))"
-                                   title="Open grid viewer" />
+                                   title="Open viewer" />
                     <MudStack Spacing="0">
                         <MudText Typo="Typo.body2">@context.DisplayName</MudText>
                         <MudText Typo="Typo.caption" Class="mono">#@context.EntityId</MudText>
@@ -313,7 +313,10 @@ else
 
     private bool CanViewEntity(EntitySummary entity)
     {
-        return string.Equals(entity.TypeTag, "Grid", StringComparison.OrdinalIgnoreCase) && GetSelectedAgent() is not null;
+        return GetSelectedAgent() is not null
+               && (string.Equals(entity.TypeTag, "Grid", StringComparison.OrdinalIgnoreCase)
+                   || (string.Equals(entity.TypeTag, "Voxel", StringComparison.OrdinalIgnoreCase)
+                       && string.Equals(entity.SubType, "Asteroid", StringComparison.OrdinalIgnoreCase)));
     }
 
     private void OpenViewer(EntitySummary entity)

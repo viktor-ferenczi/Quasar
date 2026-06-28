@@ -36,6 +36,7 @@ namespace Quasar.Agent
         private const int MaxVoxelDataBytes = 8 * 1024 * 1024;
         private const int MaxVoxelBodySceneChunks = 160;
         private const int MaxVoxelBodyDataBytes = 12 * 1024 * 1024;
+        private const int MaxVoxelBodyLod = 5;
         private const int VoxelDataPadding = 1;
         private const int VoxelLod = 0;
         private const double SmallGridCubeSize = 0.5;
@@ -606,8 +607,13 @@ namespace Quasar.Agent
             var skippedEmpty = 0;
             var skippedFull = 0;
             var bodyName = FirstNonEmpty(voxel.DisplayName, voxel.Name, voxel.StorageName, voxel.EntityId.ToString());
+            var lod = ChooseVoxelBodyLod(voxel);
+            var lodStorageMin = voxel.StorageMin >> lod;
+            var lodStorageMax = voxel.StorageMax >> lod;
+            if (lod > 0)
+                warnings.Add("Sampling voxel body " + bodyName + " at LOD " + lod + " to fit viewer payload limits.");
 
-            foreach (var chunkRange in SplitStorageRange(voxel.StorageMin, voxel.StorageMax, DefaultVoxelChunkSize))
+            foreach (var chunkRange in SplitStorageRange(lodStorageMin, lodStorageMax, DefaultVoxelChunkSize))
             {
                 try
                 {
@@ -617,7 +623,7 @@ namespace Quasar.Agent
                         break;
                     }
 
-                    var contentState = ClassifyVoxelChunk(voxel, chunkRange.Min, chunkRange.Max);
+                    var contentState = ClassifyVoxelChunk(voxel, chunkRange.Min, chunkRange.Max, lod);
                     if (contentState == "empty")
                     {
                         skippedEmpty++;
@@ -637,7 +643,7 @@ namespace Quasar.Agent
                         break;
                     }
 
-                    var chunk = TryBuildVoxelDataChunk(voxel, chunkRange.Min, chunkRange.Max, contentState, warnings);
+                    var chunk = TryBuildVoxelDataChunk(voxel, chunkRange.Min, chunkRange.Max, contentState, warnings, lod);
                     if (chunk == null)
                         continue;
 
@@ -654,6 +660,36 @@ namespace Quasar.Agent
                 warnings.Add("Skipped " + skippedEmpty + " empty and " + skippedFull + " full voxel data chunks for " + bodyName + ".");
 
             return result;
+        }
+
+        private static int ChooseVoxelBodyLod(MyVoxelBase voxel)
+        {
+            var lod = 0;
+            while (lod < MaxVoxelBodyLod)
+            {
+                var min = voxel.StorageMin >> lod;
+                var max = voxel.StorageMax >> lod;
+                var chunks = RangeChunkCount(min, max, DefaultVoxelChunkSize);
+                var bytes = RangeSampleCountLong(min, max) * 2L;
+                if (chunks <= MaxVoxelBodySceneChunks && bytes <= MaxVoxelBodyDataBytes)
+                    break;
+
+                lod++;
+            }
+
+            return lod;
+        }
+
+        private static long RangeChunkCount(Vector3I min, Vector3I max, int chunkSize)
+        {
+            return AxisChunkCount(min.X, max.X, chunkSize)
+                   * AxisChunkCount(min.Y, max.Y, chunkSize)
+                   * AxisChunkCount(min.Z, max.Z, chunkSize);
+        }
+
+        private static long AxisChunkCount(int min, int max, int chunkSize)
+        {
+            return max >= min ? ((long)max - min) / chunkSize + 1L : 0L;
         }
 
         private static IEnumerable<StorageRange> SplitStorageRange(Vector3I min, Vector3I max, int chunkSize)
@@ -675,10 +711,15 @@ namespace Quasar.Agent
 
         private static string ClassifyVoxelChunk(MyVoxelBase voxel, Vector3I min, Vector3I max)
         {
+            return ClassifyVoxelChunk(voxel, min, max, VoxelLod);
+        }
+
+        private static string ClassifyVoxelChunk(MyVoxelBase voxel, Vector3I min, Vector3I max, int lod)
+        {
             var data = new MyStorageData(MyStorageDataTypeFlags.ContentAndMaterial);
             data.Resize(min, max);
             var flags = MyVoxelRequestFlags.ConsiderContent;
-            voxel.Storage.ReadRange(data, MyStorageDataTypeFlags.Content, VoxelLod, min, max, ref flags);
+            voxel.Storage.ReadRange(data, MyStorageDataTypeFlags.Content, lod, min, max, ref flags);
 
             var constitution = data.ComputeContentConstitution();
             if (constitution == MyVoxelContentConstitution.Empty) return "empty";
@@ -693,33 +734,49 @@ namespace Quasar.Agent
             string contentState,
             List<string> warnings)
         {
+            return TryBuildVoxelDataChunk(voxel, min, max, contentState, warnings, VoxelLod);
+        }
+
+        private static ViewerVoxelDataChunk TryBuildVoxelDataChunk(
+            MyVoxelBase voxel,
+            Vector3I min,
+            Vector3I max,
+            string contentState,
+            List<string> warnings,
+            int lod)
+        {
             try
             {
                 var data = new MyStorageData(MyStorageDataTypeFlags.ContentAndMaterial);
                 data.Resize(min, max);
                 var flags = MyVoxelRequestFlags.ConsiderContent | MyVoxelRequestFlags.SurfaceMaterial;
-                voxel.Storage.ReadRange(data, MyStorageDataTypeFlags.ContentAndMaterial, VoxelLod, min, max, ref flags);
-                return CopyVoxelDataChunk(voxel, min, max, contentState, data);
+                voxel.Storage.ReadRange(data, MyStorageDataTypeFlags.ContentAndMaterial, lod, min, max, ref flags);
+                return CopyVoxelDataChunk(voxel, min, max, contentState, data, lod);
             }
             catch (Exception exception)
             {
-                warnings.Add("Failed to sample voxel chunk " + ChunkId(min) + " for " + FirstNonEmpty(voxel.DisplayName, voxel.Name, voxel.EntityId.ToString()) + ": " + exception.Message);
+                warnings.Add("Failed to sample voxel chunk " + ChunkId(min) + " at LOD " + lod + " for " + FirstNonEmpty(voxel.DisplayName, voxel.Name, voxel.EntityId.ToString()) + ": " + exception.Message);
                 return null;
             }
         }
 
         private static ViewerVoxelDataChunk CopyVoxelDataChunk(MyVoxelBase voxel, Vector3I min, Vector3I max, string contentState, MyStorageData data)
         {
+            return CopyVoxelDataChunk(voxel, min, max, contentState, data, VoxelLod);
+        }
+
+        private static ViewerVoxelDataChunk CopyVoxelDataChunk(MyVoxelBase voxel, Vector3I min, Vector3I max, string contentState, MyStorageData data, int lod)
+        {
             var worldMatrix = VoxelWorldMatrix(voxel);
             var size = data.Size3D;
             return new ViewerVoxelDataChunk
             {
                 VoxelBodyId = voxel.EntityId.ToString(),
-                ChunkId = ChunkId(min),
-                Lod = VoxelLod,
+                ChunkId = lod == 0 ? ChunkId(min) : "lod" + lod + ":" + ChunkId(min),
+                Lod = lod,
                 StorageMin = ToDto(min),
                 StorageMax = ToDto(max),
-                WorldAabb = ToDto(StorageRangeWorldAabb(worldMatrix, min, max)),
+                WorldAabb = ToDto(StorageRangeWorldAabb(worldMatrix, min, max, lod)),
                 ContentState = contentState,
                 Size = ToDto(size),
                 Content = CopyStorageBytes(data, MyStorageDataTypeEnum.Content),
@@ -738,6 +795,13 @@ namespace Quasar.Agent
         private static int RangeSampleCount(Vector3I min, Vector3I max)
         {
             return checked((max.X - min.X + 1) * (max.Y - min.Y + 1) * (max.Z - min.Z + 1));
+        }
+
+        private static long RangeSampleCountLong(Vector3I min, Vector3I max)
+        {
+            return max.X >= min.X && max.Y >= min.Y && max.Z >= min.Z
+                ? ((long)max.X - min.X + 1L) * ((long)max.Y - min.Y + 1L) * ((long)max.Z - min.Z + 1L)
+                : 0L;
         }
 
         private static BoundingBoxD VoxelSamplingWorldAabb(MyCubeGrid grid)
@@ -846,9 +910,15 @@ namespace Quasar.Agent
 
         private static BoundingBoxD StorageRangeWorldAabb(MatrixD worldMatrix, Vector3I min, Vector3I max)
         {
+            return StorageRangeWorldAabb(worldMatrix, min, max, VoxelLod);
+        }
+
+        private static BoundingBoxD StorageRangeWorldAabb(MatrixD worldMatrix, Vector3I min, Vector3I max, int lod)
+        {
             var bounds = BoundingBoxD.CreateInvalid();
-            var localMin = new Vector3D(min.X, min.Y, min.Z);
-            var localMax = new Vector3D(max.X + 1, max.Y + 1, max.Z + 1);
+            var scale = 1 << lod;
+            var localMin = new Vector3D(min.X * scale, min.Y * scale, min.Z * scale);
+            var localMax = new Vector3D((max.X + 1) * scale, (max.Y + 1) * scale, (max.Z + 1) * scale);
             foreach (var corner in LocalAabbCorners(localMin, localMax))
                 bounds.Include(Vector3D.Transform(corner, worldMatrix));
             return bounds;

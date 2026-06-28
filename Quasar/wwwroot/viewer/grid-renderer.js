@@ -555,6 +555,7 @@ function createVoxelDataChunkMesh(chunk, voxel, voxelMaterialsByIndex, diagnosti
     const sx = Math.max(0, Math.floor(num(size.x, 0)));
     const sy = Math.max(0, Math.floor(num(size.y, 0)));
     const sz = Math.max(0, Math.floor(num(size.z, 0)));
+    const lodScale = Math.max(1, 2 ** Math.max(0, Math.floor(num(chunk.lod, 0))));
     const expectedSamples = sx * sy * sz;
     if (sx < 2 || sy < 2 || sz < 2) {
         if (diagnostics && content.length >= expectedSamples) diagnostics.clippedChunk = true;
@@ -565,9 +566,9 @@ function createVoxelDataChunkMesh(chunk, voxel, voxelMaterialsByIndex, diagnosti
     const storageMin = chunk.storageMin || {};
     const positionLeftBottomCorner = vec3(voxel && voxel.positionLeftBottomCorner);
     const worldOrigin = new THREE.Vector3(
-        positionLeftBottomCorner.x + num(storageMin.x, 0),
-        positionLeftBottomCorner.y + num(storageMin.y, 0),
-        positionLeftBottomCorner.z + num(storageMin.z, 0));
+        positionLeftBottomCorner.x + num(storageMin.x, 0) * lodScale,
+        positionLeftBottomCorner.y + num(storageMin.y, 0) * lodScale,
+        positionLeftBottomCorner.z + num(storageMin.z, 0) * lodScale);
     const viewTransform = state.viewTransform || new THREE.Matrix4();
     const positions = [];
     const normals = [];
@@ -579,7 +580,7 @@ function createVoxelDataChunkMesh(chunk, voxel, voxelMaterialsByIndex, diagnosti
     for (let z = 0; z < sz - 1; z++) {
         for (let y = 0; y < sy - 1; y++) {
             for (let x = 0; x < sx - 1; x++) {
-                fillVoxelCubeScratch(cube, x, y, z, sx, sy, sz, content, materials, worldOrigin, viewTransform);
+                fillVoxelCubeScratch(cube, x, y, z, sx, sy, sz, content, materials, worldOrigin, lodScale, viewTransform);
                 polygonizeVoxelCube(cube, positions, normals, uvs, indicesByMaterial, clipBounds, diagnostics);
             }
         }
@@ -652,14 +653,14 @@ function createVoxelCubeScratch() {
     return Array.from({ length: 8 }, () => ({ position: new THREE.Vector3(), normal: new THREE.Vector3(), value: 0, material: 0 }));
 }
 
-function fillVoxelCubeScratch(cube, x, y, z, sx, sy, sz, content, materials, worldOrigin, viewTransform) {
+function fillVoxelCubeScratch(cube, x, y, z, sx, sy, sz, content, materials, worldOrigin, lodScale, viewTransform) {
     for (let i = 0; i < VOXEL_CUBE_OFFSETS.length; i++) {
         const offset = VOXEL_CUBE_OFFSETS[i];
         const px = x + offset[0];
         const py = y + offset[1];
         const pz = z + offset[2];
         const index = px + sx * (py + sy * pz);
-        cube[i].position.set(worldOrigin.x + px, worldOrigin.y + py, worldOrigin.z + pz).applyMatrix4(viewTransform);
+        cube[i].position.set(worldOrigin.x + px * lodScale, worldOrigin.y + py * lodScale, worldOrigin.z + pz * lodScale).applyMatrix4(viewTransform);
         setVoxelSampleNormal(cube[i].normal, px, py, pz, sx, sy, sz, content).transformDirection(viewTransform);
         cube[i].value = num(content[index], 0);
         cube[i].material = num(materials[index], 0);

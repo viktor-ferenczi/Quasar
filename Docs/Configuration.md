@@ -58,9 +58,15 @@ editor's **Runtime** section. It defaults to `5`.
 
 Quasar prunes `SpaceEngineersDedicated*.log` files from that server's Dedicated
 Server app-data directory on server start and stop, keeping the newest files and
-deleting older ones. Magnetar diagnostics remain in that server's Magnetar
-app-data `info.log`; PluginSdk stdout sink lines captured by Quasar.Agent are
-also appended there as normal text log lines for the specific instance.
+deleting older ones. Magnetar diagnostics are written in the server's Magnetar
+app-data directory as timestamped `info_*.log` files, with `info.current`
+pointing at the active file. PluginSdk stdout sink lines captured by
+Quasar.Agent are also appended to that active Magnetar log as normal text log
+lines for the specific instance.
+
+The server console dialog can view **Most recent** or a specific older DS /
+Magnetar log file. Auto-refresh and the Refresh button are active only for
+**Most recent**; selecting an older file keeps that snapshot fixed for review.
 
 ## Where configuration is read from
 

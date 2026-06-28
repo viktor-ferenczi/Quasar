@@ -268,11 +268,17 @@ public class Program
             if (authOptions.Enabled)
                 analyticsSeries.RequireAuthorization(QuasarPolicyNames.CanView);
 
-            var serverLogDownload = app.MapGet("/api/servers/{uniqueName}/logs/server/download", (string uniqueName, DedicatedServerCatalog catalog) =>
-                DownloadLogFile(ResolveLatestDedicatedServerLogPath(uniqueName, catalog)));
+            var serverLogDownload = app.MapGet("/api/servers/{uniqueName}/logs/server/download", (string uniqueName, HttpContext context, DedicatedServerCatalog catalog) =>
+                DownloadLogFile(ResolveDedicatedServerLogPath(
+                    uniqueName,
+                    catalog,
+                    context.Request.Query["name"].FirstOrDefault())));
 
-            var magnetarLogDownload = app.MapGet("/api/servers/{uniqueName}/logs/magnetar/download", (string uniqueName, DedicatedServerCatalog catalog) =>
-                DownloadLogFile(ResolveMagnetarInfoLogPath(uniqueName, catalog)));
+            var magnetarLogDownload = app.MapGet("/api/servers/{uniqueName}/logs/magnetar/download", (string uniqueName, HttpContext context, DedicatedServerCatalog catalog) =>
+                DownloadLogFile(ResolveMagnetarInfoLogPath(
+                    uniqueName,
+                    catalog,
+                    context.Request.Query["name"].FirstOrDefault())));
 
             var discordLogDownload = app.MapGet("/api/discord/log/download", (WebServiceOptions options) =>
                 DownloadLogFile(QuasarLoggingConfigurator.ResolveDiscordLogPath(options)));
@@ -612,7 +618,7 @@ public class Program
         return Results.File(stream, "text/plain; charset=utf-8", Path.GetFileName(path));
     }
 
-    private static string? ResolveLatestDedicatedServerLogPath(string uniqueName, DedicatedServerCatalog catalog)
+    private static string? ResolveDedicatedServerLogPath(string uniqueName, DedicatedServerCatalog catalog, string? fileName)
     {
         var server = catalog.GetServer(uniqueName);
         if (server is null)
@@ -625,12 +631,10 @@ public class Program
         if (!Directory.Exists(appDataPath))
             return null;
 
-        return Directory.EnumerateFiles(appDataPath, "SpaceEngineersDedicated*.log", SearchOption.TopDirectoryOnly)
-            .OrderByDescending(File.GetLastWriteTimeUtc)
-            .FirstOrDefault();
+        return ResolveLogPath(appDataPath, "SpaceEngineersDedicated*.log", fileName);
     }
 
-    private static string? ResolveMagnetarInfoLogPath(string uniqueName, DedicatedServerCatalog catalog)
+    private static string? ResolveMagnetarInfoLogPath(string uniqueName, DedicatedServerCatalog catalog, string? fileName)
     {
         var server = catalog.GetServer(uniqueName);
         if (server is null)
@@ -640,7 +644,34 @@ public class Program
             ? MagnetarPaths.GetQuasarServerMagnetarAppDataDirectory(uniqueName)
             : server.MagnetarAppDataPath.Trim();
 
-        return Path.Combine(appDataPath, "info.log");
+        if (!Directory.Exists(appDataPath))
+            return null;
+
+        return ResolveLogPath(appDataPath, "info*.log", fileName);
+    }
+
+    private static string? ResolveLogPath(string directory, string searchPattern, string? fileName)
+    {
+        if (!string.IsNullOrWhiteSpace(fileName))
+        {
+            var trimmedFileName = fileName.Trim();
+            if (!string.Equals(trimmedFileName, Path.GetFileName(trimmedFileName), StringComparison.Ordinal) ||
+                trimmedFileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            {
+                return null;
+            }
+
+            return Directory.EnumerateFiles(directory, searchPattern, SearchOption.TopDirectoryOnly)
+                .FirstOrDefault(path => string.Equals(
+                    Path.GetFileName(path),
+                    trimmedFileName,
+                    StringComparison.OrdinalIgnoreCase));
+        }
+
+        return Directory.EnumerateFiles(directory, searchPattern, SearchOption.TopDirectoryOnly)
+            .OrderByDescending(File.GetLastWriteTimeUtc)
+            .ThenByDescending(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault();
     }
 
     private sealed class CompositeDisposable(params IDisposable[] disposables) : IDisposable

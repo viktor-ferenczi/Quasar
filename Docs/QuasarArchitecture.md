@@ -147,7 +147,7 @@ Required separation per server:
 - Magnetar app-data directory
 - world/save directory
 - plugin/configuration surface
-- DS-owned log files and Magnetar-owned `info.log`
+- DS-owned log files and Magnetar-owned `info_*.log`
 
 Quasar should treat these as explicit server properties rather than assuming one shared machine-global app-data location.
 
@@ -296,7 +296,7 @@ It needs:
 - restart policy
 - restart backoff
 - last exit code / last crash reason
-- DS-owned log files plus Magnetar-owned `info.log`
+- DS-owned log files plus Magnetar-owned `info_*.log`
 
 Quasar tracks two related but separate pieces of server state:
 
@@ -420,7 +420,7 @@ Suggested layout:
 Per-server Space Engineers Dedicated Server logs stay in that server's DS
 app-data directory. Per-server Magnetar diagnostics and PluginSdk stdout sink
 lines formatted by Quasar.Agent stay in that server's Magnetar app-data
-`info.log`.
+timestamped `info_*.log` files.
 
 ### Service mode behavior
 
@@ -878,17 +878,20 @@ As of this document:
 - atomic config history/versioning groundwork exists for server definitions
 - first desired goal-state reconciliation exists
 - first process supervision exists for start/stop/restart and per-server logs
-- the server console dialog auto-refreshes the Dedicated Server log and
-  Magnetar `info.log` every 5 seconds while a tail view is active, using
-  append-only reads from the last loaded file offset instead of re-reading the
-  full log on each refresh. Server settings include DS log retention, defaulting
-  to 5 newest `SpaceEngineersDedicated*.log` files, with oldest files pruned on
-  start and stop.
+- the server console dialog can view the most recent Dedicated Server log and
+  Magnetar `info_*.log`, or a selected older file. It auto-refreshes every 5
+  seconds only while the most recent tail view is active, using append-only
+  reads from the last loaded file offset instead of re-reading the full log on
+  each refresh. Selecting an older file disables refresh for that tab. Server
+  settings include DS log retention, defaulting to 5 newest
+  `SpaceEngineersDedicated*.log` files, with oldest files pruned on start and
+  stop.
 - plugin logs now relay through the Quasar Agent outbox over the existing
   WebSocket; entries from the `Magnetar` logger are dropped before control-plane
   transport and are also rejected by the in-memory plugin log stream. The
-  agent still writes plugin output into the per-server Magnetar `info.log`, but
-  formats the PluginSdk JSON sink lines as normal text log lines first.
+  agent still writes plugin output into the active per-server Magnetar
+  `info_*.log`, but formats the PluginSdk JSON sink lines as normal text log
+  lines first.
 - first health-monitoring and auto-recovery pass exists for agent attach grace, heartbeat freshness, simulation-frame progress scoring aligned with the DS watcher, and uptime-based warning/recycle policy
 - initial runtime launch preparation now exists for isolated app-data roots, runtime config sync, `LastSession.sbl`, and enforced headless launch shaping
 - server definitions store a saves root (`WorldPath`) plus selected save folder (`WorldSaveName`). Older definitions whose `WorldPath` pointed at a concrete save are migrated automatically by moving the final path segment into `WorldSaveName`. The server editor requires a selected save before save/start, lists existing saves from the saves root, and has an always-available Create From Template dialog that can create/import a world template before copying it into a new save.

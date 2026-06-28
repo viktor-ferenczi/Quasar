@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using Newtonsoft.Json;
@@ -30,6 +31,8 @@ namespace Quasar.Agent
         private const int MaxBufferedLines = 10000;
         private const int MaxBatchLines = 500;
         private const string SuppressedPluginName = "Magnetar";
+        private const string CurrentInfoLogMarkerFileName = "info.current";
+        private const string LegacyInfoLogFileName = "info.log";
 
         private readonly ConcurrentQueue<string> _queue = new ConcurrentQueue<string>();
         private readonly object _fileSync = new object();
@@ -107,7 +110,7 @@ namespace Quasar.Agent
 
         private string ResolveInfoLogPath()
         {
-            if (_infoLogPath != null)
+            if (_infoLogPath != null && (string.IsNullOrEmpty(_infoLogPath) || File.Exists(_infoLogPath)))
                 return _infoLogPath;
 
             var appDataPath = Environment.GetEnvironmentVariable("QUASAR_MAGNETAR_APPDATA_PATH");
@@ -117,8 +120,47 @@ namespace Quasar.Agent
                 return _infoLogPath;
             }
 
-            _infoLogPath = Path.Combine(appDataPath.Trim(), "info.log");
+            _infoLogPath = ResolveCurrentInfoLogPath(appDataPath.Trim());
             return _infoLogPath;
+        }
+
+        private static string ResolveCurrentInfoLogPath(string appDataPath)
+        {
+            var markerPath = Path.Combine(appDataPath, CurrentInfoLogMarkerFileName);
+            try
+            {
+                var fileName = File.ReadAllText(markerPath).Trim();
+                if (IsInfoLogFileName(fileName))
+                    return Path.Combine(appDataPath, fileName);
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                if (Directory.Exists(appDataPath))
+                {
+                    var latest = Directory.EnumerateFiles(appDataPath, "info*.log", SearchOption.TopDirectoryOnly)
+                        .OrderByDescending(File.GetLastWriteTimeUtc)
+                        .FirstOrDefault();
+                    if (!string.IsNullOrWhiteSpace(latest))
+                        return latest;
+                }
+            }
+            catch
+            {
+            }
+
+            return Path.Combine(appDataPath, LegacyInfoLogFileName);
+        }
+
+        private static bool IsInfoLogFileName(string fileName)
+        {
+            return !string.IsNullOrWhiteSpace(fileName) &&
+                   string.Equals(fileName, Path.GetFileName(fileName), StringComparison.Ordinal) &&
+                   fileName.StartsWith("info_", StringComparison.OrdinalIgnoreCase) &&
+                   fileName.EndsWith(".log", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string FormatForMagnetarInfoLog(string line)

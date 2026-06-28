@@ -546,6 +546,11 @@ function onPointerMove(event) {
     if (state.gridGroup) targets.push(state.gridGroup);
     if (state.voxelGroup && state.voxelGroup.visible) targets.push(state.voxelGroup);
     const hits = state.raycaster.intersectObjects(targets, true);
+    const logisticsHit = hits.find(item => logisticsFromIntersection(item));
+    if (logisticsHit) {
+        els.hoverReadout.textContent = describeLogistics(logisticsFromIntersection(logisticsHit));
+        return;
+    }
     const hit = hits.find(item => blockFromIntersection(item));
     if (hit) {
         els.hoverReadout.textContent = describeBlock(blockFromIntersection(hit));
@@ -563,12 +568,31 @@ function blockFromIntersection(hit) {
     return null;
 }
 
+function logisticsFromIntersection(hit) {
+    let object = hit && hit.object;
+    while (object) {
+        const userData = object.userData;
+        if (userData && userData.logisticsNode) return { kind: "node", value: userData.logisticsNode };
+        if (userData && userData.logisticsEdge) return { kind: "edge", value: userData.logisticsEdge };
+        object = object.parent;
+    }
+    return null;
+}
+
 function describeBlock(block) {
     return `${block.blockTypeId || "Block"} | ${block.id || "no id"} | ${block.cell ? `${block.cell.x},${block.cell.y},${block.cell.z}` : "no cell"}`;
 }
 
 function describeVoxel(voxel) {
     return `${voxel.kind || "voxel"} | ${voxel.displayName || voxel.id || "no id"}`;
+}
+
+function describeLogistics(item) {
+    const value = item && item.value || {};
+    if (item && item.kind === "edge") {
+        return `Logistics edge | system ${value.systemId ?? "?"} | ${value.lineType || "unknown"}${value.isWorking === false ? " | offline" : ""}`;
+    }
+    return `Logistics ${value.role || "node"} | system ${value.systemId ?? "?"} | ${value.blockTypeId || value.blockId || "no block"}${value.isWorking === false ? " | offline" : ""}`;
 }
 
 function onViewportClick() {

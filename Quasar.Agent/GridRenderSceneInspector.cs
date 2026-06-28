@@ -12,7 +12,9 @@ using Sandbox.Game.Entities.Blocks;
 using Sandbox.Game.Entities;
 using Sandbox.Game.Entities.Cube;
 using Sandbox.Game.EntityComponents;
+using Sandbox.Game.GameSystems.Conveyors;
 using Sandbox.Game.World;
+using SpaceEngineers.Game.Entities.Blocks;
 using SpaceEngineers.Game.EntityComponents.Blocks;
 using VRage.Entities.Components;
 using VRage.Game;
@@ -102,6 +104,7 @@ namespace Quasar.Agent
             scene.Grid = scene.Grids.FirstOrDefault(candidate => candidate.IsPrimary) ?? scene.Grid;
             scene.BlockDefinitions = definitions.Values.OrderBy(definition => definition.Id, StringComparer.Ordinal).ToList();
             scene.Chunks = chunks.Values.Select(chunk => chunk.ToDto()).OrderBy(chunk => chunk.Id, StringComparer.Ordinal).ToList();
+            scene.Logistics = BuildLogistics(grid, scene.BlockInstances, scene.Warnings);
             scene.ModelAssets = catalog.ModelAssetsSnapshot();
             scene.TextureAssets = catalog.TextureAssetsSnapshot();
             scene.Mods = catalog.ModsSnapshot();
@@ -1292,6 +1295,215 @@ namespace Quasar.Agent
                 warnings.Add("Block definition " + dto.Id + " has no model logical path.");
 
             return dto;
+        }
+
+        private static ViewerGridLogistics BuildLogistics(MyCubeGrid grid, List<ViewerBlockInstance> instances, List<string> warnings)
+        {
+            var logistics = new ViewerGridLogistics();
+            var gridId = grid.EntityId.ToString();
+            var instancesByBlockId = instances
+                .Where(instance => string.Equals(instance.GridId, gridId, StringComparison.Ordinal))
+                .Where(instance => !string.IsNullOrEmpty(instance.Id))
+                .ToDictionary(instance => instance.Id, instance => instance, StringComparer.Ordinal);
+            var instancesByCell = new Dictionary<Vector3I, ViewerBlockInstance>();
+            foreach (var instance in instances.Where(instance => string.Equals(instance.GridId, gridId, StringComparison.Ordinal)))
+                instancesByCell[new Vector3I(instance.Cell.X, instance.Cell.Y, instance.Cell.Z)] = instance;
+
+            var nodesByEndpoint = new Dictionary<IMyConveyorEndpoint, ViewerLogisticsNode>();
+            var nodesByBlockId = new Dictionary<string, ViewerLogisticsNode>(StringComparer.Ordinal);
+            var endpointBlocks = grid.GridSystems?.ConveyorSystem?.ConveyorEndpointBlocks;
+            if (endpointBlocks == null)
+                return logistics;
+
+            try
+            {
+                foreach (var endpointBlock in endpointBlocks.Value)
+                {
+                    var endpoint = endpointBlock?.ConveyorEndpoint;
+                    var fatBlock = endpoint?.CubeBlock ?? endpointBlock as MyCubeBlock;
+                    var slimBlock = fatBlock?.SlimBlock;
+                    if (endpoint == null || fatBlock == null || slimBlock == null || fatBlock.CubeGrid != grid)
+                        continue;
+
+                    var blockId = fatBlock.EntityId.ToString();
+                    if (!instancesByBlockId.TryGetValue(blockId, out var instance) && !instancesByCell.TryGetValue(slimBlock.Position, out instance))
+                        continue;
+
+                    var node = new ViewerLogisticsNode
+                    {
+                        Id = instance.Id,
+                        BlockId = instance.Id,
+                        BlockTypeId = instance.BlockTypeId,
+                        Role = LogisticsRole(fatBlock, slimBlock.BlockDefinition),
+                        Cell = instance.Cell,
+                        Min = instance.Min,
+                        Max = instance.Max,
+                        IsWorking = (fatBlock as MyFunctionalBlock)?.IsWorking ?? true,
+                        HasInventory = fatBlock.HasInventory,
+                        InventoryCount = fatBlock.InventoryCount,
+                    };
+
+                    logistics.Nodes.Add(node);
+                    nodesByEndpoint[endpoint] = node;
+                    nodesByBlockId[node.BlockId] = node;
+                }
+
+                var seenLines = new HashSet<MyConveyorLine>();
+                foreach (var endpointBlock in endpointBlocks.Value)
+                {
+                    var endpoint = endpointBlock?.ConveyorEndpoint;
+                    if (endpoint == null || !nodesByEndpoint.ContainsKey(endpoint))
+                        continue;
+
+                    for (var i = 0; i < endpoint.GetLineCount(); i++)
+                    {
+                        var line = endpoint.GetConveyorLine(i);
+                        if (line == null || !seenLines.Add(line))
+                            continue;
+
+                        var endpointA = line.GetEndpoint(0);
+                        var endpointB = line.GetEndpoint(1);
+                        if (endpointA == null || endpointB == null || !nodesByEndpoint.TryGetValue(endpointA, out var fromNode) || !nodesByEndpoint.TryGetValue(endpointB, out var toNode))
+                            continue;
+
+                        var from = LogisticsLinePosition(grid, line, 0, fromNode);
+                        var to = LogisticsLinePosition(grid, line, 1, toNode);
+                        var isSmall = line.Type == MyObjectBuilder_ConveyorLine.LineType.SMALL_LINE;
+                        logistics.Edges.Add(new ViewerLogisticsEdge
+                        {
+                            Id = "line:" + logistics.Edges.Count,
+                            FromNodeId = fromNode.Id,
+                            ToNodeId = toNode.Id,
+                            LineType = isSmall ? "small" : line.Type == MyObjectBuilder_ConveyorLine.LineType.LARGE_LINE ? "large" : "unknown",
+                            IsSmallRestricted = isSmall,
+                            IsWorking = line.IsWorking,
+                            From = ToDto(from),
+                            To = ToDto(to),
+                        });
+                    }
+                }
+
+                AssignLogisticsSystems(logistics);
+            }
+            catch (Exception exception)
+            {
+                warnings.Add("Failed to inspect grid logistics: " + exception.Message);
+            }
+
+            return logistics;
+        }
+
+        private static string LogisticsRole(MyCubeBlock block, MyCubeBlockDefinition definition)
+        {
+            if (block is MyConveyorSorter)
+                return "sorter";
+            if (block is MyShipConnector)
+                return "connector";
+            if (block is MyCargoContainer)
+                return "storage";
+            if (block is MyProductionBlock)
+                return "production";
+            if (block is MyReactor || block is MyFueledPowerProducer)
+                return "power";
+            if (block is MyGasTank || block is MyGasGenerator || block is MyAirVent || block is MyOxygenFarm)
+                return "gas";
+            if (block is MyConveyor)
+                return "conveyor";
+
+            var text = ((definition?.Id.ToString() ?? string.Empty) + " " + block.GetType().Name).ToLowerInvariant();
+            if (text.Contains("sorter")) return "sorter";
+            if (text.Contains("connector")) return "connector";
+            if (text.Contains("cargo") || text.Contains("container")) return "storage";
+            if (text.Contains("assembler") || text.Contains("refinery") || text.Contains("survival")) return "production";
+            if (text.Contains("reactor") || text.Contains("hydrogenengine") || text.Contains("powerproducer")) return "power";
+            if (text.Contains("gastank") || text.Contains("oxygengenerator") || text.Contains("airvent") || text.Contains("oxygenfarm")) return "gas";
+            if (text.Contains("turret") || text.Contains("gatling") || text.Contains("missile") || text.Contains("weapon")) return "weapon";
+            if (text.Contains("drill") || text.Contains("welder") || text.Contains("grinder")) return "tool";
+            if (text.Contains("conveyor")) return "conveyor";
+            return "other";
+        }
+
+        private static Vector3 LogisticsLinePosition(MyCubeGrid grid, MyConveyorLine line, int endpointIndex, ViewerLogisticsNode fallbackNode)
+        {
+            try
+            {
+                var position = line.GetEndpointPosition(endpointIndex);
+                var direction = position.VectorDirection;
+                return new Vector3(
+                    (position.LocalGridPosition.X + direction.X * 0.5f) * grid.GridSize,
+                    (position.LocalGridPosition.Y + direction.Y * 0.5f) * grid.GridSize,
+                    (position.LocalGridPosition.Z + direction.Z * 0.5f) * grid.GridSize);
+            }
+            catch
+            {
+                return LogisticsNodeCenter(fallbackNode, grid.GridSize);
+            }
+        }
+
+        private static Vector3 LogisticsNodeCenter(ViewerLogisticsNode node, float gridSize)
+        {
+            return new Vector3(
+                (node.Min.X + node.Max.X) * 0.5f * gridSize,
+                (node.Min.Y + node.Max.Y) * 0.5f * gridSize,
+                (node.Min.Z + node.Max.Z) * 0.5f * gridSize);
+        }
+
+        private static void AssignLogisticsSystems(ViewerGridLogistics logistics)
+        {
+            var nodes = logistics.Nodes.ToDictionary(node => node.Id, node => node, StringComparer.Ordinal);
+            var adjacency = nodes.Keys.ToDictionary(id => id, _ => new List<string>(), StringComparer.Ordinal);
+            foreach (var edge in logistics.Edges)
+            {
+                if (!adjacency.ContainsKey(edge.FromNodeId) || !adjacency.ContainsKey(edge.ToNodeId))
+                    continue;
+                adjacency[edge.FromNodeId].Add(edge.ToNodeId);
+                adjacency[edge.ToNodeId].Add(edge.FromNodeId);
+            }
+
+            var visited = new HashSet<string>(StringComparer.Ordinal);
+            var systemId = 0;
+            foreach (var node in logistics.Nodes)
+            {
+                if (!visited.Add(node.Id))
+                    continue;
+
+                var queue = new Queue<string>();
+                queue.Enqueue(node.Id);
+                node.SystemId = systemId;
+                var nodeCount = 0;
+                while (queue.Count > 0)
+                {
+                    var id = queue.Dequeue();
+                    nodeCount++;
+                    foreach (var next in adjacency[id])
+                    {
+                        if (!visited.Add(next))
+                            continue;
+                        nodes[next].SystemId = systemId;
+                        queue.Enqueue(next);
+                    }
+                }
+
+                var edgeCount = 0;
+                var hasSmall = false;
+                foreach (var edge in logistics.Edges)
+                {
+                    if (!nodes.TryGetValue(edge.FromNodeId, out var fromNode) || fromNode.SystemId != systemId)
+                        continue;
+                    edge.SystemId = systemId;
+                    edgeCount++;
+                    hasSmall |= edge.IsSmallRestricted;
+                }
+
+                logistics.Systems.Add(new ViewerLogisticsSystem
+                {
+                    Id = systemId,
+                    NodeCount = nodeCount,
+                    EdgeCount = edgeCount,
+                    HasSmallRestrictedEdges = hasSmall,
+                });
+                systemId++;
+            }
         }
 
         private static ViewerBlockInstance ToBlockInstance(

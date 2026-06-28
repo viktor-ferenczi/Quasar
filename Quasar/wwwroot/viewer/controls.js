@@ -26,6 +26,9 @@ export function wireControls(actions) {
     els.showLighting.addEventListener("change", () => {
         updateLighting();
     });
+    els.showLogistics.addEventListener("change", () => {
+        if (state.logisticsGroup) state.logisticsGroup.visible = els.showLogistics.checked;
+    });
     window.addEventListener("keydown", event => {
         if (state.cameraMode === "fly" && !isTextEntryTarget(event.target) && isFlyKey(event.code)) {
             state.flyKeys.add(event.code);

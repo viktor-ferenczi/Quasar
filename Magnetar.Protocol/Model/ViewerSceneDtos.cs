@@ -56,9 +56,77 @@ public class EntityRenderScene
 
     public List<ViewerLightSource> LightSources { get; set; } = new();
 
+    public ViewerGridLogistics Logistics { get; set; } = new();
+
     public List<string> Warnings { get; set; } = new();
 
     public DateTimeOffset CapturedAtUtc { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public class ViewerGridLogistics
+{
+    public List<ViewerLogisticsNode> Nodes { get; set; } = new();
+
+    public List<ViewerLogisticsEdge> Edges { get; set; } = new();
+
+    public List<ViewerLogisticsSystem> Systems { get; set; } = new();
+}
+
+public class ViewerLogisticsNode
+{
+    public string Id { get; set; } = string.Empty;
+
+    public string BlockId { get; set; } = string.Empty;
+
+    public string BlockTypeId { get; set; } = string.Empty;
+
+    public string Role { get; set; } = string.Empty;
+
+    public int SystemId { get; set; } = -1;
+
+    public ViewerVector3I Cell { get; set; } = new();
+
+    public ViewerVector3I Min { get; set; } = new();
+
+    public ViewerVector3I Max { get; set; } = new();
+
+    public bool IsWorking { get; set; } = true;
+
+    public bool HasInventory { get; set; }
+
+    public int InventoryCount { get; set; }
+}
+
+public class ViewerLogisticsEdge
+{
+    public string Id { get; set; } = string.Empty;
+
+    public string FromNodeId { get; set; } = string.Empty;
+
+    public string ToNodeId { get; set; } = string.Empty;
+
+    public int SystemId { get; set; } = -1;
+
+    public string LineType { get; set; } = string.Empty;
+
+    public bool IsSmallRestricted { get; set; }
+
+    public bool IsWorking { get; set; } = true;
+
+    public ViewerVector3 From { get; set; } = new();
+
+    public ViewerVector3 To { get; set; } = new();
+}
+
+public class ViewerLogisticsSystem
+{
+    public int Id { get; set; }
+
+    public int NodeCount { get; set; }
+
+    public int EdgeCount { get; set; }
+
+    public bool HasSmallRestrictedEdges { get; set; }
 }
 
 public class ViewerSceneEnvironment

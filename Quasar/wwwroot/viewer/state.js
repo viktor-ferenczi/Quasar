@@ -13,6 +13,7 @@ export const state = {
     floorGrid: null,
     resizeObserver: null,
     gridGroup: null,
+    logisticsGroup: null,
     gridLightGroup: null,
     gridLights: [],
     voxelGroup: null,
@@ -55,7 +56,7 @@ export const els = {};
 
 export function cacheElements() {
     for (const id of [
-        "viewport", "sceneSummary", "reloadScene", "contentStatus", "pickContent", "folderPicker", "modsStatus", "pickMods", "modsFolderPicker", "showGridHelper", "showVoxels", "showContext", "showLighting",
+        "viewport", "sceneSummary", "reloadScene", "contentStatus", "pickContent", "folderPicker", "modsStatus", "pickMods", "modsFolderPicker", "showGridHelper", "showVoxels", "showContext", "showLighting", "showLogistics",
         "cameraMode", "resetCamera", "stats", "log", "downloadLog", "hoverReadout", "cameraHint"
     ]) {
         els[id] = document.getElementById(id);

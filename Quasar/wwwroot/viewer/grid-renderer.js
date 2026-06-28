@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { els, state } from "./state.js";
-import { blockBox, boundsToBox3 } from "./geometry.js";
+import { blockBox, boundsToBox3, createBoxMesh } from "./geometry.js";
 import { colorFromHash, matrixDtoToThree, num, vec3 } from "./math.js";
 import { ASTEROID_GRID_CUBE_SIZE, LARGE_GRID_CUBE_SIZE, disposeObjectTree, fitCameraToScene, floorGridLayout, updateLighting, updateSceneBounds, updateSunLightPosition } from "./scene.js";
 import { resolveModelAsset } from "./mwm-loader.js";
@@ -36,6 +36,7 @@ export async function renderGridScene(scene) {
         disposeObjectTree(state.gridGroup);
         state.gridLightGroup = null;
         state.gridLights = [];
+        state.logisticsGroup = null;
     }
     if (state.voxelGroup) {
         state.scene.remove(state.voxelGroup);
@@ -54,6 +55,8 @@ export async function renderGridScene(scene) {
     state.gridGroup = group;
     state.scene.add(group);
     const gridGroups = buildGridGroups(scene, group);
+    state.currentGridSize = floorGridMajorStep(scene);
+    renderLogisticsOverlay(scene, gridGroups);
     buildGridLightGroups(scene, gridGroups);
 
     const definitions = new Map((scene.blockDefinitions || []).map(definition => [definition.id, definition]));
@@ -74,7 +77,6 @@ export async function renderGridScene(scene) {
     }
     state.currentBounds = bounds;
     state.currentFloorGridAlignment = floorGridAlignment(scene);
-    state.currentGridSize = floorGridMajorStep(scene);
     renderVoxelBodies(scene.voxels || [], scene.voxelDeformations || [], scene.voxelMaterials || []);
     progress.rebuild();
     updateSceneBounds(false);
@@ -358,6 +360,106 @@ function buildGridGroups(scene, root) {
         groups.set(gridId, group);
     }
     return groups;
+}
+
+function renderLogisticsOverlay(scene, gridGroups) {
+    const logistics = scene.logistics || {};
+    const nodes = logistics.nodes || [];
+    const edges = logistics.edges || [];
+    const group = new THREE.Group();
+    group.name = "QuasarLogisticsOverlay";
+    group.visible = !!(els.showLogistics && els.showLogistics.checked);
+    state.logisticsGroup = group;
+
+    const primary = primaryGrid(scene) || scene.grid || {};
+    const parent = gridGroups.get(String(primary.id || "")) || state.gridGroup;
+    parent.add(group);
+
+    const smallEdges = edges.filter(edge => edge && edge.isSmallRestricted).length;
+    state.stats["Logistics systems"] = (logistics.systems || []).length;
+    state.stats["Logistics nodes"] = nodes.length;
+    state.stats["Logistics edges"] = edges.length;
+    state.stats["Small conveyor links"] = smallEdges;
+
+    if (!nodes.length && !edges.length) return;
+
+    const nodeById = new Map(nodes.map(node => [String(node.id || ""), node]));
+    for (const edge of edges) {
+        const line = createLogisticsEdge(edge);
+        if (line) group.add(line);
+    }
+
+    for (const node of nodes) {
+        const highlight = createLogisticsNodeHighlight(node, nodeById);
+        if (highlight) group.add(highlight);
+    }
+}
+
+function createLogisticsEdge(edge) {
+    if (!edge) return null;
+    const points = [vec3(edge.from), vec3(edge.to)];
+    if (points[0].distanceToSquared(points[1]) < 0.0001) return null;
+
+    const color = colorFromHash(`logistics-system:${num(edge.systemId, -1)}`);
+    const opacity = edge.isWorking === false ? 0.22 : 0.85;
+    const material = edge.isSmallRestricted
+        ? new THREE.LineDashedMaterial({ color, transparent: true, opacity, dashSize: Math.max(0.12, state.currentGridSize * 0.18), gapSize: Math.max(0.08, state.currentGridSize * 0.12), depthWrite: false })
+        : new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false });
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const line = new THREE.Line(geometry, material);
+    line.name = `LogisticsEdge:${edge.id || "edge"}`;
+    line.renderOrder = 20;
+    line.frustumCulled = false;
+    line.userData.logisticsEdge = edge;
+    if (edge.isSmallRestricted) line.computeLineDistances();
+    return line;
+}
+
+function createLogisticsNodeHighlight(node) {
+    if (!node) return null;
+    const role = String(node.role || "other").toLowerCase();
+    const box = blockBox(node, state.currentGridSize || LARGE_GRID_CUBE_SIZE);
+    if (box.isEmpty()) return null;
+
+    const color = logisticsRoleColor(role, node.systemId);
+    const isPlainConveyor = role === "conveyor" || role === "other";
+    const material = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: node.isWorking === false ? 0.08 : isPlainConveyor ? 0.06 : 0.16,
+        depthWrite: false,
+    });
+    const mesh = createBoxMesh(box, material);
+    mesh.name = `LogisticsNode:${node.id || "node"}`;
+    mesh.renderOrder = 18;
+    mesh.userData.logisticsNode = node;
+
+    const outline = new THREE.Box3Helper(box, color);
+    outline.name = `LogisticsNodeOutline:${node.id || "node"}`;
+    outline.material.transparent = true;
+    outline.material.opacity = node.isWorking === false ? 0.25 : isPlainConveyor ? 0.35 : 0.85;
+    outline.renderOrder = 19;
+    outline.userData.logisticsNode = node;
+
+    const group = new THREE.Group();
+    group.add(mesh, outline);
+    group.userData.logisticsNode = node;
+    return group;
+}
+
+function logisticsRoleColor(role, systemId) {
+    switch (role) {
+        case "storage": return new THREE.Color(0x2db7ff);
+        case "production": return new THREE.Color(0xffa726);
+        case "power": return new THREE.Color(0xff4f6d);
+        case "gas": return new THREE.Color(0x20d6a8);
+        case "weapon":
+        case "tool": return new THREE.Color(0xb264ff);
+        case "connector":
+        case "sorter": return new THREE.Color(0xffe35a);
+        case "conveyor": return colorFromHash(`logistics-system:${num(systemId, -1)}`).multiplyScalar(0.75);
+        default: return new THREE.Color(0x9aa5b1);
+    }
 }
 
 function sceneGrids(scene) {

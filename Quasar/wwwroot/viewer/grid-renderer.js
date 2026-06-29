@@ -300,8 +300,10 @@ function buildModelLayer(scene, definitions, renderContext, gridGroups) {
             const definition = definitions.get(block.blockTypeId);
             const box = blockBox(block, grid.gridSize || LARGE_GRID_CUBE_SIZE);
             const clipRelation = blockClip ? boxFloorClipRelation(box, blockClip.gridMatrix, blockClip.bounds) : "inside";
+            if (clipRelation === "outside") continue;
 
-            const blockMeshes = createBlockMeshes(block, definition, gridRenderContext, blockClip);
+            const effectiveClip = clipRelation === "partial" ? blockClip : null;
+            const blockMeshes = createBlockMeshes(block, definition, gridRenderContext, effectiveClip);
             if (blockMeshes.length) {
                 for (const mesh of blockMeshes) {
                     if (mesh.standalone) addStandaloneBlockMesh(gridLayer, mesh);
@@ -309,11 +311,9 @@ function buildModelLayer(scene, definitions, renderContext, gridGroups) {
                 }
                 modelMeshes += blockMeshes.length;
             } else {
-                if (blockClip && blockHasResolvedModel(block, definition)) {
+                if (effectiveClip && blockHasResolvedModel(block, definition)) {
                     continue;
                 }
-
-                if (clipRelation === "outside") continue;
 
                 if (clipRelation === "partial") {
                     const proxy = createClippedBlockProxy(block, definition, box, blockClip);
@@ -433,11 +433,13 @@ function renderDamagedOverlay(scene, gridGroups, definitions, damagedVoxelChunks
         return grid.gridSize || scene.grid && scene.grid.gridSize || LARGE_GRID_CUBE_SIZE;
     };
     const clipBounds = contextBlockClipBounds(scene);
-    const gridClip = gridId => contextGridClip(scene, gridId, clipBounds);
 
     for (const block of damagedBlocks) {
         const definition = definitions && definitions.get(block.blockTypeId);
-        const masks = createDamagedBlockMasks(block, definition, maskRenderContext, gridSize(block.gridId), gridClip(block.gridId));
+        const size = gridSize(block.gridId);
+        const blockClip = contextBlockClipForBlock(scene, block.gridId, block, size, clipBounds);
+        if (blockClip.relation === "outside") continue;
+        const masks = createDamagedBlockMasks(block, definition, maskRenderContext, size, blockClip.clip);
         for (const mask of masks) gridOverlay(block.gridId).add(mask);
     }
 
@@ -667,7 +669,10 @@ function renderLogisticsOverlay(scene, gridGroups, definitions) {
         const block = blockById.get(String(node.blockId || node.id || ""));
         const definition = block && definitions && definitions.get(block.blockTypeId);
         const gridId = node.gridId || block && block.gridId || "";
-        const masks = createLogisticsNodeMasks(node, block, definition, maskRenderContext, logisticsGridSize(gridId), gridClip(gridId));
+        const size = logisticsGridSize(gridId);
+        const blockClip = contextBlockClipForBlock(scene, gridId, block, size, clipBounds);
+        if (blockClip.relation === "outside") continue;
+        const masks = createLogisticsNodeMasks(node, block, definition, maskRenderContext, size, blockClip.clip);
         for (const mask of masks) gridOverlay(gridId).add(mask);
     }
 }
@@ -1544,6 +1549,14 @@ function contextGridClip(scene, gridId, bounds = contextBlockClipBounds(scene)) 
     if (!grid.isContext) return null;
     const gridMatrix = gridRelativeMatrix(grid);
     return { bounds, gridMatrix, inverseGridMatrix: gridMatrix.clone().invert() };
+}
+
+function contextBlockClipForBlock(scene, gridId, block, gridSize, bounds = contextBlockClipBounds(scene)) {
+    if (!block) return { clip: null, relation: "inside" };
+    const clip = contextGridClip(scene, gridId, bounds);
+    if (!clip) return { clip: null, relation: "inside" };
+    const relation = boxFloorClipRelation(blockBox(block, gridSize || LARGE_GRID_CUBE_SIZE), clip.gridMatrix, clip.bounds);
+    return { clip: relation === "partial" ? clip : null, relation };
 }
 
 function clipPolylineToFloor(points, clip) {

@@ -116,9 +116,11 @@ async function loadBrowserImageTexture(file) {
 async function loadDdsTexture(resolved, file, slot) {
     const buffer = await readQueue(() => file.arrayBuffer());
     const info = readDdsInfo(buffer, resolved.logicalPath);
-    const texture = createCompressedDdsTexture(parseDdsMipmaps(buffer, info), resolved.logicalPath, info);
+    const texture = info.compressed
+        ? createCompressedDdsTexture(parseCompressedDdsMipmaps(buffer, info), resolved.logicalPath, info)
+        : createUncompressedDdsTexture(parseUncompressedDdsMipmaps(buffer, info), resolved.logicalPath, info);
     configureTexture(texture, resolved.logicalPath, slot);
-    await uploadQueue(() => validateCompressedTextureUpload(texture, info));
+    if (info.compressed) await uploadQueue(() => validateCompressedTextureUpload(texture, info));
     console.debug(`DDS texture loaded locally: ${ddsLogLabel(info)}.`);
     return texture;
 }
@@ -143,6 +145,9 @@ function readDdsInfo(buffer, logicalPath) {
         formatName: "",
         extensionName: "",
         isSrgb: false,
+        compressed: false,
+        bytesPerPixel: 0,
+        channelMasks: null,
     };
 
     if (fourCC === fourCCCode("DXT1")) applyBlockInfo(info, 8, THREE.RGB_S3TC_DXT1_Format, "DXT1", "WEBGL_compressed_texture_s3tc");
@@ -153,6 +158,7 @@ function readDdsInfo(buffer, logicalPath) {
     else if (fourCC === fourCCCode("BC5U") || fourCC === fourCCCode("ATI2")) applyBlockInfo(info, 16, THREE.RED_GREEN_RGTC2_Format, "BC5_UNORM", "EXT_texture_compression_rgtc");
     else if (fourCC === fourCCCode("BC5S")) applyBlockInfo(info, 16, THREE.SIGNED_RED_GREEN_RGTC2_Format, "BC5_SNORM", "EXT_texture_compression_rgtc");
     else if (fourCC === fourCCCode("DX10")) readDx10DdsInfo(buffer, info);
+    else if (isUncompressedRgbaDds(header)) applyUncompressedRgbaInfo(info, header);
     else throw new Error(`Unsupported DDS FourCC ${info.fourCCText}.`);
 
     if (info.width <= 0 || info.height <= 0) throw new Error(`Invalid DDS dimensions ${info.width}x${info.height}.`);
@@ -184,9 +190,43 @@ function applyBlockInfo(info, blockBytes, format, formatName, extensionName, col
     info.extensionName = extensionName;
     info.colorMaskChannel = colorMaskChannel;
     info.isSrgb = /_SRGB$/i.test(formatName);
+    info.compressed = true;
 }
 
-function parseDdsMipmaps(buffer, info) {
+function isUncompressedRgbaDds(header) {
+    const pixelFlags = header[20];
+    const rgbBitCount = header[22];
+    return (pixelFlags & 0x40) !== 0 && rgbBitCount === 32 &&
+        [header[23], header[24], header[25], header[26]].every(mask => byteAlignedMask(mask));
+}
+
+function applyUncompressedRgbaInfo(info, header) {
+    info.format = THREE.RGBAFormat;
+    info.formatName = "R8G8B8A8_UNORM";
+    info.bytesPerPixel = 4;
+    info.channelMasks = {
+        r: maskInfo(header[23]),
+        g: maskInfo(header[24]),
+        b: maskInfo(header[25]),
+        a: maskInfo(header[26]),
+    };
+}
+
+function byteAlignedMask(mask) {
+    return mask === 0 || [0xff, 0xff00, 0xff0000, 0xff000000].includes(mask >>> 0);
+}
+
+function maskInfo(mask) {
+    mask >>>= 0;
+    if (!mask) return null;
+    let shift = 0;
+    while (((mask >>> shift) & 1) === 0 && shift < 32) shift++;
+    let bits = 0;
+    while (((mask >>> (shift + bits)) & 1) === 1 && shift + bits < 32) bits++;
+    return { mask, shift, max: (1 << bits) - 1 };
+}
+
+function parseCompressedDdsMipmaps(buffer, info) {
     const mipmaps = [];
     let width = info.width;
     let height = info.height;
@@ -203,11 +243,60 @@ function parseDdsMipmaps(buffer, info) {
     return mipmaps;
 }
 
+function parseUncompressedDdsMipmaps(buffer, info) {
+    const mipmaps = [];
+    let width = info.width;
+    let height = info.height;
+    let dataOffset = info.dataOffset;
+    for (let i = 0; i < info.mipmapCount; i++) {
+        const dataLength = width * height * info.bytesPerPixel;
+        if (dataOffset + dataLength > buffer.byteLength) throw new Error(`DDS mip ${i} exceeds file length.`);
+        mipmaps.push({ data: readUncompressedRgbaMip(buffer, dataOffset, width, height, info), width, height });
+        dataOffset += dataLength;
+        width = Math.max(1, width >> 1);
+        height = Math.max(1, height >> 1);
+    }
+    if (!mipmaps.length) throw new Error("DDS has no readable mipmaps.");
+    return mipmaps;
+}
+
+function readUncompressedRgbaMip(buffer, dataOffset, width, height, info) {
+    const source = new DataView(buffer, dataOffset, width * height * info.bytesPerPixel);
+    const target = new Uint8Array(width * height * 4);
+    for (let pixel = 0; pixel < width * height; pixel++) {
+        const value = source.getUint32(pixel * info.bytesPerPixel, true);
+        const targetOffset = pixel * 4;
+        target[targetOffset] = extractMaskedByte(value, info.channelMasks.r, 0);
+        target[targetOffset + 1] = extractMaskedByte(value, info.channelMasks.g, 0);
+        target[targetOffset + 2] = extractMaskedByte(value, info.channelMasks.b, 0);
+        target[targetOffset + 3] = extractMaskedByte(value, info.channelMasks.a, 255);
+    }
+    return target;
+}
+
+function extractMaskedByte(value, mask, fallback) {
+    if (!mask) return fallback;
+    const channel = ((value >>> mask.shift) & mask.max) / mask.max;
+    return Math.round(channel * 255);
+}
+
 function createCompressedDdsTexture(mipmaps, logicalPath, info) {
     const texture = new THREE.CompressedTexture(mipmaps, info.width, info.height, info.format);
     texture.name = logicalPath;
     texture.userData.seColorMaskChannel = info.colorMaskChannel || "a";
     texture.userData.seDdsIsSrgb = !!info.isSrgb;
+    texture.generateMipmaps = false;
+    if (mipmaps.length === 1) texture.minFilter = THREE.LinearFilter;
+    texture.needsUpdate = true;
+    return texture;
+}
+
+function createUncompressedDdsTexture(mipmaps, logicalPath, info) {
+    const texture = new THREE.DataTexture(mipmaps[0].data, info.width, info.height, info.format, THREE.UnsignedByteType);
+    texture.name = logicalPath;
+    texture.userData.seColorMaskChannel = info.colorMaskChannel || "a";
+    texture.userData.seDdsIsSrgb = !!info.isSrgb;
+    texture.mipmaps = mipmaps;
     texture.generateMipmaps = false;
     if (mipmaps.length === 1) texture.minFilter = THREE.LinearFilter;
     texture.needsUpdate = true;

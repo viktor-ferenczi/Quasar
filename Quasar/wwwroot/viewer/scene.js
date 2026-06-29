@@ -546,7 +546,7 @@ function onPointerMove(event) {
     if (state.gridGroup) targets.push(state.gridGroup);
     if (state.voxelGroup && state.voxelGroup.visible) targets.push(state.voxelGroup);
     const hits = state.raycaster.intersectObjects(targets, true);
-    const logisticsHit = hits.find(item => logisticsFromIntersection(item));
+    const logisticsHit = state.logisticsGroup && state.logisticsGroup.visible ? hits.find(item => logisticsFromIntersection(item)) : null;
     if (logisticsHit) {
         const logistics = logisticsFromIntersection(logisticsHit);
         updateLogisticsFocus(logisticsFocus(logistics));

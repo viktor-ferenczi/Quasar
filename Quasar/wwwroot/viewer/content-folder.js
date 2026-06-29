@@ -9,6 +9,7 @@ const MODS_HANDLE_KEY = "space-engineers-mods";
 const LOOKUP_CONCURRENCY = 32;
 const METADATA_CONCURRENCY = 16;
 const KNOWN_FILE_EXTENSION = /\.(mwm|dds|png|jpe?g|webp|sbc|xml)$/i;
+const MOD_ARCHIVE_EXTENSION = /(?:\.sbm|_legacy\.bin)$/i;
 
 const resolvedPathCache = new Map();
 const inFlightPathCache = new Map();
@@ -110,7 +111,7 @@ export async function looksLikeContentFolder(handle) {
 
 async function validateModsFolder(handle) {
     const status = await looksLikeModsFolder(handle);
-    if (!status.valid) throw new Error("Selected folder does not look like a Space Engineers Mods folder. Pick the folder containing mod folders or .sbm files.");
+    if (!status.valid) throw new Error("Selected folder does not look like a Space Engineers Mods folder. Pick the folder containing mod folders, .sbm files, or legacy *_legacy.bin files.");
     if (status.empty) log("Mods folder selected, but no mods were found.", true);
 }
 
@@ -118,7 +119,8 @@ export async function looksLikeModsFolder(handle) {
     if (!handle || handle.kind !== "directory") return { valid: false, empty: true };
     try {
         for await (const [name, child] of handle.entries()) {
-            if (child.kind === "directory" || (child.kind === "file" && name.toLowerCase().endsWith(".sbm"))) {
+            const lowerName = name.toLowerCase();
+            if (child.kind === "directory" || (child.kind === "file" && MOD_ARCHIVE_EXTENSION.test(lowerName))) {
                 return { valid: true, empty: false };
             }
         }
@@ -333,13 +335,19 @@ function normalizeLogicalPath(path) {
     value = value.replace(/\/+/g, "/");
     value = value.replace(/^Content\//i, "");
     const workshopPath = /(?:^|\/)content\/244850\/([^/]+)\/(.+)$/i.exec(value);
-    if (workshopPath) return { path: workshopPath[2], modName: workshopPath[1] };
+    if (workshopPath) return { path: stripModArchivePathPrefix(workshopPath[2]), modName: workshopPath[1] };
     if (/^Mods\//i.test(value)) {
         const parts = value.replace(/^Mods\//i, "").split("/").filter(Boolean);
         const modName = parts.shift() || "";
-        return { path: parts.join("/"), modName };
+        return { path: stripModArchivePathPrefix(parts.join("/")), modName };
     }
-    return { path: value, modName: "" };
+    return { path: stripModArchivePathPrefix(value), modName: "" };
+}
+
+function stripModArchivePathPrefix(path) {
+    const parts = String(path || "").split("/").filter(Boolean);
+    if (parts.length > 1 && MOD_ARCHIVE_EXTENSION.test(parts[0])) parts.shift();
+    return parts.join("/");
 }
 
 function assetCacheKey(normalized, rootId, sourceKind) {
@@ -378,7 +386,7 @@ async function getSceneModRoot(rootId) {
 
     root.resolved = true;
     const name = root.name || root.metadata?.name || root.metadata?.Name || "";
-    const handle = await findModRootHandle(name);
+    const handle = await findModRootHandle(...modRootCandidateNames(root.metadata, name));
     if (!handle) {
         root.missing = true;
         const friendly = root.metadata?.friendlyName || root.metadata?.FriendlyName || name || rootId;
@@ -391,20 +399,47 @@ async function getSceneModRoot(rootId) {
     return root;
 }
 
-async function findModRootHandle(name) {
-    if (!state.modsFolder || !name) return null;
-    const lower = name.toLowerCase();
-    const stem = lower.endsWith(".sbm") ? name.slice(0, -4) : "";
+function modRootCandidateNames(metadata, fallbackName) {
+    const names = [];
+    addUniqueName(names, fallbackName);
+    addUniqueName(names, metadata?.name || metadata?.Name || "");
+    addUniqueName(names, metadata?.friendlyName || metadata?.FriendlyName || "");
+    const publishedFileId = String(metadata?.publishedFileId || metadata?.PublishedFileId || "").trim();
+    if (publishedFileId && publishedFileId !== "0") addUniqueName(names, publishedFileId);
+    return names;
+}
+
+function addUniqueName(names, name) {
+    const value = String(name || "").trim();
+    if (value && !names.some(candidate => candidate.toLowerCase() === value.toLowerCase())) names.push(value);
+}
+
+async function findModRootHandle(...names) {
+    if (!state.modsFolder) return null;
     const selectedName = String(state.modsFolder.name || "").toLowerCase();
-    if (selectedName === lower || (stem && selectedName === stem)) return state.modsFolder;
-    return await getTopLevelChild(state.modsFolder, name, "directory") ||
-        await getTopLevelChild(state.modsFolder, name, "file") ||
-        (stem ? await getTopLevelChild(state.modsFolder, stem, "directory") : null) ||
-        (!stem ? await getTopLevelChild(state.modsFolder, `${name}.sbm`, "file") : null);
+    for (const name of names) {
+        if (!name) continue;
+        const lower = name.toLowerCase();
+        const stem = archiveStem(name);
+        if (selectedName === lower || (stem && selectedName === stem)) return state.modsFolder;
+        const handle = await getTopLevelChild(state.modsFolder, name, "directory") ||
+            await getTopLevelChild(state.modsFolder, name, "file") ||
+            (stem ? await getTopLevelChild(state.modsFolder, stem, "directory") : null) ||
+            (!stem ? await getTopLevelChild(state.modsFolder, `${name}.sbm`, "file") : null);
+        if (handle) return handle;
+    }
+    return null;
+}
+
+function archiveStem(name) {
+    const value = String(name || "");
+    return MOD_ARCHIVE_EXTENSION.test(value)
+        ? value.replace(MOD_ARCHIVE_EXTENSION, "")
+        : "";
 }
 
 function createModRoot(rootId, name, handle, metadata) {
-    const isArchive = handle.kind === "file" || String(handle.name || name).toLowerCase().endsWith(".sbm");
+    const isArchive = handle.kind === "file" || MOD_ARCHIVE_EXTENSION.test(String(handle.name || name));
     return {
         id: rootId,
         rootId,
@@ -442,6 +477,33 @@ async function resolveInRoot(root, logicalPath, generation) {
             ? await getArchiveFileByPath(root, candidate, generation)
             : await getDirectoryFileByPath(root, candidate, generation);
         if (resolved) return resolved;
+    }
+    if (root.kind === "mod-directory") {
+        const legacyArchiveRoot = await getLegacyArchiveRoot(root);
+        if (legacyArchiveRoot) return await resolveInRoot(legacyArchiveRoot, logicalPath, generation);
+    }
+    return null;
+}
+
+async function getLegacyArchiveRoot(root) {
+    if (root.legacyArchiveResolved) return root.legacyArchiveRoot || null;
+    root.legacyArchiveResolved = true;
+    root.legacyArchiveRoot = null;
+
+    const handle = await getLegacyArchiveHandle(root.handle);
+    if (!handle) return null;
+
+    root.legacyArchiveRoot = createModRoot(root.rootId || root.id, root.name, handle, root.metadata);
+    return root.legacyArchiveRoot;
+}
+
+async function getLegacyArchiveHandle(directoryHandle) {
+    if (!directoryHandle || directoryHandle.kind !== "directory") return null;
+    try {
+        for await (const [entryName, entryHandle] of directoryHandle.entries()) {
+            if (entryHandle.kind === "file" && entryName.toLowerCase().endsWith("_legacy.bin")) return entryHandle;
+        }
+    } catch {
     }
     return null;
 }
@@ -496,7 +558,7 @@ async function getArchiveIndex(root, generation) {
         root.archive = { generation, file, reader, entries: map, singleTopLevel: detectSingleTopLevel(entries) };
         return root.archive;
     } catch (error) {
-        log(`Could not read .sbm archive ${root.name}: ${error.message}`, true);
+        log(`Could not read mod archive ${root.name}: ${error.message}`, true);
         return null;
     }
 }
@@ -684,8 +746,11 @@ async function getFileSnapshot(root, canonicalPath, fileHandle, generation) {
 
 export function clearAssetFolderCaches() {
     for (const root of state.modRoots?.values?.() || []) {
-        if (root.archive?.reader && typeof root.archive.reader.close === "function") root.archive.reader.close().catch(() => {});
+        closeArchiveReader(root.archive);
+        closeArchiveReader(root.legacyArchiveRoot?.archive);
         root.archive = null;
+        root.legacyArchiveRoot = null;
+        root.legacyArchiveResolved = false;
     }
     resolvedPathCache.clear();
     inFlightPathCache.clear();
@@ -695,6 +760,10 @@ export function clearAssetFolderCaches() {
     state.textureCache.clear();
     state.textureLoadPromises.clear();
     assetCacheGeneration++;
+}
+
+function closeArchiveReader(archive) {
+    if (archive?.reader && typeof archive.reader.close === "function") archive.reader.close().catch(() => {});
 }
 
 export const clearContentFolderCaches = clearAssetFolderCaches;

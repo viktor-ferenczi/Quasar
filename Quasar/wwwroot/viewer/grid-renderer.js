@@ -419,9 +419,10 @@ function renderLogisticsOverlay(scene, gridGroups, definitions) {
 
     for (const edge of edges) {
         const fromNode = nodeById.get(String(edge && edge.fromNodeId || ""));
+        const toNode = nodeById.get(String(edge && edge.toNodeId || ""));
         const gridId = edge && edge.gridId || fromNode && fromNode.gridId || "";
-        const line = createLogisticsEdge(edge, logisticsGridSize(gridId));
-        if (line) gridOverlay(gridId).add(line);
+        const lines = createLogisticsEdge(edge, logisticsGridSize(gridId), fromNode, toNode);
+        for (const line of lines) gridOverlay(gridId).add(line);
     }
 
     for (const node of nodes) {
@@ -433,10 +434,25 @@ function renderLogisticsOverlay(scene, gridGroups, definitions) {
     }
 }
 
-function createLogisticsEdge(edge, gridSize) {
-    if (!edge) return null;
+function createLogisticsEdge(edge, gridSize, fromNode, toNode) {
+    if (!edge) return [];
     const points = logisticsEdgePoints(edge);
-    if (points.length < 2) return null;
+    if (points.length < 2) return [];
+
+    if (edge.isWorking === false && !edge.isDangling && fromNode && toNode) {
+        const split = splitPolylineAtRatio(points, 0.5);
+        return [
+            createLogisticsLine(edge, split.before, gridSize, num(fromNode.systemId, edge.systemId), "from"),
+            createLogisticsLine(edge, split.after, gridSize, num(toNode.systemId, edge.systemId), "to"),
+        ].filter(Boolean);
+    }
+
+    const line = createLogisticsLine(edge, points, gridSize, num(edge.systemId, -1), "edge");
+    return line ? [line] : [];
+}
+
+function createLogisticsLine(edge, points, gridSize, systemId, segmentName) {
+    if (!edge || points.length < 2) return null;
 
     const color = edge.isDangling ? new THREE.Color(0xff2f2f) : edge.isWorking === false ? new THREE.Color(0xffa12b) : new THREE.Color(0x7dd3fc);
     const opacity = edge.isWorking === false ? 0.34 : 0.94;
@@ -455,15 +471,45 @@ function createLogisticsEdge(edge, gridSize) {
         depthWrite: false,
     });
     const line = new Line2(geometry, material);
-    line.name = `LogisticsEdge:${edge.id || "edge"}`;
+    line.name = `LogisticsEdge:${edge.id || "edge"}:${segmentName || "edge"}`;
     line.renderOrder = 30;
     line.frustumCulled = false;
-    line.userData.logisticsEdge = edge;
-    line.userData.logisticsSystemId = num(edge.systemId, -1);
+    line.userData.logisticsEdge = systemId === num(edge.systemId, -1) ? edge : { ...edge, systemId };
+    line.userData.logisticsSystemId = systemId;
     line.userData.logisticsGridId = String(edge.gridId || "");
     material.userData.logisticsBaseOpacity = opacity;
     if (edge.isSmallRestricted) line.computeLineDistances();
     return line;
+}
+
+function splitPolylineAtRatio(points, ratio) {
+    const lengths = [];
+    let total = 0;
+    for (let i = 1; i < points.length; i++) {
+        const length = points[i - 1].distanceTo(points[i]);
+        lengths.push(length);
+        total += length;
+    }
+
+    if (total <= 0) return { before: points, after: points };
+
+    const target = total * ratio;
+    let covered = 0;
+    const before = [points[0]];
+    for (let i = 1; i < points.length; i++) {
+        const length = lengths[i - 1];
+        if (covered + length >= target) {
+            const segmentRatio = length > 0 ? (target - covered) / length : 0;
+            const midpoint = points[i - 1].clone().lerp(points[i], segmentRatio);
+            before.push(midpoint);
+            return { before, after: [midpoint, ...points.slice(i)] };
+        }
+
+        before.push(points[i]);
+        covered += length;
+    }
+
+    return { before: points, after: [points[points.length - 1]] };
 }
 
 function logisticsEdgePoints(edge) {

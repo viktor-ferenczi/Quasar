@@ -9,7 +9,7 @@ Quasar includes a first-pass browser viewer for live grid and asteroid voxel ent
 3. Refresh the entity list.
 4. Click the eye icon beside a grid or asteroid voxel entity.
 
-The viewer opens grid rows as `/viewer/entity?agentId=...&entityId=...&voxels=1&context=1` and asteroid rows as `/viewer/entity?agentId=...&entityId=...&voxels=1`. It requests a scene snapshot from `/api/viewer/entities/{agentId}/{entityId}/scene`. Direct viewer URLs without a `voxels` parameter keep voxel data support disabled; direct grid URLs without a `context` parameter keep context mode disabled.
+The viewer opens grid rows as `/viewer/entity?agentId=...&entityId=...&voxels=1&context=1` and asteroid rows as `/viewer/entity?agentId=...&entityId=...&voxels=1`. The eye icon performs a full document navigation because the viewer is a standalone static page outside the Blazor router. It requests a scene snapshot from `/api/viewer/entities/{agentId}/{entityId}/scene`. Direct viewer URLs without a `voxels` parameter keep voxel data support disabled; direct grid URLs without a `context` parameter keep context mode disabled.
 
 ## Asset Boundary
 

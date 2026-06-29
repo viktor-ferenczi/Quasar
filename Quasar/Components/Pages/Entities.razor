@@ -327,7 +327,7 @@ else
 
         var agentId = Uri.EscapeDataString(agent.AgentId);
         var contextFlag = string.Equals(entity.TypeTag, "Grid", StringComparison.OrdinalIgnoreCase) ? "&context=1" : string.Empty;
-        Navigation.NavigateTo($"/viewer/entity?agentId={agentId}&entityId={entity.EntityId}&voxels=1{contextFlag}");
+        Navigation.NavigateTo($"/viewer/entity?agentId={agentId}&entityId={entity.EntityId}&voxels=1{contextFlag}", forceLoad: true);
     }
 
     private bool MatchesSearch(EntitySummary entity)

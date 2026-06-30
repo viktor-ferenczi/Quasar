@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { getAssetFolderCacheGeneration, resolveAssetFile } from "./content-folder.js";
+import { disposeCachedTexture, getAssetFolderCacheGeneration, resolveAssetFile } from "./content-folder.js";
 import { state } from "./state.js";
 
 const MAX_CONCURRENT_TEXTURE_RESOLVES = 24;
@@ -33,7 +33,9 @@ export async function loadTexture(logicalPath, slot = "", options = {}) {
 }
 
 async function loadTextureUncoalesced(logicalPath, slot, colorSpaceKey, options) {
+    const cacheGeneration = state.textureCacheGeneration;
     const resolved = await resolveQueue(() => resolveTextureFile(logicalPath, options));
+    if (cacheGeneration !== state.textureCacheGeneration) throw createTextureLoadInvalidatedError(logicalPath);
     if (!resolved) {
         const error = new Error(`Missing local texture: ${logicalPath}`);
         error.isMissingLocalTexture = true;
@@ -41,6 +43,7 @@ async function loadTextureUncoalesced(logicalPath, slot, colorSpaceKey, options)
     }
 
     const file = await resolved.getFile();
+    if (cacheGeneration !== state.textureCacheGeneration) throw createTextureLoadInvalidatedError(logicalPath);
     const cacheKey = `${resolved.rootId || "content"}|${resolved.logicalPath.toLowerCase()}|${file.size}|${file.lastModified || 0}|${colorSpaceKey}`;
     if (state.textureCache.has(cacheKey)) return await state.textureCache.get(cacheKey);
 
@@ -48,12 +51,22 @@ async function loadTextureUncoalesced(logicalPath, slot, colorSpaceKey, options)
     state.textureCache.set(cacheKey, promise);
     try {
         const texture = await promise;
+        if (cacheGeneration !== state.textureCacheGeneration || state.textureCache.get(cacheKey) !== promise) {
+            disposeCachedTexture(texture);
+            throw createTextureLoadInvalidatedError(logicalPath);
+        }
         state.textureCache.set(cacheKey, texture);
         return texture;
     } catch (error) {
-        state.textureCache.delete(cacheKey);
+        if (state.textureCache.get(cacheKey) === promise) state.textureCache.delete(cacheKey);
         throw error;
     }
+}
+
+function createTextureLoadInvalidatedError(logicalPath) {
+    const error = new Error(`Texture load invalidated: ${logicalPath}`);
+    error.isTextureLoadInvalidated = true;
+    return error;
 }
 
 export async function resolveTextureFile(logicalPath, options = {}) {

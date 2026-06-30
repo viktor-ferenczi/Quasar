@@ -3,7 +3,7 @@
 **Module:** Quasar.Host  **Kind:** JS  **Tier:** 3
 
 ## Summary
-Entry point for the standalone grid/asteroid viewer page. It initializes DOM references, parsed voxel and context URL support state, Three.js scene state, control wiring, independent persisted Content and Mods folder restoration, scene reloads with a viewport loading/progress overlay, high-level fetch timing for the stats panel, and scene-loaded logging that can identify grid or voxel-only snapshots.
+Entry point for the standalone grid/asteroid viewer page. It initializes DOM references, parsed voxel and context URL support state, Three.js scene state, control wiring, page-hide teardown, independent persisted Content and Mods folder restoration, scene reloads with a viewport loading/progress overlay, high-level fetch timing for the stats panel, and scene-loaded logging that can identify grid or voxel-only snapshots.
 
 ## Structure
 
@@ -15,6 +15,8 @@ Lifecycle functions:
 | `reloadScene()` | Refreshes voxel/context URL support state, shows the loading overlay, fetches an entity scene from Quasar, records scene-fetch timing, delegates rendering with progress callbacks, and hides or updates the overlay. |
 | `selectContentFolder()` | Prompts for a local Content folder and re-renders the last scene when available. |
 | `selectModsFolder()` | Prompts for the global Mods folder and re-renders the last scene when available. |
+
+The page lifecycle handlers dispose the viewer on `pagehide` so cached WebGL textures are released when navigating away, including via the browser back button. If the browser restores a disposed viewer from the back-forward cache, the page reloads to create a fresh WebGL context.
 
 ## Dependencies
 - [`Quasar/wwwroot/viewer/state.js`](state.js.md), [`Quasar/wwwroot/viewer/scene.js`](scene.js.md), and [`Quasar/wwwroot/viewer/controls.js`](controls.js.md) for UI and renderer initialization.

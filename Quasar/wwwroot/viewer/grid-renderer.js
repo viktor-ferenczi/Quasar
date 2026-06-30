@@ -5,11 +5,11 @@ import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import { els, state } from "./state.js";
 import { blockBox, boundsToBox3, createBoxMesh } from "./geometry.js";
 import { colorFromHash, matrixDtoToThree, num, vec3 } from "./math.js";
-import { ASTEROID_GRID_CUBE_SIZE, LARGE_GRID_CUBE_SIZE, disposeObjectTree, fitCameraToScene, floorGridLayout, updateLighting, updateSceneBounds, updateSunLightPosition } from "./scene.js";
+import { ASTEROID_GRID_CUBE_SIZE, LARGE_GRID_CUBE_SIZE, collectObjectTreeTextures, disposeObjectTree, fitCameraToScene, floorGridLayout, updateLighting, updateSceneBounds, updateSunLightPosition } from "./scene.js";
 import { resolveModelAsset } from "./mwm-loader.js";
 import { loadTexture, textureToCanvas } from "./texture-loader.js";
 import { log } from "./logging.js";
-import { getContentFolderCacheGeneration, resolveContentFile, setSceneModRoots } from "./content-folder.js";
+import { disposeTextureCacheExcept, getContentFolderCacheGeneration, resolveContentFile, setSceneModRoots } from "./content-folder.js";
 import { drawLcdBitmapText, getLoadedLcdBitmapFont, lcdBitmapTextScale, loadLcdBitmapFont, supportedLcdFontId } from "./lcd-font-loader.js";
 
 let textureStatsToken = 0;
@@ -125,6 +125,7 @@ export async function renderGridScene(scene, options = {}) {
 
     const progress = createProgressiveModelRender(scene, definitions, gridGroups, renderTextureToken, renderToken, preloadedTextures);
     progress.rebuild();
+    disposeTextureCacheExcept(collectCurrentSceneTextures());
     updateModelStats(resolutionStats, progress.lastRenderStats, modelAssets.size);
 
     reportProgress("Rendering scene", "Framing viewport...");
@@ -168,6 +169,14 @@ function createProgressReporter(callback) {
         if (typeof callback !== "function") return;
         callback({ title, text, value, max });
     };
+}
+
+function collectCurrentSceneTextures() {
+    const textures = new Set();
+    collectObjectTreeTextures(state.gridGroup, textures);
+    collectObjectTreeTextures(state.voxelGroup, textures);
+    collectObjectTreeTextures(state.floorGrid, textures);
+    return textures;
 }
 
 function createProgressiveModelRender(scene, definitions, gridGroups, textureToken, renderToken, preloadedTextures = null) {
@@ -3174,6 +3183,7 @@ function loadTrackedTexture(selection, textureToken, options = {}) {
         recordTextureLoadStatus(key, "loaded", textureToken);
         return texture;
     }).catch(error => {
+        if (error && error.isTextureLoadInvalidated) throw error;
         recordTextureLoadStatus(key, error && error.isMissingLocalTexture ? "missing" : "failed", textureToken);
         throw error;
     });
@@ -3191,6 +3201,7 @@ function applyTrackedTexture(selection, textureToken, options = {}, preloadedTex
             if (texture) apply(texture);
         })
         .catch(error => {
+            if (error && error.isTextureLoadInvalidated) return;
             if (onError) onError(error);
         });
 }
@@ -3867,7 +3878,7 @@ async function preloadTextureSelections(selections, textureToken, reportProgress
             const texture = await loadTrackedTexture(item.selection, textureToken, item.options);
             if (texture) textures.set(preloadedTextureKey(item.selection, item.options), texture);
         } catch (error) {
-            if (error && !error.isMissingLocalTexture) log(`Texture preload skipped for ${item.selection.path}: ${error.message}`, true);
+            if (error && !error.isMissingLocalTexture && !error.isTextureLoadInvalidated) log(`Texture preload skipped for ${item.selection.path}: ${error.message}`, true);
         } finally {
             completed++;
             if (reportProgress) reportProgress("Loading textures", `Loaded ${completed.toLocaleString()} of ${total.toLocaleString()} texture assets...`, completed, Math.max(1, total));

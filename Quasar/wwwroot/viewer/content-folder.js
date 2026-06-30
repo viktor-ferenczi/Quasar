@@ -768,9 +768,46 @@ export function clearAssetFolderCaches() {
     fileMetadataByCanonicalPath.clear();
     inFlightMetadataByCanonicalPath.clear();
     directoryNodesByKey = new Map();
-    state.textureCache.clear();
+    disposeTextureCache();
     state.textureLoadPromises.clear();
     assetCacheGeneration++;
+}
+
+export function disposeTextureCache() {
+    const disposed = new Set();
+    const entries = Array.from(state.textureCache.values());
+    state.textureCache.clear();
+    state.textureLoadPromises.clear();
+    state.textureCacheGeneration++;
+    for (const entry of entries) disposeTextureCacheEntry(entry, disposed);
+}
+
+export function disposeTextureCacheExcept(retainedTextures) {
+    const retained = retainedTextures instanceof Set ? retainedTextures : new Set(retainedTextures || []);
+    const disposed = new Set();
+    let evicted = false;
+    for (const [key, entry] of Array.from(state.textureCache.entries())) {
+        if (retained.has(entry)) continue;
+        state.textureCache.delete(key);
+        evicted = true;
+        disposeTextureCacheEntry(entry, disposed);
+    }
+    if (evicted) state.textureCacheGeneration++;
+}
+
+export function disposeCachedTexture(texture, disposed = new Set()) {
+    if (!texture || typeof texture.dispose !== "function" || disposed.has(texture)) return;
+    disposed.add(texture);
+    texture.dispose();
+}
+
+function disposeTextureCacheEntry(entry, disposed) {
+    if (!entry) return;
+    if (typeof entry.then === "function") {
+        entry.then(texture => disposeCachedTexture(texture, disposed), () => {});
+        return;
+    }
+    disposeCachedTexture(entry, disposed);
 }
 
 function closeArchiveReader(archive) {

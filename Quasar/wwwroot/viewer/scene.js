@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { els, state } from "./state.js";
 import { boundsToBox3 } from "./geometry.js";
+import { disposeTextureCache } from "./content-folder.js";
 
 export const SMALL_GRID_CUBE_SIZE = 0.5;
 export const LARGE_GRID_CUBE_SIZE = SMALL_GRID_CUBE_SIZE * 5;
@@ -22,8 +23,36 @@ const SUN_SHADOW_MAP_SIZE = 4096;
 const SUN_SHADOW_PADDING_SCALE = 0.08;
 const SUN_SHADOW_MIN_NORMAL_BIAS = 0.02;
 const SUN_SHADOW_TEXEL_NORMAL_BIAS = 2.0;
+const MATERIAL_TEXTURE_PROPERTIES = [
+    "map",
+    "alphaMap",
+    "aoMap",
+    "bumpMap",
+    "clearcoatMap",
+    "clearcoatNormalMap",
+    "clearcoatRoughnessMap",
+    "displacementMap",
+    "emissiveMap",
+    "envMap",
+    "gradientMap",
+    "iridescenceMap",
+    "iridescenceThicknessMap",
+    "lightMap",
+    "matcap",
+    "metalnessMap",
+    "normalMap",
+    "roughnessMap",
+    "sheenColorMap",
+    "sheenRoughnessMap",
+    "specularMap",
+    "specularColorMap",
+    "specularIntensityMap",
+    "thicknessMap",
+    "transmissionMap",
+];
 
 export function initScene() {
+    state.viewerDisposed = false;
     state.scene = new THREE.Scene();
     state.scene.background = new THREE.Color(0x070b12);
     state.scene.fog = new THREE.FogExp2(0x070b12, DEFAULT_FOG_DENSITY);
@@ -77,7 +106,8 @@ export function initScene() {
 }
 
 export function animate(time) {
-    requestAnimationFrame(animate);
+    if (state.viewerDisposed) return;
+    state.animationFrameHandle = requestAnimationFrame(animate);
     const now = time || performance.now();
     const delta = state.lastFrameTime ? Math.min(0.1, (now - state.lastFrameTime) / 1000) : 0;
     state.lastFrameTime = now;
@@ -85,6 +115,39 @@ export function animate(time) {
     else state.controls.update();
     state.renderer.render(state.scene, state.camera);
     updateRenderStats();
+}
+
+export function disposeViewer() {
+    if (state.viewerDisposed) return;
+    state.viewerDisposed = true;
+    if (state.animationFrameHandle) cancelAnimationFrame(state.animationFrameHandle);
+    state.animationFrameHandle = 0;
+    state.resizeObserver?.disconnect();
+    state.resizeObserver = null;
+
+    const canvas = state.renderer?.domElement;
+    canvas?.removeEventListener("pointermove", onPointerMove);
+    canvas?.removeEventListener("pointermove", onFlyPointerMove);
+    canvas?.removeEventListener("click", onViewportClick);
+    document.removeEventListener("pointerlockchange", updateCameraHint);
+    if (document.pointerLockElement === canvas) document.exitPointerLock();
+
+    if (state.scene) disposeObjectTree(state.scene);
+    disposeTextureCache();
+    state.controls?.dispose();
+    state.renderer?.dispose();
+    state.renderer?.forceContextLoss?.();
+    canvas?.remove();
+
+    state.gridGroup = null;
+    state.logisticsGroup = null;
+    state.damagedGroup = null;
+    state.damagedVoxelGroup = null;
+    state.gridLightGroup = null;
+    state.gridLights = [];
+    state.voxelGroup = null;
+    state.voxelMeshes = [];
+    state.floorGrid = null;
 }
 
 export function replaceFloorGrid(bounds, gridSize, alignment = null) {
@@ -312,13 +375,62 @@ export function updateSunLightPosition() {
 }
 
 export function disposeObjectTree(root) {
+    const disposedTextures = new Set();
     root.traverse(object => {
         if (object.geometry) object.geometry.dispose();
         if (object.material) {
             const materials = Array.isArray(object.material) ? object.material : [object.material];
-            for (const material of materials) material.dispose();
+            for (const material of materials) disposeMaterial(material, disposedTextures);
         }
     });
+}
+
+export function collectObjectTreeTextures(root, textures = new Set()) {
+    if (!root) return textures;
+    root.traverse(object => {
+        if (!object.material) return;
+        const materials = Array.isArray(object.material) ? object.material : [object.material];
+        for (const material of materials) collectMaterialTextures(material, textures);
+    });
+    return textures;
+}
+
+function disposeMaterial(material, disposedTextures) {
+    for (const property of MATERIAL_TEXTURE_PROPERTIES) disposeMaterialTexture(material[property], disposedTextures);
+    disposeUniformTextures(material.userData && material.userData.seColorMaskUniforms, disposedTextures);
+    material.dispose();
+}
+
+function collectMaterialTextures(material, textures) {
+    for (const property of MATERIAL_TEXTURE_PROPERTIES) addCollectedTexture(material[property], textures);
+    collectUniformTextures(material.userData && material.userData.seColorMaskUniforms, textures);
+}
+
+function collectUniformTextures(uniforms, textures) {
+    if (!uniforms) return;
+    for (const uniform of Object.values(uniforms)) addCollectedTexture(uniform && uniform.value, textures);
+}
+
+function addCollectedTexture(texture, textures) {
+    if (texture && typeof texture.dispose === "function") textures.add(texture);
+}
+
+function disposeUniformTextures(uniforms, disposedTextures) {
+    if (!uniforms) return;
+    for (const uniform of Object.values(uniforms)) disposeMaterialTexture(uniform && uniform.value, disposedTextures);
+}
+
+function disposeMaterialTexture(texture, disposedTextures) {
+    if (!texture || typeof texture.dispose !== "function" || disposedTextures.has(texture) || isCachedTexture(texture)) return;
+    disposedTextures.add(texture);
+    texture.dispose();
+}
+
+function isCachedTexture(texture) {
+    for (const cached of state.textureCache.values()) {
+        if (cached === texture) return true;
+    }
+    return false;
 }
 
 export function setCameraMode(mode) {

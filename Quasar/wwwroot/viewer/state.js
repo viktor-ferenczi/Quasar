@@ -1,5 +1,7 @@
 export const state = {
     renderer: null,
+    animationFrameHandle: 0,
+    viewerDisposed: false,
     scene: null,
     camera: null,
     controls: null,
@@ -49,6 +51,7 @@ export const state = {
     textureResolution: new Map(),
     textureStats: { listed: 0, found: 0, loaded: 0, missing: 0, failed: 0 },
     textureCache: new Map(),
+    textureCacheGeneration: 0,
     textureLoadPromises: new Map(),
     timings: {},
     stats: {},

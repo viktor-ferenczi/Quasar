@@ -1,5 +1,5 @@
 import { cacheElements, els, state } from "./state.js";
-import { initScene, animate } from "./scene.js";
+import { initScene, animate, disposeViewer } from "./scene.js";
 import { configureContextControl, configureVoxelControl, wireControls } from "./controls.js";
 import { fetchEntityScene, parseContextFlag, parseVoxelFlag } from "./quasar-api.js";
 import { pickContentFolder, pickModsFolder, restoreContentFolder, restoreModsFolder } from "./content-folder.js";
@@ -7,6 +7,10 @@ import { renderGridScene } from "./grid-renderer.js";
 import { downloadLog, log } from "./logging.js";
 
 document.addEventListener("DOMContentLoaded", start);
+window.addEventListener("pagehide", disposeViewer, { once: true });
+window.addEventListener("pageshow", event => {
+    if (event.persisted && state.viewerDisposed) window.location.reload();
+});
 
 async function start() {
     cacheElements();

@@ -47,7 +47,7 @@ export async function resolveModelAsset(asset) {
             rootKind: resolved.rootKind || "",
             byteLength: file.size,
             model,
-            message: `Parsed ${asset.logicalPath} locally (${model.vertexCount.toLocaleString()} vertices, ${model.triangleCount.toLocaleString()} triangles).`,
+            message: `Parsed ${asset.logicalPath} locally (${model.vertexCount.toLocaleString()} vertices, ${model.triangleCount.toLocaleString()} triangles, ${(model.lods || []).length.toLocaleString()} authored LODs).`,
         };
     } catch (error) {
         return {
@@ -84,13 +84,15 @@ async function parseResolvedModelUncached(resolved, file, stack) {
         const buffer = await file.arrayBuffer();
         const reader = new MwmReader(buffer);
         const tags = reader.readTagIndex();
+        const lodDescriptors = tags.has("LODs") ? reader.readLods(tags.get("LODs")) : [];
         const geometryAsset = tags.get("GeometryDataAsset") ? reader.readStringTag(tags.get("GeometryDataAsset")) : "";
         if (!tags.has("Vertices") && geometryAsset) {
             const geometryResolved = await resolveAssetFile(geometryAsset, { rootId: resolved.rootId || "" });
             if (!geometryResolved) throw new Error(`missing geometry asset ${geometryAsset}`);
             const geometryFile = await geometryResolved.getFile();
             const model = await parseResolvedModel(geometryResolved, geometryFile, stack);
-            return { ...model, logicalPath: resolved.logicalPath, rootId: resolved.rootId || "", rootKind: resolved.rootKind || "", geometryLogicalPath: geometryResolved.logicalPath };
+            const lods = await resolveModelLods(resolved, lodDescriptors, stack);
+            return { ...model, logicalPath: resolved.logicalPath, rootId: resolved.rootId || "", rootKind: resolved.rootKind || "", geometryLogicalPath: geometryResolved.logicalPath, lodDescriptors, lods };
         }
 
         const patternScale = tags.has("PatternScale") ? validPatternScale(reader.readFloatTag(tags.get("PatternScale"))) : 1;
@@ -129,11 +131,14 @@ async function parseResolvedModelUncached(resolved, file, stack) {
             offset += part.indices.length;
         }
 
+        const lods = await resolveModelLods(resolved, lodDescriptors, stack);
         const model = {
             logicalPath: resolved.logicalPath,
             rootId: resolved.rootId || "",
             rootKind: resolved.rootKind || "",
             geometryLogicalPath: resolved.logicalPath,
+            lodDescriptors,
+            lods,
             positions,
             normals,
             uvs,
@@ -150,6 +155,59 @@ async function parseResolvedModelUncached(resolved, file, stack) {
     } finally {
         stack.delete(stackKey);
     }
+}
+
+async function resolveModelLods(parentResolved, descriptors, stack) {
+    const lods = [];
+    for (let i = 0; i < descriptors.length; i++) {
+        const descriptor = descriptors[i];
+        const resolved = await resolveLodModelAsset(parentResolved, descriptor.model);
+        if (!resolved) continue;
+
+        try {
+            const file = await resolved.getFile();
+            const model = await parseResolvedModel(resolved, file, stack);
+            lods.push({
+                level: i + 1,
+                distance: descriptor.distance,
+                modelPath: descriptor.model,
+                logicalPath: resolved.logicalPath,
+                rootId: resolved.rootId || "",
+                rootKind: resolved.rootKind || "",
+                renderQuality: descriptor.renderQuality,
+                model,
+            });
+        } catch {
+            // Missing or unparseable authored LODs are non-fatal; the renderer keeps the closest valid model.
+        }
+    }
+    return lods;
+}
+
+async function resolveLodModelAsset(parentResolved, modelPath) {
+    const normalized = ensureMwmExtension(String(modelPath || "").trim().replaceAll("\\", "/"));
+    if (!normalized) return null;
+
+    const parentDirectory = parentResolved.logicalPath && parentResolved.logicalPath.includes("/")
+        ? parentResolved.logicalPath.slice(0, parentResolved.logicalPath.lastIndexOf("/") + 1)
+        : "";
+    const candidates = [];
+    if (parentDirectory && !/^(?:Content|Models|Mods)\//i.test(normalized)) candidates.push(parentDirectory + normalized);
+    candidates.push(normalized);
+
+    for (const candidate of candidates) {
+        const resolved = await resolveAssetFile(candidate, {
+            rootId: parentResolved.rootId || "",
+            sourceKind: parentResolved.rootKind || "",
+        });
+        if (resolved) return resolved;
+    }
+    return null;
+}
+
+function ensureMwmExtension(path) {
+    if (!path) return "";
+    return /\.mwm$/i.test(path) ? path : `${path}.mwm`;
 }
 
 function techniqueOrder(technique) {
@@ -281,6 +339,20 @@ class MwmReader {
             });
         }
         return parts;
+    }
+
+    readLods(offset) {
+        this.seekTag(offset);
+        const count = this.readInt32();
+        const lods = [];
+        for (let i = 0; i < count; i++) {
+            lods.push({
+                distance: this.readFloat32(),
+                model: this.readString(),
+                renderQuality: this.readString(),
+            });
+        }
+        return lods.filter(lod => lod.model && Number.isFinite(lod.distance));
     }
 
     readVector3IArray(offset) {

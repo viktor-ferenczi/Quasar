@@ -28,6 +28,7 @@ const PROJECTED_LIGHT_SHADOW_MAP_SIZE = 1024;
 const PROJECTED_LIGHT_SHADOW_NEAR = 0.05;
 const PROJECTED_LIGHT_SHADOW_BIAS = -0.0001;
 const PROJECTED_LIGHT_SHADOW_NORMAL_BIAS = 0.025;
+const CONTEXT_GRID_LOD_DISTANCE_BIAS = 1.75;
 
 export async function renderGridScene(scene, options = {}) {
     const renderToken = ++modelRenderToken;
@@ -45,7 +46,7 @@ export async function renderGridScene(scene, options = {}) {
     const modelAssets = new Map((scene.modelAssets || []).map(asset => [asset.assetId, asset]));
     const renderTextureToken = ++textureStatsToken;
     state.modelResolution.clear();
-    const resolutionStats = { found: 0, parsed: 0, missing: 0, listed: (scene.modelAssets || []).length };
+    const resolutionStats = { found: 0, parsed: 0, missing: 0, listed: (scene.modelAssets || []).length, authoredLodModels: 0, parsedLodModels: 0 };
     const preloadProgress = createPreloadModelProgress(scene, resolutionStats, modelAssets.size);
 
     reportProgress("Preparing scene", "Loading material definition files...");
@@ -133,6 +134,7 @@ export async function renderGridScene(scene, options = {}) {
     updateSceneBounds(false);
     updateSunLightPosition();
     fitCameraToScene();
+    progress.rebuild();
 
     await nextAnimationFrame();
     if (renderToken !== modelRenderToken) return;
@@ -361,8 +363,8 @@ function buildModelLayer(scene, definitions, renderContext, gridGroups) {
         gridLayer.name = `GridModels:${gridId || "primary"}`;
         gridLayer.userData.gridId = gridId;
         gridLayer.userData.modelLayerToken = layer.userData.modelLayerToken;
-        const gridRenderContext = { ...renderContext, batches: new Map() };
         const gridMatrix = gridRelativeMatrix(grid);
+        const gridRenderContext = { ...renderContext, batches: new Map(), grid, gridMatrix, source: modelStatsSource(scene, grid), lodDistanceBias: grid.isContext ? CONTEXT_GRID_LOD_DISTANCE_BIAS : 1, stats };
         const blockClip = grid.isContext && clipBounds ? { bounds: clipBounds, gridMatrix, inverseGridMatrix: gridMatrix.clone().invert() } : null;
         const proxyBatches = new Map();
         for (const block of blocks) {
@@ -411,6 +413,17 @@ function buildModelLayer(scene, definitions, renderContext, gridGroups) {
             modelBatches: stats.modelBatches,
             sharedGeometries: renderContext.geometries.size,
             sharedMaterials: renderContext.materials.size,
+            submittedTriangles: stats.submittedTriangles || 0,
+            primaryTriangles: stats.primaryTriangles || 0,
+            mechanicalTriangles: stats.mechanicalTriangles || 0,
+            contextTriangles: stats.contextTriangles || 0,
+            lod0Instances: stats.lod0Instances || 0,
+            lod1Instances: stats.lod1Instances || 0,
+            lod2Instances: stats.lod2Instances || 0,
+            lod3PlusInstances: stats.lod3PlusInstances || 0,
+            authoredLodInstances: stats.authoredLodInstances || 0,
+            noAuthoredLodInstances: stats.noAuthoredLodInstances || 0,
+            topModelTriangleAssets: topModelTriangleAssets(stats),
         },
     };
 }
@@ -981,6 +994,13 @@ function primaryGrid(scene) {
 function gridById(scene, gridId) {
     const id = String(gridId || "");
     return sceneGrids(scene).find(grid => String(grid.id || "") === id) || null;
+}
+
+function modelStatsSource(scene, grid) {
+    const primaryId = String(primaryGrid(scene)?.id || "");
+    const gridId = String(grid && grid.id || "");
+    if (primaryId && gridId === primaryId) return "primary";
+    return grid && grid.isContext ? "context" : "mechanical";
 }
 
 function gridRelativeMatrix(grid) {
@@ -1950,7 +1970,9 @@ function composeModelInstanceMatrix(block, definition) {
 
 function createModelMeshes(assetId, block, matrix, patternOffset = null, renderContext = createRenderContext(textureStatsToken), clip = null, entityId = "") {
     const resolved = assetId ? state.modelResolution.get(assetId) : null;
-    const model = resolved && resolved.status === "parsed" ? resolved.model : null;
+    const baseModel = resolved && resolved.status === "parsed" ? resolved.model : null;
+    const selection = selectModelLod(baseModel, block, matrix, renderContext, clip);
+    const model = selection.model;
     if (!model) return [];
 
     const renderables = [];
@@ -1988,10 +2010,37 @@ function createModelMeshes(assetId, block, matrix, patternOffset = null, renderC
             block,
             colorMask: colorMaskForBlock(block),
             standalone: false,
+            lodLevel: selection.level,
+            source: renderContext.source || "primary",
+            assetPath: model.logicalPath || assetId,
             batchKey: `${geometry.userData.renderCacheKey}|${materials.map(material => material.userData.renderCacheKey).join("|")}`,
         });
     }
     return renderables;
+}
+
+function selectModelLod(baseModel, block, matrix, renderContext, clip) {
+    if (!baseModel) return { model: null, level: 0 };
+    if (clip) return { model: baseModel, level: 0 };
+    const lods = (baseModel.lods || []).filter(lod => lod && lod.model && Number.isFinite(lod.distance)).sort((a, b) => a.distance - b.distance);
+    if (!lods.length) return { model: baseModel, level: 0 };
+
+    const distance = modelInstanceDistance(matrix, renderContext);
+    if (!Number.isFinite(distance)) return { model: baseModel, level: 0 };
+    const effectiveDistance = distance * (renderContext.lodDistanceBias || 1);
+    let selected = null;
+    for (const lod of lods) {
+        if (effectiveDistance >= lod.distance) selected = lod;
+        else break;
+    }
+    return selected ? { model: selected.model, level: selected.level || 1 } : { model: baseModel, level: 0 };
+}
+
+function modelInstanceDistance(matrix, renderContext) {
+    if (!state.camera || !matrix) return Number.NaN;
+    const center = new THREE.Vector3().setFromMatrixPosition(matrix);
+    if (renderContext && renderContext.gridMatrix) center.applyMatrix4(renderContext.gridMatrix);
+    return center.distanceTo(state.camera.position);
 }
 
 function blockDeformationMap(block) {
@@ -2077,6 +2126,7 @@ function modelMaterialRenderLayer(material) {
 }
 
 function queueModelBatch(renderable, renderContext) {
+    recordSubmittedModelStats(renderable, renderContext);
     let batch = renderContext.batches.get(renderable.batchKey);
     if (!batch) {
         batch = {
@@ -2087,6 +2137,43 @@ function queueModelBatch(renderable, renderContext) {
         renderContext.batches.set(renderable.batchKey, batch);
     }
     batch.instances.push(renderable);
+}
+
+function recordSubmittedModelStats(renderable, renderContext) {
+    const stats = renderContext && renderContext.stats;
+    if (!stats || !renderable || !renderable.geometry) return;
+    const triangles = geometryTriangleCount(renderable.geometry);
+    stats.submittedTriangles = (stats.submittedTriangles || 0) + triangles;
+    const source = renderable.source || renderContext.source || "primary";
+    if (source === "context") stats.contextTriangles = (stats.contextTriangles || 0) + triangles;
+    else if (source === "mechanical") stats.mechanicalTriangles = (stats.mechanicalTriangles || 0) + triangles;
+    else stats.primaryTriangles = (stats.primaryTriangles || 0) + triangles;
+
+    const level = Number(renderable.lodLevel) || 0;
+    if (level <= 0) stats.lod0Instances = (stats.lod0Instances || 0) + 1;
+    else if (level === 1) stats.lod1Instances = (stats.lod1Instances || 0) + 1;
+    else if (level === 2) stats.lod2Instances = (stats.lod2Instances || 0) + 1;
+    else stats.lod3PlusInstances = (stats.lod3PlusInstances || 0) + 1;
+    if (level > 0) stats.authoredLodInstances = (stats.authoredLodInstances || 0) + 1;
+    else stats.noAuthoredLodInstances = (stats.noAuthoredLodInstances || 0) + 1;
+    const assetPath = renderable.assetPath || "unknown";
+    if (!stats.topModelTriangleAssets) stats.topModelTriangleAssets = new Map();
+    stats.topModelTriangleAssets.set(assetPath, (stats.topModelTriangleAssets.get(assetPath) || 0) + triangles);
+}
+
+function geometryTriangleCount(geometry) {
+    const index = geometry && geometry.index;
+    if (index) return Math.floor(index.count / 3);
+    const position = geometry && geometry.attributes && geometry.attributes.position;
+    return position ? Math.floor(position.count / 3) : 0;
+}
+
+function topModelTriangleAssets(stats) {
+    return [...(stats.topModelTriangleAssets || new Map()).entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 20)
+        .map(([path, triangles]) => `${path}: ${triangles.toLocaleString()}`)
+        .join("\n");
 }
 
 function flushModelBatches(group, renderContext) {
@@ -3756,7 +3843,11 @@ async function resolveReferencedModelsProgressively(scene, modelAssets, stats, p
             log(result.message, true);
         } else {
             stats.found++;
-            if (result.status === "parsed") stats.parsed++;
+            if (result.status === "parsed") {
+                stats.parsed++;
+                stats.authoredLodModels += result.model && result.model.lodDescriptors && result.model.lodDescriptors.length ? 1 : 0;
+                stats.parsedLodModels += result.model && result.model.lods ? result.model.lods.length : 0;
+            }
             if (result.status === "proxy") log(result.message, true);
         }
 
@@ -3793,9 +3884,11 @@ function collectReferencedTextureAssets(scene) {
         const model = resolved && resolved.status === "parsed" ? resolved.model : null;
         if (!model) continue;
 
-        for (const group of model.groups || []) {
-            for (const [slot, path] of Object.entries(group.textures || {})) {
-                addTextureAsset(assets, path, slot || "material", model.rootId || "");
+        for (const candidate of modelAndParsedLods(model)) {
+            for (const group of candidate.groups || []) {
+                for (const [slot, path] of Object.entries(group.textures || {})) {
+                    addTextureAsset(assets, path, slot || "material", candidate.rootId || "");
+                }
             }
         }
     }
@@ -3821,7 +3914,7 @@ function collectSceneTextureSelections(scene, definitions) {
             const model = parsedModelForAssetId(item.assetId);
             if (!model) continue;
 
-            for (const group of model.groups || []) {
+            for (const candidate of modelAndParsedLods(model)) for (const group of candidate.groups || []) {
                 if (isOfflineHiddenLcdMaterial(block, group.materialName)) continue;
                 if (isResetLcdModelMaterialHidden(block, group.materialName)) continue;
                 if (isLcdModelFallbackMaterialHidden(block, group.materialName)) continue;
@@ -3837,7 +3930,7 @@ function collectSceneTextureSelections(scene, definitions) {
                 const transparentMaterial = transparentMaterialForGroup(group, technique);
                 const renderMode = modelMaterialRenderMode(technique);
                 const textures = materialTexturesForGroup(group, skin, transparentMaterial);
-                addModelMaterialTextureSelections(add, textures, technique, renderMode, isModelMaterialColorMaskable(group, technique, textures), model.rootId || "");
+                addModelMaterialTextureSelections(add, textures, technique, renderMode, isModelMaterialColorMaskable(group, technique, textures), candidate.rootId || "");
             }
         }
     }
@@ -3859,6 +3952,15 @@ function blockModelTextureSources(block, definition) {
 function parsedModelForAssetId(assetId) {
     const resolved = assetId ? state.modelResolution.get(assetId) : null;
     return resolved && resolved.status === "parsed" ? resolved.model : null;
+}
+
+function modelAndParsedLods(model) {
+    const models = [];
+    if (model) models.push(model);
+    for (const lod of model && model.lods || []) {
+        if (lod && lod.model) models.push(lod.model);
+    }
+    return models;
 }
 
 function addLcdTextureSelections(add, surface) {
@@ -4011,6 +4113,8 @@ function updateModelStats(resolutionStats, renderStats, listed) {
     state.stats["Models found locally"] = resolutionStats.found;
     state.stats["Models parsed"] = resolutionStats.parsed;
     state.stats["Models missing"] = resolutionStats.missing;
+    state.stats["Models with authored LODs"] = resolutionStats.authoredLodModels || 0;
+    state.stats["Parsed authored LOD models"] = resolutionStats.parsedLodModels || 0;
     updateTimingStats();
 }
 
@@ -4021,6 +4125,17 @@ function updateModelRenderStats(renderStats) {
     state.stats["Model batches"] = renderStats.modelBatches;
     state.stats["Shared geometries"] = renderStats.sharedGeometries;
     state.stats["Shared materials"] = renderStats.sharedMaterials;
+    state.stats["Submitted model triangles"] = renderStats.submittedTriangles || 0;
+    state.stats["Primary model triangles"] = renderStats.primaryTriangles || 0;
+    state.stats["Mechanical model triangles"] = renderStats.mechanicalTriangles || 0;
+    state.stats["Context model triangles"] = renderStats.contextTriangles || 0;
+    state.stats["LOD0 instances"] = renderStats.lod0Instances || 0;
+    state.stats["LOD1 instances"] = renderStats.lod1Instances || 0;
+    state.stats["LOD2 instances"] = renderStats.lod2Instances || 0;
+    state.stats["LOD3+ instances"] = renderStats.lod3PlusInstances || 0;
+    state.stats["Authored LOD instances"] = renderStats.authoredLodInstances || 0;
+    state.stats["No authored LOD instances"] = renderStats.noAuthoredLodInstances || 0;
+    state.stats["Top model triangle assets"] = renderStats.topModelTriangleAssets || "";
 }
 
 function updateGridLightStats(lightSources) {

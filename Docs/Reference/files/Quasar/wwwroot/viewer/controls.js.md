@@ -3,7 +3,7 @@
 **Module:** Quasar.Host  **Kind:** JS  **Tier:** 3
 
 ## Summary
-Wires the grid viewer control panel and keyboard input to scene actions. It connects reload, Content selection, Mods selection, render toggles including URL-gated voxel and voxel-deformation overlay visibility, default-off clipping and sun helpers, mutually exclusive logistics and damaged-block overlays, context-mode reloads through the `context` query flag, lighting, camera mode switching, camera reset, and free-fly movement key tracking.
+Wires the grid viewer control panel and keyboard input to scene actions. It connects reload, Content selection, Mods selection, render toggles including URL-gated voxel and voxel-deformation overlay visibility, default-off clipping, sun, and FPS helpers, mutually exclusive logistics and damaged-block overlays, context-mode reloads through the `context` query flag, lighting, camera mode switching, camera reset, and free-fly movement key tracking.
 
 ## Structure
 
@@ -17,4 +17,4 @@ Internal helpers identify free-fly keys (`WASD` and shift) and avoid capturing k
 
 ## Dependencies
 - [`Quasar/wwwroot/viewer/state.js`](state.js.md) for cached elements and fly-mode state.
-- [`Quasar/wwwroot/viewer/scene.js`](scene.js.md) for camera fitting, camera mode switching, clipping helper visibility, lighting updates, and bounds updates.
+- [`Quasar/wwwroot/viewer/scene.js`](scene.js.md) for camera fitting, camera mode switching, clipping helper visibility, FPS overlay updates, lighting updates, and bounds updates.

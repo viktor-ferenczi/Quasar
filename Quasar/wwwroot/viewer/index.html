@@ -76,6 +76,10 @@
                     <input id="showDamaged" type="checkbox">
                     Show damaged
                 </label>
+                <label class="check-row">
+                    <input id="showFps" type="checkbox">
+                    Show FPS
+                </label>
                 <p class="hint">Relative grid view is always enabled; world positions are re-centered around the selected grid.</p>
                 <label>
                     Camera mode
@@ -112,6 +116,7 @@
                     </div>
                 </div>
             </div>
+            <div id="fpsOverlay" class="fps-overlay" aria-hidden="true">FPS: 0</div>
             <div id="cameraHint" class="camera-hint">Orbit mode</div>
             <div id="hoverReadout" class="hover-readout">No block selected</div>
         </section>

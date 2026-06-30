@@ -37,6 +37,8 @@ export const state = {
     flyYaw: 0,
     flyPitch: 0,
     lastFrameTime: 0,
+    fpsFrameCount: 0,
+    fpsLastUpdateTime: 0,
     currentBounds: null,
     currentGridSize: null,
     currentFloorGridAlignment: null,
@@ -64,8 +66,8 @@ export const els = {};
 
 export function cacheElements() {
     for (const id of [
-        "viewport", "loadingOverlay", "loadingTitle", "loadingText", "loadingProgress", "sceneSummary", "reloadScene", "contentStatus", "pickContent", "folderPicker", "modsStatus", "pickMods", "modsFolderPicker", "showGridHelper", "showVoxels", "showContext", "showLighting", "showSun", "showClipping", "showLogistics", "showDamaged",
-        "cameraMode", "resetCamera", "stats", "exportStats", "log", "downloadLog", "hoverReadout", "cameraHint"
+        "viewport", "loadingOverlay", "loadingTitle", "loadingText", "loadingProgress", "sceneSummary", "reloadScene", "contentStatus", "pickContent", "folderPicker", "modsStatus", "pickMods", "modsFolderPicker", "showGridHelper", "showVoxels", "showContext", "showLighting", "showSun", "showClipping", "showLogistics", "showDamaged", "showFps",
+        "cameraMode", "resetCamera", "stats", "exportStats", "log", "downloadLog", "hoverReadout", "cameraHint", "fpsOverlay"
     ]) {
         els[id] = document.getElementById(id);
     }

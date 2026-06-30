@@ -114,6 +114,7 @@ export function animate(time) {
     if (state.cameraMode === "fly") updateFlyMovement(delta);
     else state.controls.update();
     state.renderer.render(state.scene, state.camera);
+    updateFpsOverlay(now);
     updateRenderStats();
 }
 
@@ -149,6 +150,29 @@ export function disposeViewer() {
     state.voxelMeshes = [];
     state.floorGrid = null;
     state.clippingBox = null;
+    state.fpsFrameCount = 0;
+    state.fpsLastUpdateTime = 0;
+}
+
+export function updateFpsOverlay(now = performance.now()) {
+    if (!els.fpsOverlay || !els.showFps) return;
+    const visible = els.showFps.checked;
+    els.fpsOverlay.classList.toggle("is-visible", visible);
+    if (!visible) {
+        state.fpsFrameCount = 0;
+        state.fpsLastUpdateTime = now;
+        return;
+    }
+
+    state.fpsFrameCount++;
+    if (!state.fpsLastUpdateTime) state.fpsLastUpdateTime = now;
+    const elapsed = now - state.fpsLastUpdateTime;
+    if (elapsed < 250) return;
+
+    const fps = Math.round(state.fpsFrameCount * 1000 / elapsed);
+    els.fpsOverlay.textContent = `FPS: ${fps}`;
+    state.fpsFrameCount = 0;
+    state.fpsLastUpdateTime = now;
 }
 
 export function replaceFloorGrid(bounds, gridSize, alignment = null) {

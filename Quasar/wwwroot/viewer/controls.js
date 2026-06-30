@@ -1,5 +1,5 @@
 import { els, state } from "./state.js";
-import { fitCameraToScene, setCameraMode, setClippingVisible, updateLighting, updateSceneBounds } from "./scene.js";
+import { fitCameraToScene, setCameraMode, setClippingVisible, updateFpsOverlay, updateLighting, updateSceneBounds } from "./scene.js";
 
 export function wireControls(actions) {
     configureVoxelControl();
@@ -45,6 +45,7 @@ export function wireControls(actions) {
         }
         if (state.damagedGroup) state.damagedGroup.visible = els.showDamaged.checked;
     });
+    els.showFps.addEventListener("change", () => updateFpsOverlay());
     window.addEventListener("keydown", event => {
         if (state.cameraMode === "fly" && !isTextEntryTarget(event.target) && isFlyKey(event.code)) {
             state.flyKeys.add(event.code);

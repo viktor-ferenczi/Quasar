@@ -155,7 +155,7 @@ button:disabled { cursor: not-allowed; filter: grayscale(0.7) brightness(0.65); 
     100% { transform: translateX(260%); }
 }
 
-.hover-readout, .camera-hint {
+.hover-readout, .camera-hint, .fps-overlay {
     position: absolute;
     max-width: min(34rem, calc(100% - 2rem));
     border-radius: 0.85rem;
@@ -168,6 +168,8 @@ button:disabled { cursor: not-allowed; filter: grayscale(0.7) brightness(0.65); 
 .hover-readout { right: 1rem; bottom: 1rem; border: 1px solid rgb(110 231 249 / 0.4); color: #dbeafe; }
 .camera-hint { top: 1rem; left: 1rem; border: 1px solid rgb(167 139 250 / 0.4); color: #e9d5ff; pointer-events: none; }
 .camera-hint.is-active { border-color: rgb(110 231 249 / 0.65); color: #cffafe; }
+.fps-overlay { display: none; top: 1rem; right: 1rem; z-index: 2; border: 1px solid rgb(110 231 249 / 0.4); color: #dbeafe; font-variant-numeric: tabular-nums; pointer-events: none; }
+.fps-overlay.is-visible { display: block; }
 
 @media (max-width: 860px) {
     .viewer-shell { grid-template-columns: 1fr; }

@@ -1007,6 +1007,8 @@ function updateRenderStats() {
     state.stats["GPU textures"] = info.memory.textures;
     state.stats.Programs = info.programs ? info.programs.length : 0;
     Object.assign(state.stats, collectVisibilityStats());
+    const modelLodStats = collectLiveModelLodStats();
+    if (modelLodStats) Object.assign(state.stats, modelLodStats);
     renderStats();
 }
 
@@ -1049,6 +1051,21 @@ function isObjectCulled(object, frustum) {
     if (!geometry.boundingSphere) return false;
     const sphere = geometry.boundingSphere.clone().applyMatrix4(object.matrixWorld);
     return !frustum.intersectsSphere(sphere);
+}
+
+function collectLiveModelLodStats() {
+    if (!state.gridGroup) return null;
+    const stats = { "LOD0 instances": 0, "LOD1 instances": 0, "LOD2 instances": 0, "LOD3+ instances": 0 };
+    traverseVisible(state.gridGroup, state.gridGroup.visible !== false, object => {
+        if (!object.userData || !object.userData.isModelBatch) return;
+        const count = Number(object.count) || 0;
+        const level = Number(object.userData.lodLevel) || 0;
+        if (level <= 0) stats["LOD0 instances"] += count;
+        else if (level === 1) stats["LOD1 instances"] += count;
+        else if (level === 2) stats["LOD2 instances"] += count;
+        else stats["LOD3+ instances"] += count;
+    });
+    return stats;
 }
 
 function renderStats() {

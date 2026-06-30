@@ -425,7 +425,6 @@ function buildModelLayer(scene, definitions, renderContext, gridGroups) {
             lod3PlusInstances: stats.lod3PlusInstances || 0,
             authoredLodInstances: stats.authoredLodInstances || 0,
             noAuthoredLodInstances: stats.noAuthoredLodInstances || 0,
-            topModelTriangleAssets: topModelTriangleAssets(stats),
         },
     };
 }
@@ -2024,7 +2023,6 @@ function createModelRenderablesForSelection(selection, assetId, block, matrix, p
             lodDistanceSignature: selection.lodDistanceSignature || "",
             hasAuthoredLod: !!selection.hasAuthoredLod,
             source: renderContext.source || "primary",
-            assetPath: model.logicalPath || assetId,
             batchKey: `lod=${selection.level}|lodTable=${selection.lodDistanceSignature || ""}|${geometry.userData.renderCacheKey}|${materials.map(material => material.userData.renderCacheKey).join("|")}`,
         });
     }
@@ -2180,7 +2178,8 @@ function modelMaterialRenderLayer(material) {
 }
 
 function queueModelBatch(renderable, renderContext) {
-    if (!renderContext.useThreeLod || renderable.lodLevel === 0) recordSubmittedModelStats(renderable, renderContext);
+    recordModelLodStats(renderable, renderContext);
+    if (!renderContext.useThreeLod || renderable.lodLevel === 0) recordSubmittedModelTriangles(renderable, renderContext);
     let batch = renderContext.batches.get(renderable.batchKey);
     if (!batch) {
         batch = {
@@ -2197,7 +2196,21 @@ function queueModelBatch(renderable, renderContext) {
     batch.instances.push(renderable);
 }
 
-function recordSubmittedModelStats(renderable, renderContext) {
+function recordModelLodStats(renderable, renderContext) {
+    const stats = renderContext && renderContext.stats;
+    if (!stats || !renderable) return;
+    const level = Number(renderable.lodLevel) || 0;
+    if (level <= 0) stats.lod0Instances = (stats.lod0Instances || 0) + 1;
+    else if (level === 1) stats.lod1Instances = (stats.lod1Instances || 0) + 1;
+    else if (level === 2) stats.lod2Instances = (stats.lod2Instances || 0) + 1;
+    else stats.lod3PlusInstances = (stats.lod3PlusInstances || 0) + 1;
+
+    if (level > 0) return;
+    if (renderable.hasAuthoredLod) stats.authoredLodInstances = (stats.authoredLodInstances || 0) + 1;
+    else stats.noAuthoredLodInstances = (stats.noAuthoredLodInstances || 0) + 1;
+}
+
+function recordSubmittedModelTriangles(renderable, renderContext) {
     const stats = renderContext && renderContext.stats;
     if (!stats || !renderable || !renderable.geometry) return;
     const triangles = geometryTriangleCount(renderable.geometry);
@@ -2206,17 +2219,6 @@ function recordSubmittedModelStats(renderable, renderContext) {
     if (source === "context") stats.contextTriangles = (stats.contextTriangles || 0) + triangles;
     else if (source === "mechanical") stats.mechanicalTriangles = (stats.mechanicalTriangles || 0) + triangles;
     else stats.primaryTriangles = (stats.primaryTriangles || 0) + triangles;
-
-    const level = Number(renderable.lodLevel) || 0;
-    if (level <= 0) stats.lod0Instances = (stats.lod0Instances || 0) + 1;
-    else if (level === 1) stats.lod1Instances = (stats.lod1Instances || 0) + 1;
-    else if (level === 2) stats.lod2Instances = (stats.lod2Instances || 0) + 1;
-    else stats.lod3PlusInstances = (stats.lod3PlusInstances || 0) + 1;
-    if (renderable.hasAuthoredLod) stats.authoredLodInstances = (stats.authoredLodInstances || 0) + 1;
-    else stats.noAuthoredLodInstances = (stats.noAuthoredLodInstances || 0) + 1;
-    const assetPath = renderable.assetPath || "unknown";
-    if (!stats.topModelTriangleAssets) stats.topModelTriangleAssets = new Map();
-    stats.topModelTriangleAssets.set(assetPath, (stats.topModelTriangleAssets.get(assetPath) || 0) + triangles);
 }
 
 function geometryTriangleCount(geometry) {
@@ -2224,14 +2226,6 @@ function geometryTriangleCount(geometry) {
     if (index) return Math.floor(index.count / 3);
     const position = geometry && geometry.attributes && geometry.attributes.position;
     return position ? Math.floor(position.count / 3) : 0;
-}
-
-function topModelTriangleAssets(stats) {
-    return [...(stats.topModelTriangleAssets || new Map()).entries()]
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 20)
-        .map(([path, triangles]) => `${path}: ${triangles.toLocaleString()}`)
-        .join("\n");
 }
 
 function flushModelBatches(group, renderContext) {
@@ -2306,6 +2300,8 @@ function createInstancedBatchMesh(key, batch, color) {
     mesh.renderOrder = modelBatchRenderOrder(batch.materials);
     mesh.castShadow = modelBatchCastsShadow(batch.materials);
     mesh.receiveShadow = true;
+    mesh.userData.isModelBatch = true;
+    mesh.userData.lodLevel = batch.lodLevel || 0;
     mesh.userData.blocks = [];
     const useInstanceColor = modelBatchUsesInstanceColor(batch.materials);
 
@@ -4255,7 +4251,6 @@ function updateModelRenderStats(renderStats) {
     state.stats["No authored LOD instances"] = renderStats.noAuthoredLodInstances || 0;
     state.stats["LOD hysteresis"] = `${Math.round(MODEL_LOD_HYSTERESIS_RATIO * 100)}%`;
     state.stats["LOD switching"] = "Three.js LOD";
-    state.stats["Top model triangle assets"] = renderStats.topModelTriangleAssets || "";
 }
 
 function updateGridLightStats(lightSources) {

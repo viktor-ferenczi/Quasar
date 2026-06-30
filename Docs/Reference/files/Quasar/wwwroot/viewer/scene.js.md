@@ -13,7 +13,7 @@ Key exports:
 |---|---|
 | `SMALL_GRID_CUBE_SIZE` / `LARGE_GRID_CUBE_SIZE` / `ASTEROID_GRID_CUBE_SIZE` | Shared floor-grid sizing constants for small-grid, large-grid, and asteroid-scale viewer modes. |
 | `initScene()` | Creates the scene, renderer, camera, controls, lighting, pointer handlers, and resize observer; the floor grid is created later from loaded scene bounds. |
-| `animate(time)` | Per-frame render loop that updates controls/free-fly movement, renders the scene, and refreshes render stats. |
+| `animate(time)` | Per-frame render loop that updates controls/free-fly movement, renders the scene, and refreshes render stats. Three.js updates any `LOD.autoUpdate` objects during rendering. |
 | `disposeViewer()` | Stops animation and observers, removes event handlers, disposes the scene tree, cached textures, controls, renderer, and WebGL context, and detaches the canvas. |
 | `replaceFloorGrid(bounds, gridSize, alignment = null)` | Rebuilds the scaled floor grid using SE small/large/asteroid grid cell semantics, optional per-axis lattice offsets, refreshes the clipping wireframe bounds, and updates fog density from the floor span. |
 | `setClippingVisible(visible)` | Toggles the light-blue clipping wireframe helper shown by the `Show Clipping` render checkbox. |

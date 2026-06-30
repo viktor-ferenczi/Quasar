@@ -29,6 +29,7 @@ const PROJECTED_LIGHT_SHADOW_NEAR = 0.05;
 const PROJECTED_LIGHT_SHADOW_BIAS = -0.0001;
 const PROJECTED_LIGHT_SHADOW_NORMAL_BIAS = 0.025;
 const CONTEXT_GRID_LOD_DISTANCE_BIAS = 1.75;
+const MODEL_LOD_HYSTERESIS_RATIO = 0.1;
 
 export async function renderGridScene(scene, options = {}) {
     const renderToken = ++modelRenderToken;
@@ -364,7 +365,7 @@ function buildModelLayer(scene, definitions, renderContext, gridGroups) {
         gridLayer.userData.gridId = gridId;
         gridLayer.userData.modelLayerToken = layer.userData.modelLayerToken;
         const gridMatrix = gridRelativeMatrix(grid);
-        const gridRenderContext = { ...renderContext, batches: new Map(), grid, gridMatrix, source: modelStatsSource(scene, grid), lodDistanceBias: grid.isContext ? CONTEXT_GRID_LOD_DISTANCE_BIAS : 1, stats };
+        const gridRenderContext = { ...renderContext, batches: new Map(), grid, gridMatrix, source: modelStatsSource(scene, grid), lodDistanceBias: grid.isContext ? CONTEXT_GRID_LOD_DISTANCE_BIAS : 1, useThreeLod: true, stats };
         const blockClip = grid.isContext && clipBounds ? { bounds: clipBounds, gridMatrix, inverseGridMatrix: gridMatrix.clone().invert() } : null;
         const proxyBatches = new Map();
         for (const block of blocks) {
@@ -1971,10 +1972,17 @@ function composeModelInstanceMatrix(block, definition) {
 function createModelMeshes(assetId, block, matrix, patternOffset = null, renderContext = createRenderContext(textureStatsToken), clip = null, entityId = "") {
     const resolved = assetId ? state.modelResolution.get(assetId) : null;
     const baseModel = resolved && resolved.status === "parsed" ? resolved.model : null;
-    const selection = selectModelLod(baseModel, block, matrix, renderContext, clip);
+    if (!baseModel) return [];
+    const variants = renderContext.useThreeLod && !clip
+        ? modelLodVariants(baseModel, renderContext.lodDistanceBias || 1)
+        : [selectModelLod(baseModel, matrix, renderContext, clip)];
+
+    return variants.flatMap(selection => createModelRenderablesForSelection(selection, assetId, block, matrix, patternOffset, renderContext, clip, entityId));
+}
+
+function createModelRenderablesForSelection(selection, assetId, block, matrix, patternOffset, renderContext, clip, entityId = "") {
     const model = selection.model;
     if (!model) return [];
-
     const renderables = [];
     const groupsByLayer = new Map();
     for (const group of model.groups) {
@@ -2011,29 +2019,55 @@ function createModelMeshes(assetId, block, matrix, patternOffset = null, renderC
             colorMask: colorMaskForBlock(block),
             standalone: false,
             lodLevel: selection.level,
+            lodDistance: selection.distance || 0,
+            hasAuthoredLod: !!selection.hasAuthoredLod,
             source: renderContext.source || "primary",
             assetPath: model.logicalPath || assetId,
-            batchKey: `${geometry.userData.renderCacheKey}|${materials.map(material => material.userData.renderCacheKey).join("|")}`,
+            batchKey: `lod=${selection.level}|${geometry.userData.renderCacheKey}|${materials.map(material => material.userData.renderCacheKey).join("|")}`,
         });
     }
     return renderables;
 }
 
-function selectModelLod(baseModel, block, matrix, renderContext, clip) {
+function selectModelLod(baseModel, matrix, renderContext, clip) {
     if (!baseModel) return { model: null, level: 0 };
-    if (clip) return { model: baseModel, level: 0 };
-    const lods = (baseModel.lods || []).filter(lod => lod && lod.model && Number.isFinite(lod.distance)).sort((a, b) => a.distance - b.distance);
-    if (!lods.length) return { model: baseModel, level: 0 };
+    if (clip) return { model: baseModel, level: 0, distance: 0 };
+    const lods = sortedModelLods(baseModel);
+    if (!lods.length) return { model: baseModel, level: 0, distance: 0 };
 
     const distance = modelInstanceDistance(matrix, renderContext);
-    if (!Number.isFinite(distance)) return { model: baseModel, level: 0 };
+    if (!Number.isFinite(distance)) return { model: baseModel, level: 0, distance: 0 };
     const effectiveDistance = distance * (renderContext.lodDistanceBias || 1);
-    let selected = null;
+    return selectLodEntry(baseModel, lods, effectiveDistance);
+}
+
+function modelLodVariants(baseModel, distanceBias = 1) {
+    const lods = sortedModelLods(baseModel);
+    const variants = [{ model: baseModel, level: 0, distance: 0, hasAuthoredLod: lods.length > 0 }];
     for (const lod of lods) {
-        if (effectiveDistance >= lod.distance) selected = lod;
+        variants.push({
+            model: lod.model,
+            level: lod.level || variants.length,
+            distance: lod.distance / Math.max(0.001, distanceBias),
+            hasAuthoredLod: true,
+        });
+    }
+    return variants;
+}
+
+function sortedModelLods(baseModel) {
+    return (baseModel && baseModel.lods || [])
+        .filter(lod => lod && lod.model && Number.isFinite(lod.distance))
+        .sort((a, b) => a.distance - b.distance);
+}
+
+function selectLodEntry(baseModel, lods, effectiveDistance) {
+    let selected = { model: baseModel, level: 0, distance: 0 };
+    for (const lod of lods) {
+        if (effectiveDistance >= lod.distance) selected = { model: lod.model, level: lod.level || 1, distance: lod.distance };
         else break;
     }
-    return selected ? { model: selected.model, level: selected.level || 1 } : { model: baseModel, level: 0 };
+    return selected;
 }
 
 function modelInstanceDistance(matrix, renderContext) {
@@ -2126,12 +2160,15 @@ function modelMaterialRenderLayer(material) {
 }
 
 function queueModelBatch(renderable, renderContext) {
-    recordSubmittedModelStats(renderable, renderContext);
+    if (!renderContext.useThreeLod || renderable.lodLevel === 0) recordSubmittedModelStats(renderable, renderContext);
     let batch = renderContext.batches.get(renderable.batchKey);
     if (!batch) {
         batch = {
             geometry: renderable.geometry,
             materials: renderable.materials,
+            lodLevel: renderable.lodLevel || 0,
+            lodDistance: renderable.lodDistance || 0,
+            hasAuthoredLod: !!renderable.hasAuthoredLod,
             instances: [],
         };
         renderContext.batches.set(renderable.batchKey, batch);
@@ -2154,7 +2191,7 @@ function recordSubmittedModelStats(renderable, renderContext) {
     else if (level === 1) stats.lod1Instances = (stats.lod1Instances || 0) + 1;
     else if (level === 2) stats.lod2Instances = (stats.lod2Instances || 0) + 1;
     else stats.lod3PlusInstances = (stats.lod3PlusInstances || 0) + 1;
-    if (level > 0) stats.authoredLodInstances = (stats.authoredLodInstances || 0) + 1;
+    if (renderable.hasAuthoredLod) stats.authoredLodInstances = (stats.authoredLodInstances || 0) + 1;
     else stats.noAuthoredLodInstances = (stats.noAuthoredLodInstances || 0) + 1;
     const assetPath = renderable.assetPath || "unknown";
     if (!stats.topModelTriangleAssets) stats.topModelTriangleAssets = new Map();
@@ -2177,37 +2214,88 @@ function topModelTriangleAssets(stats) {
 }
 
 function flushModelBatches(group, renderContext) {
+    if (renderContext.useThreeLod && hasAuthoredLodBatches(renderContext.batches)) return flushThreeLodModelBatches(group, renderContext);
+
     const color = new THREE.Color();
     for (const [key, batch] of renderContext.batches) {
-        const mesh = new THREE.InstancedMesh(batch.geometry, batch.materials, batch.instances.length);
-        mesh.name = `ModelBatch:${key}`;
-        mesh.matrixAutoUpdate = false;
-        mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
-        mesh.renderOrder = modelBatchRenderOrder(batch.materials);
-        mesh.castShadow = modelBatchCastsShadow(batch.materials);
-        mesh.receiveShadow = true;
-        mesh.userData.blocks = [];
-        const useInstanceColor = modelBatchUsesInstanceColor(batch.materials);
-
-        for (let i = 0; i < batch.instances.length; i++) {
-            const instance = batch.instances[i];
-            mesh.setMatrixAt(i, instance.matrix);
-            if (useInstanceColor) {
-                color.r = instance.colorMask.x;
-                color.g = instance.colorMask.y;
-                color.b = instance.colorMask.z;
-                mesh.setColorAt(i, color);
-            }
-            mesh.userData.blocks.push(instance.block);
-        }
-        mesh.instanceMatrix.needsUpdate = true;
-        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-        if (typeof mesh.computeBoundingBox === "function") mesh.computeBoundingBox();
-        if (typeof mesh.computeBoundingSphere === "function") mesh.computeBoundingSphere();
-        mesh.onBeforeRender = applyDefaultBlockColorMaskUniforms;
+        const mesh = createInstancedBatchMesh(key, batch, color);
         group.add(mesh);
     }
     return renderContext.batches.size;
+}
+
+function hasAuthoredLodBatches(batches) {
+    for (const batch of batches.values()) {
+        if (batch.hasAuthoredLod) return true;
+    }
+    return false;
+}
+
+function flushThreeLodModelBatches(group, renderContext) {
+    const color = new THREE.Color();
+    const lod = new THREE.LOD();
+    lod.name = "ModelBatchesLOD";
+    lod.matrixAutoUpdate = false;
+    lod.autoUpdate = true;
+    const groupsByLevel = new Map();
+    const distancesByLevel = new Map([[0, 0]]);
+    let meshCount = 0;
+
+    for (const [key, batch] of renderContext.batches) {
+        if (!batch.hasAuthoredLod) {
+            group.add(createInstancedBatchMesh(key, batch, color));
+            meshCount++;
+            continue;
+        }
+
+        const level = batch.lodLevel || 0;
+        let levelGroup = groupsByLevel.get(level);
+        if (!levelGroup) {
+            levelGroup = new THREE.Group();
+            levelGroup.name = `ModelLOD${level}`;
+            levelGroup.matrixAutoUpdate = false;
+            groupsByLevel.set(level, levelGroup);
+        }
+        if (level > 0) distancesByLevel.set(level, Math.min(distancesByLevel.get(level) || Infinity, batch.lodDistance || 0));
+        levelGroup.add(createInstancedBatchMesh(key, batch, color));
+        meshCount++;
+    }
+
+    for (const level of [...groupsByLevel.keys()].sort((a, b) => a - b)) {
+        lod.addLevel(groupsByLevel.get(level), distancesByLevel.get(level) || 0, MODEL_LOD_HYSTERESIS_RATIO);
+    }
+    if (lod.levels.length) group.add(lod);
+    return meshCount;
+}
+
+function createInstancedBatchMesh(key, batch, color) {
+    const mesh = new THREE.InstancedMesh(batch.geometry, batch.materials, batch.instances.length);
+    mesh.name = `ModelBatch:${key}`;
+    mesh.matrixAutoUpdate = false;
+    mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+    mesh.renderOrder = modelBatchRenderOrder(batch.materials);
+    mesh.castShadow = modelBatchCastsShadow(batch.materials);
+    mesh.receiveShadow = true;
+    mesh.userData.blocks = [];
+    const useInstanceColor = modelBatchUsesInstanceColor(batch.materials);
+
+    for (let i = 0; i < batch.instances.length; i++) {
+        const instance = batch.instances[i];
+        mesh.setMatrixAt(i, instance.matrix);
+        if (useInstanceColor) {
+            color.r = instance.colorMask.x;
+            color.g = instance.colorMask.y;
+            color.b = instance.colorMask.z;
+            mesh.setColorAt(i, color);
+        }
+        mesh.userData.blocks.push(instance.block);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    if (typeof mesh.computeBoundingBox === "function") mesh.computeBoundingBox();
+    if (typeof mesh.computeBoundingSphere === "function") mesh.computeBoundingSphere();
+    mesh.onBeforeRender = applyDefaultBlockColorMaskUniforms;
+    return mesh;
 }
 
 function addStandaloneBlockMesh(group, renderable) {
@@ -4135,6 +4223,8 @@ function updateModelRenderStats(renderStats) {
     state.stats["LOD3+ instances"] = renderStats.lod3PlusInstances || 0;
     state.stats["Authored LOD instances"] = renderStats.authoredLodInstances || 0;
     state.stats["No authored LOD instances"] = renderStats.noAuthoredLodInstances || 0;
+    state.stats["LOD hysteresis"] = `${Math.round(MODEL_LOD_HYSTERESIS_RATIO * 100)}%`;
+    state.stats["LOD switching"] = "Three.js LOD";
     state.stats["Top model triangle assets"] = renderStats.topModelTriangleAssets || "";
 }
 

@@ -268,11 +268,16 @@ namespace Quasar.Agent
                 }
 
                 var definitionId = DefinitionId(block.BlockDefinition);
+                var chunkCoord = ChunkCoordinate(block.Position, ChunkSizeCells);
+                var chunkId = grid.EntityId + ":" + ChunkId(chunkCoord);
+                var blockWorldAabb = BlockWorldAabb(grid, block);
+                var blockInstance = ToBlockInstance(grid, block, definitionId, chunkId, occupancy, catalog, scene.Warnings, out var fullyCulledGeneratedBlock);
+                if (fullyCulledGeneratedBlock)
+                    continue;
+
                 if (!definitions.ContainsKey(definitionId))
                     definitions[definitionId] = ToBlockDefinition(block.BlockDefinition, catalog, scene.Warnings);
 
-                var chunkCoord = ChunkCoordinate(block.Position, ChunkSizeCells);
-                var chunkId = grid.EntityId + ":" + ChunkId(chunkCoord);
                 if (!chunks.TryGetValue(chunkId, out var chunk))
                 {
                     chunk = new ChunkBuilder(chunkId, grid.EntityId.ToString(), grid.GridSize);
@@ -280,10 +285,8 @@ namespace Quasar.Agent
                 }
 
                 chunk.Include(block.Min, block.Max);
-                var blockWorldAabb = BlockWorldAabb(grid, block);
                 includedBounds.Include(blockWorldAabb.Min);
                 includedBounds.Include(blockWorldAabb.Max);
-                var blockInstance = ToBlockInstance(grid, block, definitionId, chunkId, occupancy, catalog, scene.Warnings);
                 scene.BlockInstances.Add(blockInstance);
                 AddLightSources(grid, block, scene.LightSources, scene.Warnings);
                 AddSubpartLightSources(blockInstance, scene.LightSources);
@@ -2000,23 +2003,11 @@ namespace Quasar.Agent
             string chunkId,
             Dictionary<Vector3I, MySlimBlock> occupancy,
             MetadataAssetCatalog catalog,
-            List<string> warnings)
+            List<string> warnings,
+            out bool fullyCulledGeneratedBlock)
         {
+            fullyCulledGeneratedBlock = false;
             block.GetLocalMatrix(out var localMatrix);
-            var currentModelAssetId = string.Empty;
-            var currentModelLocalMatrix = localMatrix;
-            try
-            {
-                var currentModel = block.CalculateCurrentModel(out var currentModelOrientation);
-                currentModelOrientation.Translation = localMatrix.Translation;
-                currentModelLocalMatrix = currentModelOrientation;
-                currentModelAssetId = catalog.RegisterModel(currentModel, block.BlockDefinition.Context) ?? string.Empty;
-            }
-            catch (Exception exception)
-            {
-                warnings.Add("Failed to resolve current model for block " + block.Position + ": " + exception.Message);
-            }
-
             var dto = new ViewerBlockInstance
             {
                 Id = block.FatBlock != null ? block.FatBlock.EntityId.ToString() : grid.EntityId + ":" + block.Min.X + "," + block.Min.Y + "," + block.Min.Z,
@@ -2037,11 +2028,26 @@ namespace Quasar.Agent
                 Integrity = block.Integrity,
                 AccumulatedDamage = block.AccumulatedDamage,
                 MaxIntegrity = block.MaxIntegrity,
-                CurrentModelAssetId = currentModelAssetId,
-                CurrentModelLocalMatrix = ToDto(currentModelLocalMatrix),
+                CurrentModelLocalMatrix = ToDto(localMatrix),
             };
 
-            AddGeneratedBlockModelParts(grid, block, dto, occupancy, catalog, warnings);
+            var generatedPartStats = AddGeneratedBlockModelParts(grid, block, dto, occupancy, catalog, warnings);
+            fullyCulledGeneratedBlock = generatedPartStats.Total > 0 && generatedPartStats.Culled == generatedPartStats.Total;
+            if (fullyCulledGeneratedBlock)
+                return dto;
+
+            try
+            {
+                var currentModel = block.CalculateCurrentModel(out var currentModelOrientation);
+                currentModelOrientation.Translation = localMatrix.Translation;
+                dto.CurrentModelLocalMatrix = ToDto(currentModelOrientation);
+                dto.CurrentModelAssetId = catalog.RegisterModel(currentModel, block.BlockDefinition.Context) ?? string.Empty;
+            }
+            catch (Exception exception)
+            {
+                warnings.Add("Failed to resolve current model for block " + block.Position + ": " + exception.Message);
+            }
+
             AddBlockDeformations(grid, block, dto, warnings);
             AddRuntimeSubparts(grid, block, dto, catalog, warnings);
             RefreshEmissiveParts(block, warnings);
@@ -2380,6 +2386,12 @@ namespace Quasar.Agent
             return string.IsNullOrWhiteSpace(path) ? string.Empty : path.Trim().Replace('\\', '/');
         }
 
+        private struct GeneratedModelPartStats
+        {
+            public int Total;
+            public int Culled;
+        }
+
         private static Dictionary<Vector3I, MySlimBlock> BuildBlockOccupancy(MyCubeGrid grid)
         {
             var occupancy = new Dictionary<Vector3I, MySlimBlock>(Vector3I.Comparer);
@@ -2419,7 +2431,7 @@ namespace Quasar.Agent
             return (neighbourMask & (1 << OppositeFaceBit(faceBit.Value))) != 0;
         }
 
-        private static void AddGeneratedBlockModelParts(
+        private static GeneratedModelPartStats AddGeneratedBlockModelParts(
             MyCubeGrid grid,
             MySlimBlock block,
             ViewerBlockInstance dto,
@@ -2427,10 +2439,11 @@ namespace Quasar.Agent
             MetadataAssetCatalog catalog,
             List<string> warnings)
         {
+            var stats = new GeneratedModelPartStats();
             if (block.BlockDefinition.CubeDefinition == null)
-                return;
+                return stats;
             if (!block.ShowParts)
-                return;
+                return stats;
 
             var cubePartModels = new List<string>();
             var cubePartMatrices = new List<MatrixD>();
@@ -2453,8 +2466,12 @@ namespace Quasar.Agent
 
                 for (var i = 0; i < cubePartModels.Count; i++)
                 {
+                    stats.Total++;
                     if (ShouldCullGeneratedModelPart(block, cubePartNormals[i], occupancy))
+                    {
+                        stats.Culled++;
                         continue;
+                    }
 
                     var modelAssetId = catalog.RegisterModel(cubePartModels[i], block.BlockDefinition.Context);
                     if (string.IsNullOrEmpty(modelAssetId))
@@ -2473,6 +2490,8 @@ namespace Quasar.Agent
             {
                 warnings.Add("Failed to resolve generated model parts for block " + block.Position + ": " + exception.Message);
             }
+
+            return stats;
         }
 
         private static void AddBlockDeformations(

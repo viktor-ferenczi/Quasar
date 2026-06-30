@@ -1,5 +1,5 @@
 import { els, state } from "./state.js";
-import { fitCameraToScene, setCameraMode, updateLighting, updateSceneBounds } from "./scene.js";
+import { fitCameraToScene, setCameraMode, setClippingVisible, updateLighting, updateSceneBounds } from "./scene.js";
 
 export function wireControls(actions) {
     configureVoxelControl();
@@ -12,6 +12,7 @@ export function wireControls(actions) {
     els.showGridHelper.addEventListener("change", () => {
         if (state.floorGrid) state.floorGrid.visible = els.showGridHelper.checked;
     });
+    els.showClipping.addEventListener("change", () => setClippingVisible(els.showClipping.checked));
     els.showVoxels.addEventListener("change", () => {
         if (state.voxelGroup) state.voxelGroup.visible = els.showVoxels.checked;
         if (state.damagedVoxelGroup) state.damagedVoxelGroup.visible = els.showVoxels.checked;

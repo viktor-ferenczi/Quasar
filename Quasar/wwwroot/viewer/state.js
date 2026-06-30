@@ -13,6 +13,8 @@ export const state = {
     sunDirection: null,
     sunIntensity: 1,
     floorGrid: null,
+    clippingBox: null,
+    showClipping: false,
     resizeObserver: null,
     gridGroup: null,
     logisticsGroup: null,
@@ -62,7 +64,7 @@ export const els = {};
 
 export function cacheElements() {
     for (const id of [
-        "viewport", "loadingOverlay", "loadingTitle", "loadingText", "loadingProgress", "sceneSummary", "reloadScene", "contentStatus", "pickContent", "folderPicker", "modsStatus", "pickMods", "modsFolderPicker", "showGridHelper", "showVoxels", "showContext", "showLighting", "showSun", "showLogistics", "showDamaged",
+        "viewport", "loadingOverlay", "loadingTitle", "loadingText", "loadingProgress", "sceneSummary", "reloadScene", "contentStatus", "pickContent", "folderPicker", "modsStatus", "pickMods", "modsFolderPicker", "showGridHelper", "showVoxels", "showContext", "showLighting", "showSun", "showClipping", "showLogistics", "showDamaged",
         "cameraMode", "resetCamera", "stats", "exportStats", "log", "downloadLog", "hoverReadout", "cameraHint"
     ]) {
         els[id] = document.getElementById(id);

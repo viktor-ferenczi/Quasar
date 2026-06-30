@@ -151,7 +151,6 @@ export async function renderGridScene(scene, options = {}) {
     state.stats["Context grids"] = scene.context && scene.context.enabled ? num(scene.context.gridCount, gridGroups.size) : 0;
     state.stats["Context clipped grids"] = scene.context && scene.context.enabled ? num(scene.context.clippedGridCount, 0) : 0;
     state.stats["Context blocks"] = state.contextGridIds.size ? (scene.blockInstances || []).filter(block => state.contextGridIds.has(String(block.gridId || ""))).length : 0;
-    state.stats["Context clip bounds"] = state.contextClipBounds ? formatBox3(state.contextClipBounds) : "n/a";
     state.stats["Context voxels"] = scene.context && scene.context.enabled ? num(scene.context.voxelBodyCount, (scene.voxels || []).length) : 0;
     state.stats["Scene mods"] = state.modRoots.size;
     state.stats["LCD surfaces"] = countLcdSurfaces(scene);
@@ -1007,11 +1006,6 @@ function contextClipRelativeBounds(scene) {
     return new THREE.Box3(
         new THREE.Vector3(layout.offsetX + layout.startXCell * layout.minorStep, relativeBounds.min.y, layout.offsetZ + layout.startZCell * layout.minorStep),
         new THREE.Vector3(layout.offsetX + layout.endXCell * layout.minorStep, relativeBounds.max.y, layout.offsetZ + layout.endZCell * layout.minorStep));
-}
-
-function formatBox3(bounds) {
-    if (!bounds || bounds.isEmpty()) return "n/a";
-    return `X ${bounds.min.x.toFixed(2)}..${bounds.max.x.toFixed(2)}, Y ${bounds.min.y.toFixed(2)}..${bounds.max.y.toFixed(2)}, Z ${bounds.min.z.toFixed(2)}..${bounds.max.z.toFixed(2)}`;
 }
 
 function primaryGridRelativeBounds(scene) {

@@ -148,6 +148,7 @@ export function disposeViewer() {
     state.voxelGroup = null;
     state.voxelMeshes = [];
     state.floorGrid = null;
+    state.clippingBox = null;
 }
 
 export function replaceFloorGrid(bounds, gridSize, alignment = null) {
@@ -160,7 +161,13 @@ export function replaceFloorGrid(bounds, gridSize, alignment = null) {
     state.floorGrid = createFloorGrid(bounds, gridSize, alignment);
     state.floorGrid.visible = visible && (!els.showGridHelper || els.showGridHelper.checked);
     state.scene.add(state.floorGrid);
+    replaceClippingBox(state.floorGrid.userData && state.floorGrid.userData.layout);
     updateFogForFloorGrid(state.floorGrid.userData && state.floorGrid.userData.layout);
+}
+
+export function setClippingVisible(visible) {
+    state.showClipping = !!visible;
+    if (state.clippingBox) state.clippingBox.visible = state.showClipping;
 }
 
 function createFloorGrid(bounds, gridSize, alignment) {
@@ -226,17 +233,18 @@ export function floorGridLayout(bounds, gridSize, alignment) {
     const majorStep = Math.max(minorStep, Number(gridSize) || LARGE_GRID_CUBE_SIZE);
     if (!bounds || bounds.isEmpty()) {
         const halfSize = FLOOR_GRID_DEFAULT_SIZE * 0.5;
-        return floorGridCells(-halfSize, halfSize, -halfSize, halfSize, -0.02, majorStep, 0, 0, minorStep);
+        return floorGridCells(-halfSize, halfSize, -halfSize, halfSize, -0.02, majorStep, 0, 0, minorStep, majorStep);
     }
 
     const padding = majorStep * FLOOR_GRID_PADDING_SUPERSQUARES;
     const y = bounds.min.y - Math.max(0.02, majorStep * 0.02);
+    const height = Math.max(majorStep, bounds.max.y - y);
     const offsetX = Number(alignment && alignment.offsetX) || 0;
     const offsetZ = Number(alignment && alignment.offsetZ) || 0;
-    return floorGridCells(bounds.min.x - padding, bounds.max.x + padding, bounds.min.z - padding, bounds.max.z + padding, y, majorStep, offsetX, offsetZ, minorStep);
+    return floorGridCells(bounds.min.x - padding, bounds.max.x + padding, bounds.min.z - padding, bounds.max.z + padding, y, majorStep, offsetX, offsetZ, minorStep, height);
 }
 
-function floorGridCells(minX, maxX, minZ, maxZ, y, majorStep, offsetX = 0, offsetZ = 0, minorStep = SMALL_GRID_CUBE_SIZE) {
+function floorGridCells(minX, maxX, minZ, maxZ, y, majorStep, offsetX = 0, offsetZ = 0, minorStep = SMALL_GRID_CUBE_SIZE, height = majorStep) {
     const startXCell = Math.floor((minX - offsetX) / minorStep);
     const endXCell = Math.ceil((maxX - offsetX) / minorStep);
     const startZCell = Math.floor((minZ - offsetZ) / minorStep);
@@ -251,9 +259,46 @@ function floorGridCells(minX, maxX, minZ, maxZ, y, majorStep, offsetX = 0, offse
         offsetX,
         offsetZ,
         y,
+        height,
         majorStep,
         minorStep,
     };
+}
+
+function replaceClippingBox(layout) {
+    if (state.clippingBox) {
+        state.scene.remove(state.clippingBox);
+        disposeObjectTree(state.clippingBox);
+        state.clippingBox = null;
+    }
+    if (!layout) return;
+
+    const bounds = clippingBoxBounds(layout);
+    if (!bounds || bounds.isEmpty()) return;
+
+    const size = bounds.getSize(new THREE.Vector3());
+    const center = bounds.getCenter(new THREE.Vector3());
+    const width = Math.max(layout.minorStep, size.x);
+    const depth = Math.max(layout.minorStep, size.z);
+    const height = Math.max(layout.minorStep, size.y);
+    const boxGeometry = new THREE.BoxGeometry(width, height, depth);
+    const geometry = new THREE.EdgesGeometry(boxGeometry);
+    boxGeometry.dispose();
+    const material = new THREE.LineBasicMaterial({ color: 0x7dd3fc, transparent: true, opacity: 0.85, depthWrite: false });
+    const box = new THREE.LineSegments(geometry, material);
+    box.name = "ClippingBounds";
+    box.position.copy(center);
+    box.frustumCulled = false;
+    box.visible = state.showClipping;
+    state.clippingBox = box;
+    state.scene.add(box);
+}
+
+function clippingBoxBounds(layout) {
+    if (state.contextClipBounds && !state.contextClipBounds.isEmpty()) return state.contextClipBounds.clone();
+    return new THREE.Box3(
+        new THREE.Vector3(layout.offsetX + layout.startXCell * layout.minorStep, layout.y, layout.offsetZ + layout.startZCell * layout.minorStep),
+        new THREE.Vector3(layout.offsetX + layout.endXCell * layout.minorStep, layout.y + (layout.height || layout.majorStep || layout.minorStep), layout.offsetZ + layout.endZCell * layout.minorStep));
 }
 
 function appendFloorGridLines(options) {

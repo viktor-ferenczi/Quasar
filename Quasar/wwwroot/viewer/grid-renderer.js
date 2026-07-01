@@ -4101,7 +4101,7 @@ function createProxyBorderBatch(batch) {
     const material = new THREE.LineBasicMaterial({
         vertexColors: true,
         transparent: true,
-        opacity: 0.85,
+        opacity: 0.35,
         depthWrite: false,
     });
     const border = new THREE.LineSegments(geometry, material);

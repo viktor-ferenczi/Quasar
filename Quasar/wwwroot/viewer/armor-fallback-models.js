@@ -1,9 +1,9 @@
 const ARMOR_FALLBACK_MODELS = {
     cube: model("Full armor cube.", [[-.5, -.5, -.5], [.5, -.5, -.5], [.5, .5, -.5], [-.5, .5, -.5], [-.5, -.5, .5], [.5, -.5, .5], [.5, .5, .5], [-.5, .5, .5]], [[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [3, 7, 6], [3, 6, 2], [1, 2, 6], [1, 6, 5], [0, 4, 7], [0, 7, 3]]),
     half_cube: model("Half-height armor cube.", [[-.5, -.5, -.5], [.5, -.5, -.5], [.5, 0, -.5], [-.5, 0, -.5], [-.5, -.5, .5], [.5, -.5, .5], [.5, 0, .5], [-.5, 0, .5]], [[0, 2, 1], [0, 3, 2], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [3, 7, 6], [3, 6, 2], [1, 2, 6], [1, 6, 5], [0, 4, 7], [0, 7, 3]]),
-    wedge: model("Triangular-prism armor slope.", [[-.5, -.5, -.5], [.5, -.5, -.5], [-.5, -.5, .5], [.5, -.5, .5], [-.5, .5, .5], [.5, .5, .5]], [[0, 1, 3], [0, 3, 2], [2, 3, 5], [2, 5, 4], [0, 2, 4], [0, 4, 1], [1, 4, 5], [1, 5, 3]]),
-    half_wedge: model("Low triangular-prism armor slope.", [[-.5, -.5, -.5], [.5, -.5, -.5], [-.5, -.5, .5], [.5, -.5, .5], [-.5, 0, .5], [.5, 0, .5]], [[0, 1, 3], [0, 3, 2], [2, 3, 5], [2, 5, 4], [0, 2, 4], [0, 4, 1], [1, 4, 5], [1, 5, 3]]),
-    tetra_corner: model("Triangular armor corner.", [[-.5, -.5, -.5], [.5, -.5, -.5], [-.5, -.5, .5], [-.5, .5, -.5]], [[0, 1, 2], [0, 3, 1], [0, 2, 3], [1, 3, 2]]),
+    wedge: mirrorZModel("Triangular-prism armor slope.", [[-.5, -.5, -.5], [.5, -.5, -.5], [-.5, -.5, .5], [.5, -.5, .5], [-.5, .5, .5], [.5, .5, .5]], [[0, 1, 3], [0, 3, 2], [2, 3, 5], [2, 5, 4], [0, 2, 4], [0, 4, 1], [1, 4, 5], [1, 5, 3]]),
+    half_wedge: mirrorZModel("Low triangular-prism armor slope.", [[-.5, -.5, -.5], [.5, -.5, -.5], [-.5, -.5, .5], [.5, -.5, .5], [-.5, 0, .5], [.5, 0, .5]], [[0, 1, 3], [0, 3, 2], [2, 3, 5], [2, 5, 4], [0, 2, 4], [0, 4, 1], [1, 4, 5], [1, 5, 3]]),
+    tetra_corner: mirrorXModel("Triangular armor corner.", [[-.5, -.5, -.5], [.5, -.5, -.5], [-.5, -.5, .5], [-.5, .5, -.5]], [[0, 1, 2], [0, 3, 1], [0, 2, 3], [1, 3, 2]]),
     sloped_corner: model("Square-base sloped armor corner.", [[-.5, -.5, -.5], [.5, -.5, -.5], [.5, -.5, .5], [-.5, -.5, .5], [-.5, .5, -.5]], [[0, 1, 2], [0, 2, 3], [0, 4, 1], [0, 3, 4], [1, 4, 2], [2, 4, 3]]),
     cut_corner: model("Armor cube with one corner cut away.", [[.5, -.5, -.5], [-.5, .5, -.5], [-.5, -.5, .5], [.5, .5, -.5], [.5, -.5, .5], [-.5, .5, .5], [.5, .5, .5]], [[0, 1, 2], [0, 3, 1], [0, 4, 6], [0, 6, 3], [1, 3, 6], [1, 6, 5], [2, 5, 6], [2, 6, 4], [0, 2, 4], [1, 5, 2], [3, 6, 4]]),
     thin_side_panel: boxModel("Thin armor panel on one block side.", .4, .5, -.5, .5),
@@ -66,6 +66,18 @@ function definitionSubtypeId(definition) {
 
 function model(description, vertices, triangles) {
     return { description, vertices, triangles, isBoxPlaceholder: description === "Full armor cube." };
+}
+
+function mirrorXModel(description, vertices, triangles) {
+    return mirroredModel(description, vertices, triangles, ([x, y, z]) => [-x, y, z]);
+}
+
+function mirrorZModel(description, vertices, triangles) {
+    return mirroredModel(description, vertices, triangles, ([x, y, z]) => [x, y, -z]);
+}
+
+function mirroredModel(description, vertices, triangles, transform) {
+    return model(description, vertices.map(transform), triangles.map(([a, b, c]) => [a, c, b]));
 }
 
 function boxModel(description, x0, x1, y0, y1) {

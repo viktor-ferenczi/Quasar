@@ -3930,12 +3930,15 @@ function queueBlockProxy(proxyBatches, block, box, fallback = null) {
     const center = new THREE.Vector3();
     box.getSize(size);
     box.getCenter(center);
-    batch.instances.push({
+    size.set(Math.max(size.x, 0.05), Math.max(size.y, 0.05), Math.max(size.z, 0.05));
+    const instance = {
         block,
         center,
-        size: new THREE.Vector3(Math.max(size.x, 0.05), Math.max(size.y, 0.05), Math.max(size.z, 0.05)),
+        size,
         color: displayColorForBlock(block),
-    });
+    };
+    if (fallback) instance.matrix = composeModelInstanceMatrix(block, null).multiply(new THREE.Matrix4().makeScale(size.x, size.y, size.z));
+    batch.instances.push(instance);
 }
 
 function createClippedBlockProxy(block, box, clip) {
@@ -4023,8 +4026,11 @@ function flushProxyBatches(layer, proxyBatches) {
 
         for (let i = 0; i < batch.instances.length; i++) {
             const instance = batch.instances[i];
-            matrix.compose(instance.center, rotation, instance.size);
-            solid.setMatrixAt(i, matrix);
+            if (instance.matrix) solid.setMatrixAt(i, instance.matrix);
+            else {
+                matrix.compose(instance.center, rotation, instance.size);
+                solid.setMatrixAt(i, matrix);
+            }
             solid.setColorAt(i, instance.color);
             solid.userData.blocks.push(instance.block);
         }
@@ -4115,8 +4121,8 @@ function createFallbackProxyBorderGeometry(instances, fallback) {
         for (const edge of edges) {
             const a = vertices[edge[0]];
             const b = vertices[edge[1]];
-            offset = writeFallbackProxyBorderVertex(positions, offset, a, instance.center, instance.size);
-            offset = writeFallbackProxyBorderVertex(positions, offset, b, instance.center, instance.size);
+            offset = writeFallbackProxyBorderVertex(positions, offset, a, instance);
+            offset = writeFallbackProxyBorderVertex(positions, offset, b, instance);
             for (let i = 0; i < 2; i++) {
                 colors[colorOffset++] = color.r;
                 colors[colorOffset++] = color.g;
@@ -4166,10 +4172,19 @@ function fallbackTriangleNormal(vertices, triangle) {
     return normal.lengthSq() > 0.000001 ? normal.normalize() : new THREE.Vector3(0, 1, 0);
 }
 
-function writeFallbackProxyBorderVertex(positions, offset, vertex, center, size) {
-    positions[offset++] = center.x + vertex[0] * size.x;
-    positions[offset++] = center.y + vertex[1] * size.y;
-    positions[offset++] = center.z + vertex[2] * size.z;
+function writeFallbackProxyBorderVertex(positions, offset, vertex, instance) {
+    const point = new THREE.Vector3(vertex[0], vertex[1], vertex[2]);
+    if (instance.matrix) {
+        point.applyMatrix4(instance.matrix);
+    } else {
+        point.set(
+            instance.center.x + vertex[0] * instance.size.x,
+            instance.center.y + vertex[1] * instance.size.y,
+            instance.center.z + vertex[2] * instance.size.z);
+    }
+    positions[offset++] = point.x;
+    positions[offset++] = point.y;
+    positions[offset++] = point.z;
     return offset;
 }
 

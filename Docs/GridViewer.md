@@ -158,6 +158,6 @@ Generated armor cube parts are batched by shared model geometry and material. Th
 
 ## Server-Side Notes
 
-The scene snapshot is captured by `Quasar.Agent` on the game thread through the existing agent command/result WebSocket flow. The command is `GetEntityRenderScene`, and the shared DTOs live in `Magnetar.Protocol`.
+The scene snapshot is captured by `Quasar.Agent` through the existing agent command/result WebSocket flow. The command is `GetEntityRenderScene`, and the shared DTOs live in `Magnetar.Protocol`. The agent resolves the requested entity on the Space Engineers game thread, then runs viewer scene capture on a single background worker so large grid/context/voxel snapshots do not block simulation updates while the DTO payload is collected and serialized.
 
 The dedicated-server agent deliberately does not reference client render assemblies to resolve skin texture-change payloads. It sends `SkinSubtypeId` and other block metadata; local browser-side content handling resolves base-game armor skin texture overrides from the selected Content folder.

@@ -29,7 +29,7 @@ namespace Quasar.Agent
 {
     /// <summary>
     /// Builds metadata-only grid scene snapshots for Quasar's browser viewer.
-    /// Every member must be called on the game thread.
+    /// Keep capture read-oriented; viewer commands run on a background worker.
     /// </summary>
     internal static class GridRenderSceneInspector
     {
@@ -58,6 +58,14 @@ namespace Quasar.Agent
         public static EntityRenderScene Build(long entityId, string gameVersion, string pluginVersion, bool includeVoxels = false, bool includeContext = false)
         {
             if (!MyEntities.TryGetEntityById<MyCubeGrid>(entityId, out var grid) || grid == null || grid.MarkedForClose || grid.Closed)
+                throw new InvalidOperationException("Grid not found or not loaded on this server.");
+
+            return Build(grid, gameVersion, pluginVersion, includeVoxels, includeContext);
+        }
+
+        public static EntityRenderScene Build(MyCubeGrid grid, string gameVersion, string pluginVersion, bool includeVoxels = false, bool includeContext = false)
+        {
+            if (grid == null || grid.MarkedForClose || grid.Closed)
                 throw new InvalidOperationException("Grid not found or not loaded on this server.");
 
             var catalog = new MetadataAssetCatalog();
@@ -150,6 +158,14 @@ namespace Quasar.Agent
         public static EntityRenderScene BuildVoxel(long entityId, string gameVersion, string pluginVersion, bool includeVoxels = true)
         {
             if (!MyEntities.TryGetEntityById<MyVoxelBase>(entityId, out var voxel) || voxel == null || voxel.MarkedForClose || voxel.Closed)
+                throw new InvalidOperationException("Voxel entity not found or not loaded on this server.");
+
+            return BuildVoxel(voxel, gameVersion, pluginVersion, includeVoxels);
+        }
+
+        public static EntityRenderScene BuildVoxel(MyVoxelBase voxel, string gameVersion, string pluginVersion, bool includeVoxels = true)
+        {
+            if (voxel == null || voxel.MarkedForClose || voxel.Closed)
                 throw new InvalidOperationException("Voxel entity not found or not loaded on this server.");
 
             var kind = VoxelKind(voxel);
@@ -2065,16 +2081,6 @@ namespace Quasar.Agent
                 return;
 
             RegisterEmissiveRenderObjectIds(fatBlock);
-            try
-            {
-                fatBlock.CheckEmissiveState(force: true);
-                InvokeNoArgVisualRefresh(fatBlock, "UpdateEmissivity");
-                InvokeNoArgVisualRefresh(fatBlock, "UpdateVisual");
-            }
-            catch (Exception exception)
-            {
-                warnings.Add("Failed to refresh emissive state for block " + block.Position + ": " + exception.Message);
-            }
         }
 
         private static void RegisterEmissiveRenderObjectIds(MyEntity entity)
@@ -2088,12 +2094,6 @@ namespace Quasar.Agent
                 if (subpart != null)
                     RegisterEmissiveRenderObjectIds(subpart);
             }
-        }
-
-        private static void InvokeNoArgVisualRefresh(MyCubeBlock block, string methodName)
-        {
-            var method = block.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, Type.EmptyTypes, null);
-            method?.Invoke(block, Array.Empty<object>());
         }
 
         private static void AddEmissiveParts(MySlimBlock block, ViewerBlockInstance dto)

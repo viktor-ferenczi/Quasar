@@ -152,6 +152,10 @@ The stats panel also includes live WebGL and viewport counters such as draw call
 
 Missing or unparseable local models and missing or unloadable textures are non-fatal. The viewer logs warnings and keeps the scene visible with proxy boxes and generated fallback materials where needed. Local Content and Mods lookups are cached in memory for the current selected folders, including resolved paths, misses, in-flight full-path lookups, typed directory/file child lookups, and case-insensitive directory entry maps. Intermediate path segments only probe directories and final path segments only probe files, avoiding slow wrong-kind probes such as treating `.mwm` filenames as directories. `getFile()` metadata snapshots are deferred until size, mtime, or bytes are needed and are cached separately by root and canonical path. `.sbm` and legacy `*_legacy.bin` archive indexes are also tied to the current asset cache generation. Once a directory has been enumerated, later child lookups use the cached lowercase map first to avoid repeated expensive failed exact-case probes. Firefox's folder-input fallback feeds the same cache through virtual directory/file handles backed by the selected `File` objects. Cache diagnostics in the stats panel include path hits/misses, exact probes, enumerations, case-fallback hits, negative-cache hits, and metadata-cache hits. The caches are cleared when a different Content or Mods folder is selected or restored.
 
+## Browser Batching Notes
+
+Generated armor cube parts are batched by shared model geometry and material. Their cube-part texture-atlas `PatternOffset` is carried as a per-instance shader attribute instead of being baked into a unique UV buffer for every offset. Clipped context blocks and live-deformed damaged blocks still use unique geometry because their vertices differ per block.
+
 ## Server-Side Notes
 
 The scene snapshot is captured by `Quasar.Agent` on the game thread through the existing agent command/result WebSocket flow. The command is `GetEntityRenderScene`, and the shared DTOs live in `Magnetar.Protocol`.

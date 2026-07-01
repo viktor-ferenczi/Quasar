@@ -31,6 +31,16 @@ const PROJECTED_LIGHT_SHADOW_NORMAL_BIAS = 0.025;
 const MODEL_LOD_DISTANCE_BIAS = 1;
 const SE_CUBE_INSTANCE_LOD_DISTANCE_MULTIPLIER = 4;
 const MODEL_LOD_HYSTERESIS_RATIO = 0.1;
+const SE_PATTERN_UV_VARYINGS = [
+    ["USE_MAP", "vMapUv"],
+    ["USE_ALPHAMAP", "vAlphaMapUv"],
+    ["USE_NORMALMAP", "vNormalMapUv"],
+    ["USE_ROUGHNESSMAP", "vRoughnessMapUv"],
+    ["USE_EMISSIVEMAP", "vEmissiveMapUv"],
+];
+const SE_PATTERN_UV_OFFSET_VERTEX_PATCH = SE_PATTERN_UV_VARYINGS
+    .map(([define, varying]) => `#ifdef ${define}\n${varying} += sePatternUvOffset;\n#endif`)
+    .join("\n");
 
 export async function renderGridScene(scene, options = {}) {
     const renderToken = ++modelRenderToken;
@@ -2058,11 +2068,12 @@ function createModelRenderablesForSelection(selection, assetId, block, matrix, p
         const materials = entries.map(entry => entry.material);
         const deformations = clip ? null : blockDeformationMap(block);
         const canDeform = deformations && model.boneMapping && model.blendIndices && model.blendWeights;
+        const geometryPatternOffset = (!clip && !canDeform) ? null : patternOffset;
         const geometry = canDeform
             ? deformedModelGeometry(model, patternOffset, groups, matrix, deformations, block)
             : clip
                 ? clippedModelGeometry(model, patternOffset, groups, matrix, clip)
-                : sharedModelGeometry(model, patternOffset, renderContext, groups, layer);
+                : sharedModelGeometry(model, geometryPatternOffset, renderContext, groups, layer);
         if (!geometry) continue;
         renderables.push({
             geometry,
@@ -2070,6 +2081,7 @@ function createModelRenderablesForSelection(selection, assetId, block, matrix, p
             matrix: (clip || canDeform) ? new THREE.Matrix4() : matrix,
             block,
             colorMask: colorMaskForBlock(block),
+            patternOffset,
             standalone: false,
             lodLevel: selection.level,
             lodDistance: selection.distance || 0,
@@ -2346,7 +2358,8 @@ function flushThreeLodModelBatches(group, renderContext) {
 }
 
 function createInstancedBatchMesh(key, batch, color) {
-    const mesh = new THREE.InstancedMesh(batch.geometry, batch.materials, batch.instances.length);
+    const geometry = batchGeometryWithPatternOffsets(batch);
+    const mesh = new THREE.InstancedMesh(geometry, batch.materials, batch.instances.length);
     mesh.name = `ModelBatch:${key}`;
     mesh.matrixAutoUpdate = false;
     mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
@@ -2375,6 +2388,18 @@ function createInstancedBatchMesh(key, batch, color) {
     if (typeof mesh.computeBoundingSphere === "function") mesh.computeBoundingSphere();
     mesh.onBeforeRender = applyDefaultBlockColorMaskUniforms;
     return mesh;
+}
+
+function batchGeometryWithPatternOffsets(batch) {
+    const geometry = batch.geometry.clone();
+    const offsets = new Float32Array(batch.instances.length * 2);
+    for (let i = 0; i < batch.instances.length; i++) {
+        const offset = patternUvOffset(batch.instances[i].patternOffset);
+        offsets[i * 2] = offset.x;
+        offsets[i * 2 + 1] = offset.y;
+    }
+    geometry.setAttribute("sePatternUvOffset", new THREE.InstancedBufferAttribute(offsets, 2));
+    return geometry;
 }
 
 function addStandaloneBlockMesh(group, renderable) {
@@ -3544,6 +3569,14 @@ function applySpaceEngineersColorMasking(material, metalnessColorable, colorMask
     if (transparentParameters) Object.assign(material.userData.seColorMaskUniforms, transparentParameters.uniforms);
     material.onBeforeCompile = shader => {
         Object.assign(shader.uniforms, material.userData.seColorMaskUniforms);
+        shader.vertexShader = shader.vertexShader.replace("#include <uv_pars_vertex>", `#include <uv_pars_vertex>
+#ifdef USE_INSTANCING
+attribute vec2 sePatternUvOffset;
+#endif`);
+        shader.vertexShader = shader.vertexShader.replace("#include <uv_vertex>", `#include <uv_vertex>
+#ifdef USE_INSTANCING
+${SE_PATTERN_UV_OFFSET_VERTEX_PATCH}
+#endif`);
         shader.fragmentShader = shader.fragmentShader.replace("#include <color_pars_fragment>", `#include <color_pars_fragment>
 uniform sampler2D seColorMaskMap;
 uniform bool seUseColorMaskMap;
@@ -3667,7 +3700,7 @@ if (seUseTransparentMaterial) {
     diffuseColor.rgb = diffuseColor.rgb * seTransparentLightFactor + seTransparentColorAdd.rgb * seTransparentColorAdd.a * seTransparentSpecularFactor * 0.04;
 }`);
     };
-    material.customProgramCacheKey = () => transparentParameters ? "se-grid-viewer-color-mask-transparent-v1" : "se-grid-viewer-color-mask-v5";
+    material.customProgramCacheKey = () => transparentParameters ? "se-grid-viewer-color-mask-transparent-v2" : "se-grid-viewer-color-mask-v6";
 }
 
 function applyDefaultBlockColorMaskUniforms(renderer, scene, camera, geometry, material) {

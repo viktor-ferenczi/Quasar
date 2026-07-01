@@ -401,7 +401,7 @@ function buildModelLayer(scene, definitions, renderContext, gridGroups) {
                 if (clipRelation === "partial") {
                     const proxy = createClippedBlockProxy(block, box, blockClip);
                     if (proxy) {
-                        gridLayer.add(proxy.solid);
+                        gridLayer.add(proxy.solid, proxy.border);
                         proxyMeshes++;
                     }
                 } else {
@@ -3856,7 +3856,8 @@ function createClippedBlockProxy(block, box, clip) {
     solid.receiveShadow = true;
     solid.userData.block = block;
 
-    return { solid };
+    const border = createClippedProxyBorder(geometry, displayColorForBlock(block), block && block.id || "block");
+    return { solid, border };
 }
 
 function clippedBoxGeometry(box, clip) {
@@ -3917,7 +3918,8 @@ function flushProxyBatches(layer, proxyBatches) {
 
     for (const batch of proxyBatches.values()) {
         const solid = createProxyBatchMesh(geometry, batch);
-        layer.add(solid);
+        const border = createProxyBorderBatch(batch);
+        layer.add(solid, border);
 
         for (let i = 0; i < batch.instances.length; i++) {
             const instance = batch.instances[i];
@@ -3950,6 +3952,104 @@ function createProxyBatchMesh(geometry, batch) {
     mesh.receiveShadow = true;
     mesh.userData.blocks = [];
     return mesh;
+}
+
+function createClippedProxyBorder(geometry, color, id) {
+    const material = new THREE.LineBasicMaterial({
+        color: borderColorForBlock(color),
+        transparent: true,
+        opacity: 0.85,
+        depthWrite: false,
+    });
+    const border = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), material);
+    border.name = `ClippedProxyBorder:${id}`;
+    border.matrixAutoUpdate = false;
+    border.renderOrder = 1;
+    return border;
+}
+
+function createProxyBorderBatch(batch) {
+    const geometry = createProxyBorderGeometry(batch.instances);
+    const material = new THREE.LineBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.85,
+        depthWrite: false,
+    });
+    const border = new THREE.LineSegments(geometry, material);
+    border.name = `ProxyBorderBatch:${batch.opacity}`;
+    border.matrixAutoUpdate = false;
+    border.renderOrder = 1;
+    return border;
+}
+
+function createProxyBorderGeometry(instances) {
+    const positions = new Float32Array(instances.length * 12 * 2 * 3);
+    const colors = new Float32Array(instances.length * 12 * 2 * 3);
+    let offset = 0;
+    let colorOffset = 0;
+    for (const instance of instances) {
+        offset = writeProxyBorders(positions, offset, instance.center, instance.size);
+        const color = borderColorForBlock(instance.color);
+        for (let i = 0; i < 24; i++) {
+            colors[colorOffset++] = color.r;
+            colors[colorOffset++] = color.g;
+            colors[colorOffset++] = color.b;
+        }
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    geometry.computeBoundingSphere();
+    return geometry;
+}
+
+function writeProxyBorders(positions, offset, center, size) {
+    const hx = size.x / 2;
+    const hy = size.y / 2;
+    const hz = size.z / 2;
+    const inset = Math.max(0.01, Math.min(size.x, size.y, size.z) * 0.035);
+    const lift = Math.max(0.002, Math.min(size.x, size.y, size.z) * 0.0025);
+    const x0 = center.x - hx - lift;
+    const x1 = center.x + hx + lift;
+    const y0 = center.y - hy - lift;
+    const y1 = center.y + hy + lift;
+    const z0 = center.z - hz - lift;
+    const z1 = center.z + hz + lift;
+    const ix0 = center.x - Math.max(0, hx - inset);
+    const ix1 = center.x + Math.max(0, hx - inset);
+    const iy0 = center.y - Math.max(0, hy - inset);
+    const iy1 = center.y + Math.max(0, hy - inset);
+    const iz0 = center.z - Math.max(0, hz - inset);
+    const iz1 = center.z + Math.max(0, hz - inset);
+
+    offset = writeProxyBorder(positions, offset, ix0, y0, z0, ix1, y0, z0);
+    offset = writeProxyBorder(positions, offset, ix0, y1, z0, ix1, y1, z0);
+    offset = writeProxyBorder(positions, offset, ix0, y0, z1, ix1, y0, z1);
+    offset = writeProxyBorder(positions, offset, ix0, y1, z1, ix1, y1, z1);
+    offset = writeProxyBorder(positions, offset, x0, iy0, z0, x0, iy1, z0);
+    offset = writeProxyBorder(positions, offset, x1, iy0, z0, x1, iy1, z0);
+    offset = writeProxyBorder(positions, offset, x0, iy0, z1, x0, iy1, z1);
+    offset = writeProxyBorder(positions, offset, x1, iy0, z1, x1, iy1, z1);
+    offset = writeProxyBorder(positions, offset, x0, y0, iz0, x0, y0, iz1);
+    offset = writeProxyBorder(positions, offset, x1, y0, iz0, x1, y0, iz1);
+    offset = writeProxyBorder(positions, offset, x0, y1, iz0, x0, y1, iz1);
+    return writeProxyBorder(positions, offset, x1, y1, iz0, x1, y1, iz1);
+}
+
+function writeProxyBorder(positions, offset, x0, y0, z0, x1, y1, z1) {
+    positions[offset++] = x0;
+    positions[offset++] = y0;
+    positions[offset++] = z0;
+    positions[offset++] = x1;
+    positions[offset++] = y1;
+    positions[offset++] = z1;
+    return offset;
+}
+
+function borderColorForBlock(color) {
+    return color.clone().multiplyScalar(0.55);
 }
 
 async function resolveReferencedModelsProgressively(scene, modelAssets, stats, progress, renderToken, reportProgress = null) {

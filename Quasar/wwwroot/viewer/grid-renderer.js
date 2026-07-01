@@ -399,13 +399,13 @@ function buildModelLayer(scene, definitions, renderContext, gridGroups) {
                 }
 
                 if (clipRelation === "partial") {
-                    const proxy = createClippedBlockProxy(block, definition, box, blockClip);
+                    const proxy = createClippedBlockProxy(block, box, blockClip);
                     if (proxy) {
-                        gridLayer.add(proxy.solid, proxy.edges);
+                        gridLayer.add(proxy.solid);
                         proxyMeshes++;
                     }
                 } else {
-                    queueBlockProxy(proxyBatches, block, definition, box);
+                    queueBlockProxy(proxyBatches, block, box);
                     proxyMeshes++;
                 }
             }
@@ -3817,8 +3817,8 @@ function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
 }
 
-function queueBlockProxy(proxyBatches, block, definition, box) {
-    const opacity = proxyOpacity(definition);
+function queueBlockProxy(proxyBatches, block, box) {
+    const opacity = 1;
     const key = String(opacity);
     let batch = proxyBatches.get(key);
     if (!batch) {
@@ -3838,17 +3838,16 @@ function queueBlockProxy(proxyBatches, block, definition, box) {
     });
 }
 
-function createClippedBlockProxy(block, definition, box, clip) {
+function createClippedBlockProxy(block, box, clip) {
     const geometry = clippedBoxGeometry(box, clip);
     if (!geometry) return null;
 
-    const opacity = proxyOpacity(definition);
     const material = new THREE.MeshStandardMaterial({
         color: displayColorForBlock(block),
         roughness: 0.78,
         metalness: 0.12,
-        transparent: opacity < 1,
-        opacity,
+        transparent: false,
+        opacity: 1,
     });
     const solid = new THREE.Mesh(geometry, material);
     solid.name = `ClippedProxy:${block && block.id || "block"}`;
@@ -3857,10 +3856,7 @@ function createClippedBlockProxy(block, definition, box, clip) {
     solid.receiveShadow = true;
     solid.userData.block = block;
 
-    const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), new THREE.LineBasicMaterial({ color: 0x93c5fd, transparent: true, opacity: 0.75 }));
-    edges.name = `ClippedProxyEdges:${block && block.id || "block"}`;
-    edges.matrixAutoUpdate = false;
-    return { solid, edges };
+    return { solid };
 }
 
 function clippedBoxGeometry(box, clip) {
@@ -3921,8 +3917,7 @@ function flushProxyBatches(layer, proxyBatches) {
 
     for (const batch of proxyBatches.values()) {
         const solid = createProxyBatchMesh(geometry, batch);
-        const edges = createProxyEdgeBatch(batch);
-        layer.add(solid, edges);
+        layer.add(solid);
 
         for (let i = 0; i < batch.instances.length; i++) {
             const instance = batch.instances[i];
@@ -3955,65 +3950,6 @@ function createProxyBatchMesh(geometry, batch) {
     mesh.receiveShadow = true;
     mesh.userData.blocks = [];
     return mesh;
-}
-
-function createProxyEdgeBatch(batch) {
-    const geometry = createProxyEdgeGeometry(batch.instances);
-    const material = new THREE.LineBasicMaterial({ color: 0x93c5fd, transparent: true, opacity: 0.75 });
-    const edges = new THREE.LineSegments(geometry, material);
-    edges.name = `ProxyEdgeBatch:${batch.opacity}`;
-    edges.matrixAutoUpdate = false;
-    return edges;
-}
-
-function createProxyEdgeGeometry(instances) {
-    const positions = new Float32Array(instances.length * 12 * 2 * 3);
-    let offset = 0;
-    for (const instance of instances) offset = writeProxyEdges(positions, offset, instance.center, instance.size);
-
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    geometry.computeBoundingSphere();
-    return geometry;
-}
-
-function writeProxyEdges(positions, offset, center, size) {
-    const hx = size.x / 2;
-    const hy = size.y / 2;
-    const hz = size.z / 2;
-    const x0 = center.x - hx;
-    const x1 = center.x + hx;
-    const y0 = center.y - hy;
-    const y1 = center.y + hy;
-    const z0 = center.z - hz;
-    const z1 = center.z + hz;
-
-    offset = writeProxyEdge(positions, offset, x0, y0, z0, x1, y0, z0);
-    offset = writeProxyEdge(positions, offset, x1, y0, z0, x1, y1, z0);
-    offset = writeProxyEdge(positions, offset, x1, y1, z0, x0, y1, z0);
-    offset = writeProxyEdge(positions, offset, x0, y1, z0, x0, y0, z0);
-    offset = writeProxyEdge(positions, offset, x0, y0, z1, x1, y0, z1);
-    offset = writeProxyEdge(positions, offset, x1, y0, z1, x1, y1, z1);
-    offset = writeProxyEdge(positions, offset, x1, y1, z1, x0, y1, z1);
-    offset = writeProxyEdge(positions, offset, x0, y1, z1, x0, y0, z1);
-    offset = writeProxyEdge(positions, offset, x0, y0, z0, x0, y0, z1);
-    offset = writeProxyEdge(positions, offset, x1, y0, z0, x1, y0, z1);
-    offset = writeProxyEdge(positions, offset, x1, y1, z0, x1, y1, z1);
-    return writeProxyEdge(positions, offset, x0, y1, z0, x0, y1, z1);
-}
-
-function writeProxyEdge(positions, offset, x0, y0, z0, x1, y1, z1) {
-    positions[offset++] = x0;
-    positions[offset++] = y0;
-    positions[offset++] = z0;
-    positions[offset++] = x1;
-    positions[offset++] = y1;
-    positions[offset++] = z1;
-    return offset;
-}
-
-function proxyOpacity(definition) {
-    return definition && definition.visibilityClass === "transparent" ? 0.36 : 0.72;
 }
 
 async function resolveReferencedModelsProgressively(scene, modelAssets, stats, progress, renderToken, reportProgress = null) {

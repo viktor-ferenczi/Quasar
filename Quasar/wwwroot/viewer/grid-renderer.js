@@ -42,6 +42,89 @@ const SE_PATTERN_UV_OFFSET_VERTEX_PATCH = SE_PATTERN_UV_VARYINGS
     .map(([define, varying]) => `#ifdef ${define}\n${varying} += sePatternUvOffset;\n#endif`)
     .join("\n");
 
+// Chosen by eye to fit the "vibe" of the textures
+const VOXEL_MATERIAL_FALLBACK_COLORS = new Map(Object.entries({
+    "aliengreengrass": 0x405f00,
+    "aliengreengrass bare": 0x405f00,
+    "alienice": 0x00a48a,
+    "alienice_03": 0x935047,
+    "alienorangegrass": 0x9f5713,
+    "alienorangegrass bare": 0x9f5713,
+    "alienrockgrass": 0x966b48,
+    "alienrockgrass bare": 0x966b48,
+    "alienrockymountain": 0x6f4e44,
+    "alienrockyterrain": 0x833d2f,
+    "aliensand": 0xc0a882,
+    "aliensnow": 0xebecec,
+    "aliensoil": 0x342a1e,
+    "alienyellowgrass": 0x7e632e,
+    "alienyellowgrass bare": 0x7e632e,
+    "cobalt_01": 0x57767c,
+    "crackedsoil": 0x723e1c,
+    "debugmaterial": 0xb5b5b5,
+    "desertrocks": 0xb08564,
+    "dustyrocks": 0x754120,
+    "dustyrocks2": 0x7f412a,
+    "dustyrocks3": 0x753c1e,
+    "gold_01": 0x766e57,
+    "grass": 0x2c3416,
+    "grass bare": 0x2c3416,
+    "grass_02": 0x34411b,
+    "grass_old": 0x806a3f,
+    "grass_old bare": 0x806a3f,
+    "ice": 0x90acbb,
+    "ice_01": 0x1d2d37,
+    "ice_02": 0x2e5761,
+    "ice_03": 0x172834,
+    "iceeuropa2": 0xb8f0ff,
+    "iron_01": 0x71554d,
+    "iron_02": 0x6b524e,
+    "magnesium_01": 0x535f62,
+    "marsrocks": 0xb36b3a,
+    "marssoil": 0xb36b3c,
+    "moonrocks": 0xaaa8a3,
+    "moonsoil": 0x989692,
+    "nickel_01": 0x817e6f,
+    "pertamsand": 0x723e1c,
+    "platinum_01": 0x7c7a76,
+    "rocks_grass": 0x4a4841,
+    "sand_02": 0xb18d60,
+    "silicon_01": 0x646362,
+    "silver_01": 0x7b7974,
+    "smallmoonrocks": 0xaaa8a3,
+    "snow": 0xe4ecf4,
+    "soil": 0x746653,
+    "stone": 0x5d5b57,
+    "stone_01": 0x424040,
+    "stone_02": 0x37383a,
+    "stone_03": 0x424245,
+    "stone_04": 0x676773,
+    "stone_05": 0x434347,
+    "tritonblend": 0x777777,
+    "tritonice": 0xbcc0c4,
+    "tritonstone": 0x494949,
+    "uraninite_01": 0x5e5d59,
+    "woods_grass": 0x58502d,
+    "woods_grass bare": 0x58502d,
+}));
+const VOXEL_MATERIAL_TYPE_FALLBACK_COLORS = new Map(Object.entries({
+    "aliengreengrass": 0x405f00,
+    "alienyellowgrass": 0x7e632e,
+    "grass": 0x2c3416,
+    "grass bare": 0x2c3416,
+    "grassdry": 0x806a3f,
+    "ice": 0x90acbb,
+    "marssoil": 0xb36b3c,
+    "moonsoil": 0x989692,
+    "orangealiengrass": 0x9f5713,
+    "rock": 0x5d5b57,
+    "sand": 0xb18d60,
+    "snow": 0xe4ecf4,
+    "soil": 0x746653,
+    "soildry": 0x342a1e,
+    "stone": 0x5d5b57,
+}));
+
 export async function renderGridScene(scene, options = {}) {
     const renderToken = ++modelRenderToken;
     const reportProgress = createProgressReporter(options.onProgress);
@@ -1882,7 +1965,7 @@ function dominantVoxelMaterial(vertices) {
 }
 
 function createVoxelMeshMaterial(materialIndex, projection, definition, preloadedTextures = null, textureToken = textureStatsToken) {
-    const color = colorFromHash(`voxel:${materialIndex}`, 0x5b6f54);
+    const color = voxelMaterialFallbackColor(materialIndex, definition);
     const material = new THREE.MeshStandardMaterial({
         color,
         roughness: 1,
@@ -1893,6 +1976,20 @@ function createVoxelMeshMaterial(materialIndex, projection, definition, preloade
     applySpaceEngineersColorMasking(material, false, false);
     applyVoxelTextures(material, materialIndex, projection, definition, preloadedTextures, textureToken);
     return material;
+}
+
+function voxelMaterialFallbackColor(materialIndex, definition) {
+    const subtype = normalizedVoxelMaterialKey(definition && definition.subtypeId);
+    const typeName = normalizedVoxelMaterialKey(definition && definition.materialTypeName);
+    return new THREE.Color(
+        VOXEL_MATERIAL_FALLBACK_COLORS.get(subtype) ??
+        VOXEL_MATERIAL_TYPE_FALLBACK_COLORS.get(typeName) ??
+        0x5d5b57
+    );
+}
+
+function normalizedVoxelMaterialKey(value) {
+    return String(value || "").trim().toLowerCase();
 }
 
 function applyVoxelTextures(material, materialIndex, projection, definition, preloadedTextures = null, textureToken = textureStatsToken) {

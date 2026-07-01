@@ -32,6 +32,7 @@ const PROJECTED_LIGHT_SHADOW_NORMAL_BIAS = 0.025;
 const MODEL_LOD_DISTANCE_BIAS = 1;
 const SE_CUBE_INSTANCE_LOD_DISTANCE_MULTIPLIER = 4;
 const MODEL_LOD_HYSTERESIS_RATIO = 0.1;
+const SELF_SHADOW_UNSTABLE_LOD_TOKEN = /(?:curv|round|circular|cylinder|construction)/i;
 const SE_PATTERN_UV_VARYINGS = [
     ["USE_MAP", "vMapUv"],
     ["USE_ALPHAMAP", "vAlphaMapUv"],
@@ -700,7 +701,7 @@ function createDamagedModelMaskMeshes(assetId, block, matrix, patternOffset, mat
     if (!baseModel) return [];
 
     const variants = renderContext.useThreeLod && !clip
-        ? modelLodVariants(baseModel, renderContext.lodDistanceBias || 1)
+        ? modelLodVariantsForBlock(baseModel, block, renderContext.lodDistanceBias || 1)
         : [selectModelLod(baseModel, matrix, renderContext, clip)];
     const masks = [];
     for (const selection of variants) {
@@ -1051,7 +1052,7 @@ function createLogisticsModelMaskMeshes(assetId, block, node, matrix, patternOff
     if (!baseModel) return [];
 
     const variants = renderContext.useThreeLod && !clip
-        ? modelLodVariants(baseModel, renderContext.lodDistanceBias || 1)
+        ? modelLodVariantsForBlock(baseModel, block, renderContext.lodDistanceBias || 1)
         : [selectModelLod(baseModel, matrix, renderContext, clip)];
     const masks = [];
     for (const selection of variants) {
@@ -2157,7 +2158,7 @@ function createModelMeshes(assetId, block, matrix, patternOffset = null, renderC
     const baseModel = resolved && resolved.status === "parsed" ? resolved.model : null;
     if (!baseModel) return [];
     const variants = renderContext.useThreeLod && !clip
-        ? modelLodVariants(baseModel, renderContext.lodDistanceBias || 1)
+        ? modelLodVariantsForBlock(baseModel, block, renderContext.lodDistanceBias || 1)
         : [selectModelLod(baseModel, matrix, renderContext, clip)];
 
     return variants.flatMap(selection => createModelRenderablesForSelection(selection, assetId, block, matrix, patternOffset, renderContext, clip, entityId));
@@ -2241,6 +2242,26 @@ function modelLodVariants(baseModel, distanceBias = 1) {
         });
     }
     return variants;
+}
+
+function modelLodVariantsForBlock(baseModel, block, distanceBias = 1) {
+    return modelCanUseAuthoredLods(baseModel, block)
+        ? modelLodVariants(baseModel, distanceBias)
+        : [{ model: baseModel, level: 0, distance: 0, hasAuthoredLod: false, lodDistanceSignature: "" }];
+}
+
+function modelCanUseAuthoredLods(baseModel, block) {
+    if (!baseModel || !(baseModel.lods || []).length) return true;
+    if (isUnfinishedForLod(block)) return false;
+
+    const modelPath = String(baseModel.geometryLogicalPath || baseModel.logicalPath || "");
+    const blockType = String(block && block.blockTypeId || "");
+    return !SELF_SHADOW_UNSTABLE_LOD_TOKEN.test(`${modelPath}|${blockType}`);
+}
+
+function isUnfinishedForLod(block) {
+    const buildLevel = Number(block && block.buildLevel);
+    return Number.isFinite(buildLevel) && buildLevel < 1;
 }
 
 function seLodPhysicalDistanceScale(distanceBias = 1) {

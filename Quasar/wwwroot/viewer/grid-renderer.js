@@ -7,6 +7,7 @@ import { blockBox, boundsToBox3, createBoxMesh } from "./geometry.js";
 import { colorFromHash, matrixDtoToThree, num, vec3 } from "./math.js";
 import { ASTEROID_GRID_CUBE_SIZE, LARGE_GRID_CUBE_SIZE, collectObjectTreeTextures, disposeObjectTree, fitCameraToScene, floorGridLayout, updateLighting, updateSceneBounds, updateSunLightPosition } from "./scene.js";
 import { resolveModelAsset } from "./mwm-loader.js";
+import { armorFallbackModelCount, armorFallbackModelForDefinition } from "./armor-fallback-models.js";
 import { loadTexture, textureToCanvas } from "./texture-loader.js";
 import { log } from "./logging.js";
 import { disposeTextureCacheExcept, getContentFolderCacheGeneration, resolveContentFile, setSceneModRoots } from "./content-folder.js";
@@ -481,7 +482,11 @@ function buildModelLayer(scene, definitions, renderContext, gridGroups) {
                     continue;
                 }
 
-                if (clipRelation === "partial") {
+                const armorFallback = !effectiveClip ? createArmorFallbackRenderable(block, definition, gridRenderContext) : null;
+                if (armorFallback) {
+                    queueModelBatch(armorFallback, gridRenderContext);
+                    modelMeshes++;
+                } else if (clipRelation === "partial") {
                     const proxy = createClippedBlockProxy(block, box, blockClip);
                     if (proxy) {
                         gridLayer.add(proxy.solid, proxy.border);
@@ -2099,6 +2104,65 @@ function createBlockMeshes(block, definition, renderContext, clip = null) {
     }
 
     return meshes;
+}
+
+function createArmorFallbackRenderable(block, definition, renderContext) {
+    const fallback = armorFallbackModelForDefinition(definition);
+    if (!fallback) return null;
+    const gridSize = renderContext && renderContext.grid && renderContext.grid.gridSize || LARGE_GRID_CUBE_SIZE;
+    const geometry = sharedArmorFallbackGeometry(fallback, definition, gridSize, renderContext);
+    const material = sharedArmorFallbackMaterial(renderContext);
+    return {
+        geometry,
+        materials: [material],
+        matrix: composeModelInstanceMatrix(block, definition),
+        block,
+        colorMask: colorMaskForBlock(block),
+        patternOffset: null,
+        standalone: false,
+        lodLevel: 0,
+        lodDistance: 0,
+        lodDistanceSignature: "",
+        hasAuthoredLod: false,
+        source: renderContext.source || "primary",
+        batchKey: `${geometry.userData.renderCacheKey}|${material.userData.renderCacheKey}`,
+    };
+}
+
+function sharedArmorFallbackGeometry(fallback, definition, gridSize, renderContext) {
+    const size = definition && definition.size || { x: 1, y: 1, z: 1 };
+    const sx = Math.max(0.05, (Number(size.x) || 1) * gridSize);
+    const sy = Math.max(0.05, (Number(size.y) || 1) * gridSize);
+    const sz = Math.max(0.05, (Number(size.z) || 1) * gridSize);
+    const key = `armor-fallback:${fallback.description}:${sx}:${sy}:${sz}`;
+    if (renderContext.geometries.has(key)) return renderContext.geometries.get(key);
+
+    const positions = [];
+    for (const vertex of fallback.vertices) positions.push(vertex[0] * sx, vertex[1] * sy, vertex[2] * sz);
+    const indices = fallback.triangles.flat();
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setIndex(indices);
+    geometry.addGroup(0, indices.length, 0);
+    geometry.computeVertexNormals();
+    geometry.computeBoundingSphere();
+    geometry.userData.renderCacheKey = key;
+    renderContext.geometries.set(key, geometry);
+    return geometry;
+}
+
+function sharedArmorFallbackMaterial(renderContext) {
+    const key = "armor-fallback-material";
+    if (renderContext.materials.has(key)) return renderContext.materials.get(key);
+    const material = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        roughness: 0.78,
+        metalness: 0.12,
+    });
+    material.userData.renderCacheKey = key;
+    material.userData.seRenderMode = "base";
+    renderContext.materials.set(key, material);
+    return material;
 }
 
 function blockHasResolvedModel(block, definition) {
@@ -4470,6 +4534,7 @@ function updateModelRenderStats(renderStats) {
     state.stats["No authored LOD instances"] = renderStats.noAuthoredLodInstances || 0;
     state.stats["LOD hysteresis"] = `${Math.round(MODEL_LOD_HYSTERESIS_RATIO * 100)}%`;
     state.stats["LOD switching"] = "Three.js LOD";
+    state.stats["Armor fallback models"] = armorFallbackModelCount();
 }
 
 function updateGridLightStats(lightSources) {

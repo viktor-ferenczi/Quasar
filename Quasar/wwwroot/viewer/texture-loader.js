@@ -172,6 +172,7 @@ function readDdsInfo(buffer, logicalPath) {
     else if (fourCC === fourCCCode("BC5S")) applyBlockInfo(info, 16, THREE.SIGNED_RED_GREEN_RGTC2_Format, "BC5_SNORM", "EXT_texture_compression_rgtc");
     else if (fourCC === fourCCCode("DX10")) readDx10DdsInfo(buffer, info);
     else if (isUncompressedRgbaDds(header)) applyUncompressedRgbaInfo(info, header);
+    else if (isUncompressedLuminanceDds(header)) applyUncompressedLuminanceInfo(info, header);
     else throw new Error(`Unsupported DDS FourCC ${info.fourCCText}.`);
 
     if (info.width <= 0 || info.height <= 0) throw new Error(`Invalid DDS dimensions ${info.width}x${info.height}.`);
@@ -213,6 +214,12 @@ function isUncompressedRgbaDds(header) {
         [header[23], header[24], header[25], header[26]].every(mask => byteAlignedMask(mask));
 }
 
+function isUncompressedLuminanceDds(header) {
+    const pixelFlags = header[20];
+    const rgbBitCount = header[22];
+    return (pixelFlags & 0x20000) !== 0 && rgbBitCount === 8 && byteAlignedMask(header[23]);
+}
+
 function applyUncompressedRgbaInfo(info, header) {
     info.format = THREE.RGBAFormat;
     info.formatName = "R8G8B8A8_UNORM";
@@ -222,6 +229,20 @@ function applyUncompressedRgbaInfo(info, header) {
         g: maskInfo(header[24]),
         b: maskInfo(header[25]),
         a: maskInfo(header[26]),
+    };
+}
+
+function applyUncompressedLuminanceInfo(info, header) {
+    const mask = maskInfo(header[23] || 0xff);
+    info.format = THREE.RGBAFormat;
+    info.formatName = "R8_UNORM";
+    info.bytesPerPixel = 1;
+    info.colorMaskChannel = "r";
+    info.channelMasks = {
+        r: mask,
+        g: mask,
+        b: mask,
+        a: null,
     };
 }
 
@@ -277,7 +298,8 @@ function readUncompressedRgbaMip(buffer, dataOffset, width, height, info) {
     const source = new DataView(buffer, dataOffset, width * height * info.bytesPerPixel);
     const target = new Uint8Array(width * height * 4);
     for (let pixel = 0; pixel < width * height; pixel++) {
-        const value = source.getUint32(pixel * info.bytesPerPixel, true);
+        const sourceOffset = pixel * info.bytesPerPixel;
+        const value = info.bytesPerPixel === 1 ? source.getUint8(sourceOffset) : source.getUint32(sourceOffset, true);
         const targetOffset = pixel * 4;
         target[targetOffset] = extractMaskedByte(value, info.channelMasks.r, 0);
         target[targetOffset + 1] = extractMaskedByte(value, info.channelMasks.g, 0);
